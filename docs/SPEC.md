@@ -225,9 +225,33 @@ So a binding is an interval: host, block, provider, agent session, start, end.
 | Path | Provider | How |
 |---|---|---|
 | Resource attribute | Claude | The Claude home sets `OTEL_RESOURCE_ATTRIBUTES=burns.account=<account>,rex.block=$REX_BLOCK,rex.session=$REX_SESSION`. Every `api_request` names its block. Verified on the wire 2026-10-28. |
-| SessionStart hook | Claude and Codex | The hook posts provider, agent session ID, `source`, `REX_SESSION`, `REX_BLOCK`, and its ancestor process IDs to `smithersd`. Claude fires it on startup, resume, clear, compact, and fork. Codex fires it at the first prompt. |
-| Check | Both | `smithersd` calls Rex's read-only block `process` method. The block's foreground process must appear in the hook's ancestors. |
-| End | Both | One `rex events --all --json` stream per host ends a binding on `block_closed`, or when the block's agent session changes. |
+| SessionStart hook | Claude and Codex | The hook posts provider, agent session ID, `source`, `REX_SESSION`, `REX_BLOCK`, and its ancestor process IDs (`pids`, parent first, at most 16) to `smithersd`. Claude fires it on startup, resume, clear, compact, and fork. Codex fires it at the first prompt. |
+| Check | Both | `smithersd` calls Rex's read-only block `process` method (`rex block call --block B process`). See "Checking a claim". |
+| End | Both | One `rex events --all --json` stream per host ends bindings. See "Ending a binding". |
+
+Checking a claim:
+
+| Rex answer | Result |
+|---|---|
+| The block's foreground pid is one of the hook's `pids` | Stored as verified, with that foreground pid |
+| The block has no foreground, or its foreground is not among `pids` | Dropped. The hook's `REX_BLOCK` is stale, for example an agent run by a daemon. The session stays unattributed. |
+| Rex fails, times out (2 s), or the claim has no `pids` | Stored as unverified, with no foreground pid |
+
+A nested agent, such as `claude -p` run by an agent's shell tool, passes the check: the outer agent is the foreground and an ancestor. Its tokens belong to that block, so this is correct.
+
+Ending a binding:
+
+| Trigger | Bindings ended |
+|---|---|
+| A new claim in the block | Open bindings for other sessions in the block, unless both have the same known foreground pid. Same foreground means a nested agent, and both stay open. |
+| A new claim with `source` `clear` | Also open bindings for the same provider and foreground pid in the block, because `/clear` replaces the session in the same process |
+| A claim for the same session in another block | That session's open binding elsewhere (a resume moved it) |
+| `block_closed` | Every open binding in the block |
+| `session_destroyed` | Every open binding in the Rex session |
+| `terminal.process_changed` | With no foreground: every open binding in the block. Otherwise, open bindings whose known foreground pid is neither the new foreground nor one of its `ancestors`. An editor the agent opens (Claude's Ctrl-G) has the agent as an ancestor, so the binding stays. |
+| Start, and each reconnect of the events stream | `smithersd` calls `process` for each block with an open binding. A block Rex reports as not found, or one with no foreground, ends its bindings, so events missed while `smithersd` was down still count. A different foreground is left alone, because `process` gives no ancestors; the next claim in that block ends it. |
+
+If Rex is missing, `smithersd` logs it once and keeps unverified claims. The events stream restarts after 1 s, doubling to at most 30 s.
 
 Codex runs a hook only after someone approves it with `/hooks` in that Codex home.
 A session with no binding counts as "unattributed" for its account. Burns never drops its tokens.
@@ -361,7 +385,7 @@ Phase 2 serves the read routes on the tailnet and checks the caller's Tailscale 
 | `POST /v1/logs` | Claude Code OTLP exporter | Stores `api_request` and `compaction` events. A malformed body answers 200, so the exporter does not retry. Limit 4 MiB. |
 | `POST /v1/metrics` | Claude Code OTLP exporter | Accepted and dropped |
 | `POST /statusline` | `smithers statusline` | Stores Claude windows for the account that owns `transcript_path`. Limit 8 KiB. |
-| `POST /bind` | `smithers hook session-start` | Stores a binding: `provider`, `session`, `rex_block` (required), `rex_session`, `source` |
+| `POST /bind` | `smithers hook session-start` | Checks and stores a binding: `provider`, `session`, `rex_block` (required), `rex_session`, `source`, `pids` |
 | `GET /usage` | Apps | Every configured account in settings order, with its limits. A window whose reset passed shows `percent: null` and `state: "unknown"`. |
 | `GET /usage/history` | Apps | One-minute token buckets per account for the last 20 minutes |
 | `GET /usage/sessions?since=24h` | Apps | Totals per agent session, and per block and session |
@@ -390,6 +414,7 @@ Both run beside Penfold's forwarder and hooks. Adding them does not wait for the
 | Database | `~/.local/state/burns/smithers.db`, mode 0600. A fresh database backfills the last 7 days of transcripts and rollouts in a few seconds. |
 | Log | `~/Library/Logs/burns/smithersd.log` |
 | Agent | `RunAtLoad` and `KeepAlive`, `ProcessType` `Background`, restart throttled to 10 s |
+| Rex | The install passes `--rex` with the path of `rex` on its own PATH, because launchd's PATH lacks it. Without it, claims stay unverified and bindings stay open. |
 
 The install does not touch agent configuration. Register the agent side in each home yourself:
 
@@ -414,7 +439,7 @@ On Linux the install copies the binaries and prints how to run `smithersd`. A sy
 ## Phases
 
 1. `smithersd` collects Claude and Codex usage on one host, and the rules pass their tests. Built 2026-10-28; see "Phase 1 verification".
-   1b. `smithersd` checks each hook binding against Rex's block `process` method and ends bindings from `rex events`.
+   1b. `smithersd` checks each hook binding against Rex's block `process` method and ends bindings from `rex events`. Built 2026-10-28; see "Phase 1 verification".
 2. The Mac menu bar app merges every host and shows usage.
 3. The trigger modal, settings, and launch through Rex.
 4. The New Agent Session Rex action.
@@ -457,6 +482,11 @@ Checked on Stiletto on 2026-10-28 with `make check` green and `smithersd` readin
 | Claude live: `claude -p` with OTel to `smithersd`, then `/compact` | Cost matched the CLI to the micro-dollar. The compaction counted once, its request was flagged, and the session landed on the pane's Rex block. |
 | `smithersd` down for one turn | After restart the transcript added the missing request once. Its cost reads unknown. |
 | `smithers statusline` and `smithers hook session-start` | Windows stored, wrapped command output passed through, binding stored. The hook printed nothing. |
+| 1b: nested `claude -p` in an agent's pane | Verified, with the outer agent as foreground. The outer binding stayed open. |
+| 1b: hook with another pane's `REX_BLOCK` | Dropped: that pane's foreground was not among the hook's ancestors. |
+| 1b: a pane that closes | Its binding ended when the pane closed, from the events stream. |
+| 1b: a pane that closes while `smithersd` is down | The binding ended at restart, from the reconcile. |
+| 1b: block lookup scope | Inside a pane, `REX_SESSION` limits `rex block call` to that session. `smithersd` removes `REX_SESSION` and `REX_BLOCK` before calling `rex`. |
 
 ## Open questions
 

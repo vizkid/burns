@@ -25,6 +25,8 @@ if [ "$(uname -s)" != Darwin ]; then
 	exit 0
 fi
 
+# launchd's PATH lacks rex; an empty --rex leaves bindings unchecked.
+rex=$(command -v rex || true)
 logs="$HOME/Library/Logs/burns"
 plist="$HOME/Library/LaunchAgents/$label.plist"
 mkdir -p "$logs" "$(dirname "$plist")"
@@ -40,6 +42,8 @@ cat >"$plist" <<EOF
 		<string>$bin/smithersd</string>
 		<string>--config</string>
 		<string>$config</string>
+		<string>--rex</string>
+		<string>$rex</string>
 	</array>
 	<key>RunAtLoad</key>
 	<true/>

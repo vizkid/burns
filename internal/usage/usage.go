@@ -75,6 +75,8 @@ type Binding struct {
 	Provider   string     `json:"provider"`
 	Session    string     `json:"session"`
 	Source     string     `json:"source"`
+	Verified   bool       `json:"verified"` // Rex confirmed the block's foreground is the hook's ancestor
+	FgPid      int        `json:"fg_pid,omitempty"`
 	Start      time.Time  `json:"start"`
 	End        *time.Time `json:"end"`
 }

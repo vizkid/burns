@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -31,6 +32,8 @@ func env(m map[string]string) func(string) string { return func(k string) string
 
 func TestHookPostsBindingAndPrintsNothing(t *testing.T) {
 	ts, got := sink(t)
+	ancestors = func() []int { return []int{30, 20, 10} }
+	t.Cleanup(func() { ancestors = processAncestors })
 	var out, errOut bytes.Buffer
 	in := strings.NewReader(`{"session_id":"s1","source":"resume","transcript_path":"/x"}`)
 	code := run([]string{"hook", "session-start", "--provider", "claude", "--url", ts.URL}, in, &out, &errOut,
@@ -39,11 +42,31 @@ func TestHookPostsBindingAndPrintsNothing(t *testing.T) {
 		t.Fatalf("exit %d, stdout %q; want 0 and nothing (Claude adds hook stdout to the conversation)", code, out.String())
 	}
 	c := <-got
-	var b map[string]string
+	var b struct {
+		Provider, Session, Source string
+		RexBlock                  string `json:"rex_block"`
+		RexSession                string `json:"rex_session"`
+		Pids                      []int
+	}
 	json.Unmarshal(c.body, &b)
-	if c.path != "/bind" || b["session"] != "s1" || b["rex_block"] != "block:b1" || b["rex_session"] != "session:r1" ||
-		b["provider"] != "claude" || b["source"] != "resume" {
+	if c.path != "/bind" || b.Session != "s1" || b.RexBlock != "block:b1" || b.RexSession != "session:r1" ||
+		b.Provider != "claude" || b.Source != "resume" || !reflect.DeepEqual(b.Pids, []int{30, 20, 10}) {
 		t.Fatalf("posted %s %s", c.path, c.body)
+	}
+}
+
+// The hook's ancestors, parent first, let smithersd check the claim with Rex.
+func TestAncestorChain(t *testing.T) {
+	ps := []byte(" 50  30\n 30  20\n  20 10\n10 1\n1 0\n99 50\n")
+	if got := chain(ps, 50); !reflect.DeepEqual(got, []int{30, 20, 10}) {
+		t.Fatalf("chain = %v; want [30 20 10]", got)
+	}
+	loop := []byte("5 6\n6 5\n")
+	if got := chain(loop, 5); len(got) > maxAncestors {
+		t.Fatalf("chain = %v; a cycle must stop", got)
+	}
+	if got := chain([]byte("garbage"), 5); len(got) != 0 {
+		t.Fatalf("chain = %v; want none", got)
 	}
 }
 

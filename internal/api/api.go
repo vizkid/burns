@@ -29,6 +29,7 @@ type Server struct {
 	Config config.Config
 	Host   string
 	Now    func() time.Time
+	Rex    Rex // nil keeps every claim unverified
 }
 
 // Handler returns the route table.

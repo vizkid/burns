@@ -83,8 +83,8 @@ func sessionStart(args []string, in io.Reader, errOut io.Writer, getenv func(str
 	if json.Unmarshal(raw, &hook) != nil || hook.SessionID == "" {
 		return 0
 	}
-	body, _ := json.Marshal(map[string]string{"provider": *provider, "session": hook.SessionID,
-		"source": hook.Source, "rex_block": block, "rex_session": getenv("REX_SESSION")})
+	body, _ := json.Marshal(map[string]any{"provider": *provider, "session": hook.SessionID,
+		"source": hook.Source, "rex_block": block, "rex_session": getenv("REX_SESSION"), "pids": ancestors()})
 	post(*url+"/bind", body, hookTimeout)
 	return 0
 }

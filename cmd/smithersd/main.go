@@ -11,6 +11,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"os/exec"
 	"os/signal"
 	"path/filepath"
 	"strings"
@@ -18,8 +19,10 @@ import (
 	"time"
 
 	"github.com/vizkid/burns/internal/api"
+	"github.com/vizkid/burns/internal/bindings"
 	"github.com/vizkid/burns/internal/collect"
 	"github.com/vizkid/burns/internal/config"
+	"github.com/vizkid/burns/internal/rex"
 	"github.com/vizkid/burns/internal/store"
 	"github.com/vizkid/burns/internal/usage"
 )
@@ -39,6 +42,7 @@ func run() error {
 	cfgPath := flag.String("config", filepath.Join(home, ".config", "burns", "accounts.json"), "accounts file")
 	dbPath := flag.String("db", filepath.Join(stateDir(home), "smithers.db"), "SQLite store")
 	host := flag.String("host", shortHostname(), "host name reported to readers")
+	rexPath := flag.String("rex", lookRex(), "rex CLI that checks and ends bindings; empty disables")
 	showVersion := flag.Bool("version", false, "print the version and exit")
 	flag.Parse()
 	if *showVersion {
@@ -66,9 +70,18 @@ func run() error {
 	}
 	go loop(ctx, &collect.Collector{Store: st, Config: cfg, Now: time.Now}, st)
 
+	server := &api.Server{Store: st, Config: cfg, Host: *host, Now: time.Now}
+	if *rexPath != "" {
+		cli := rex.CLI{Path: *rexPath}
+		server.Rex = cli
+		go (&bindings.Tracker{Store: st, Rex: cli, Host: *host, Now: time.Now}).Run(ctx, *rexPath)
+		log.Printf("checking bindings with %s", *rexPath)
+	} else {
+		log.Printf("WARN rex not found: bindings stay unverified and open")
+	}
 	srv := &http.Server{
 		Addr:              *addr,
-		Handler:           (&api.Server{Store: st, Config: cfg, Host: *host, Now: time.Now}).Handler(),
+		Handler:           server.Handler(),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       30 * time.Second,
 		WriteTimeout:      30 * time.Second,
@@ -119,6 +132,12 @@ func stateDir(home string) string {
 		return filepath.Join(d, "burns")
 	}
 	return filepath.Join(home, ".local", "state", "burns")
+}
+
+// lookRex finds rex on PATH. launchd's PATH lacks it, so the install passes --rex.
+func lookRex() string {
+	p, _ := exec.LookPath("rex")
+	return p
 }
 
 func shortHostname() string {

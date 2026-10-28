@@ -47,6 +47,10 @@ CREATE TABLE cursor (
 	mod_time INTEGER NOT NULL, head_hash TEXT NOT NULL, tail_hash TEXT NOT NULL, state TEXT NOT NULL);
 `, `
 CREATE INDEX compaction_request ON compaction (provider, request_key) WHERE request_key != '';
+`, `
+ALTER TABLE binding ADD COLUMN verified INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE binding ADD COLUMN fg_pid INTEGER;
+CREATE INDEX binding_open ON binding (host, block) WHERE "end" IS NULL;
 `}
 
 // Open opens or creates the store and applies migrations.

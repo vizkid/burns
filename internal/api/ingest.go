@@ -1,7 +1,6 @@
 package api
 
 import (
-	"encoding/json"
 	"log"
 	"net/http"
 
@@ -66,35 +65,6 @@ func (s *Server) statusline(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := s.Store.ApplyReports(acct.Name, claudeLimit, []quota.Report{{Provider: usage.Claude, At: now, Windows: st.Windows}}, now); err != nil {
 		fail(w, "store statusline", err)
-		return
-	}
-	w.WriteHeader(http.StatusAccepted)
-}
-
-type bindRequest struct {
-	Provider   string `json:"provider"`
-	Session    string `json:"session"`
-	RexSession string `json:"rex_session"`
-	RexBlock   string `json:"rex_block"`
-	Source     string `json:"source"`
-}
-
-// bind records a SessionStart hook's claim that a session runs in a Rex block.
-func (s *Server) bind(w http.ResponseWriter, r *http.Request) {
-	body, ok := readBody(w, r, MaxBind)
-	if !ok {
-		return
-	}
-	var b bindRequest
-	if json.Unmarshal(body, &b) != nil || (b.Provider != usage.Claude && b.Provider != usage.Codex) ||
-		b.Session == "" || b.RexBlock == "" {
-		http.Error(w, "provider, session, and rex_block are required", http.StatusBadRequest)
-		return
-	}
-	err := s.Store.Bind(usage.Binding{Host: s.Host, Block: b.RexBlock, RexSession: b.RexSession,
-		Provider: b.Provider, Session: b.Session, Source: usage.SourceHook + ":" + b.Source, Start: s.Now()})
-	if err != nil {
-		fail(w, "store binding", err)
 		return
 	}
 	w.WriteHeader(http.StatusAccepted)
