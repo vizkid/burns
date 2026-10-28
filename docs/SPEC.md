@@ -41,7 +41,9 @@ The Python preview in `burns.py` is superseded.
 
 Burns takes over usage from Penfold (Viz, 2026-10-27). Penfold's usage code retires after Burns ships.
 The switch is a single cutover, not a period of running both (Viz, 2026-10-27).
-At cutover, the Claude telemetry endpoint and the statusline forwarder move from Penfold to `smithersd`.
+Only the Claude telemetry endpoint needs the cutover: Claude sends OTLP to one endpoint.
+The statusline forwarder and the SessionStart hook are additive. Claude runs every configured hook, and the statusline script already fans its input out, so `smithers` runs beside Penfold before the cutover.
+On 2026-10-28 Viz's statusline script gained the `smithers statusline` forwarder, guarded so that hosts without `smithers` skip it.
 `smithersd` does not forward data to Penfold.
 Burns must not require Penfold.
 
@@ -353,7 +355,7 @@ Agents call `smithers`. It never fails or slows the agent.
 | `smithers statusline [-- COMMAND ARGS]` | Posts stdin to `smithersd` with a 100 ms timeout, runs the wrapped statusline command with the same stdin, and prints its output |
 | `smithers hook session-start --provider claude\|codex` | Posts the hook's `session_id` and `source` with `REX_BLOCK` and `REX_SESSION`. Does nothing outside Rex. Prints nothing and exits 0, because Claude adds SessionStart output to the conversation. |
 
-Installing these into the agent homes is part of the cutover, not phase 1.
+Both run beside Penfold's forwarder and hooks. Adding them does not wait for the cutover.
 
 ### Rex action findings (tested 2026-10-27)
 
