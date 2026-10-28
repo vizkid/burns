@@ -26,7 +26,7 @@ When every quota is exhausted, it launches Azure.
 
 There is no `burnsd`. Viz decided this on 2026-10-27: the Mac app is the hub when it runs.
 
-Burns is written in Go (`smithersd`) and Swift (both apps), matching Ping, Cop, and Penfold.
+Burns is written in Go (`smithersd`) and Swift (both apps), matching Roar, Cop, and Penfold.
 The Python preview in `burns.py` is superseded.
 
 ## Boundaries
@@ -34,7 +34,7 @@ The Python preview in `burns.py` is superseded.
 | Owner | Owns |
 |---|---|
 | Rex | Hosts, sessions, tabs, panes, and terminal transport |
-| Ping | Message delivery |
+| Roar | Message delivery |
 | Cop | Credentials |
 | Dotfiles | Agent launch configuration, through the launcher functions |
 | Burns | Usage visibility, launch choice, and launch request |
@@ -52,6 +52,18 @@ Burns must not require Penfold.
 An account is a provider plus an account name, such as Claude `viz` or Codex `azure`.
 Azure exists only for Codex. Local configuration declares the accounts, their agent homes, and their launchers.
 Shared source uses example names only.
+
+`smithersd` reads `~/.config/burns/accounts.json`. The example is `docs/accounts.example.json`.
+
+| Field | Meaning |
+|---|---|
+| `provider` | `claude` or `codex` |
+| `name` | Lowercase letters, digits, and hyphens |
+| `home` | Agent home, absolute or relative to the user's home, such as `.codex-work` |
+| `kind` | `subscription`, or `azure` (Codex only) |
+
+Unknown fields are errors. File order is the settings order used for ties.
+A statusline post or file belongs to the account whose home contains its path, matched as a whole path component.
 
 ### Readings
 
@@ -149,12 +161,15 @@ Rules:
 1. Insert each record keyed by `(thread_id, response_id)`. Skip a key already stored. Re-reading a file then changes nothing.
 2. Sum `usage` by `turn_id` for a turn and by `session_id` for a session.
 3. Rollouts older than 0.153.4 have no records. Use the growth of the `token_count` total. On a decrease, take `last_token_usage` and start over.
+   `session_meta.cli_version` decides: a rollout from 0.153.4 or later never falls back, even before its first record.
 4. Skip a malformed line. Never set a counter to zero.
 
-Find active rollouts every 5 seconds by modification time across the whole `sessions` tree. A resumed session appends to its file in the old date folder.
-Check active files' sizes every second. Read only complete lines from the stored offset.
-Store path, inode, offset, and a hash of the last bytes read. If any of them stops matching, re-read from 0.
+Every 2 seconds `smithersd` walks each Codex `sessions` tree and each Claude `projects` tree. A resumed session appends to its file in the old date folder.
+It skips a file whose size, modification time, and inode match its cursor, and a file untouched for 7 days.
+It reads only complete lines from the stored offset, at most 32 MiB per read, and skips a line longer than 4 MiB.
+It stores path, inode, offset, a hash of the first 256 bytes, a hash of the 256 bytes before the offset, and the decoder state. If a hash or the inode stops matching, or the file shrinks, it re-reads from 0.
 Do not use `fsnotify`: on macOS it is not recursive.
+On 2026-10-28 the first scan of Stiletto's homes read 192 recent files in under a minute. Steady state used 23 MB of memory and 0.1 percent CPU.
 
 #### Compactions
 
@@ -166,7 +181,7 @@ Both CLIs record compactions in local data, so no extra source is needed.
 | Live event | OTel `compaction` event: `session.id`, `prompt.id`, `trigger` (`auto` or `manual`), `success`, `duration_ms`, `pre_tokens`, `post_tokens` | Rollout `compacted` line |
 | Compaction tokens | The `api_request` event with `query_source=compact` | The `token_usage_record` whose `response_id` equals the `compacted` line's `compaction_response_id` |
 | Backfill | Transcript `system` line with `subtype=compact_boundary`: `compactMetadata.trigger`, `preTokens`, `postTokens`, `durationMs`. No tokens for the request itself. | Same rollout file |
-| Dedupe key | Session and `event.timestamp`; transcript boundary by its `uuid` | `compaction_response_id` |
+| Dedupe key | None shared. The OTel event and the transcript boundary of one compaction match when they are in one session and within 5 seconds. The OTel copy wins. | `compaction_response_id` |
 | Trigger | `auto` or `manual` | Not recorded. Burns shows "unknown". |
 | Context before and after | `pre_tokens` and `post_tokens` | Not recorded. The compaction request's `input_tokens` is the context sent to compaction. |
 
@@ -174,6 +189,8 @@ Evidence on 2026-10-28:
 - A manual `/compact` on a small Haiku session produced one `compaction` event and one `query_source=compact` request in OTel. The transcript had the boundary but not the request.
 - 150 recent Claude transcripts held 78 `compact_boundary` lines, all `auto`.
 - Codex rollouts with a `compacted` line: 126 in personal, 109 in azure, 467 lines in nonfx.
+
+The two Claude sources can disagree on context size. One test compaction reported `pre_tokens` 35,988 in OTel and `preTokens` 66,481 in the transcript.
 
 A compaction belongs to the turn it ran in. Its tokens count toward that turn, its session, its block, and its account like any other request.
 Burns shows the compaction count and the compaction share of tokens for each session.
@@ -225,15 +242,17 @@ Each `smithersd` keeps one SQLite file in WAL mode, using `modernc.org/sqlite` (
 
 | Table | Holds | Kept for |
 |---|---|---|
-| `latest` | Newest reading per account, `limit_id`, and window, with observation time | Until replaced |
+| `latest` | Newest reading per account, `limit_id`, and window, with observation time. Claude windows use `limit_id` `claude`. | Until replaced |
+| `credits` | Newest Codex credits reading per account and `limit_id` | Until replaced |
 | `request` | One row per Claude request or Codex response: dedupe key, account, agent session, turn, subagent, compaction flag, tokens, cost | 7 days |
 | `compaction` | One row per compaction: account, agent session, turn, trigger, context before and after, duration, request key | 7 days |
 | `binding` | Host, block, provider, agent session, start, end | 7 days after end |
-| `minute` | Token buckets per account | 20 minutes |
-| `hour` | Token rollups per account | 7 days |
-| `cursor` | Rollout path, inode, offset, tail hash | While the file exists |
+| `cursor` | File path, inode, offset, size, head and tail hashes, decoder state | While the file exists |
 
-Per-session, per-turn, and per-block views are queries over `request` joined to `binding`.
+Per-session, per-turn, per-block, and per-minute views are queries over `request` joined to `binding`.
+The planned `minute` and `hour` tables were dropped during phase 1: a week of requests is about 50,000 rows, and indexed queries over them are fast enough.
+The file is created owner-only (mode 600) at `$XDG_STATE_HOME/burns/smithers.db`, or `~/.local/state/burns/smithers.db`.
+A Codex report older than a stored window never clears that window, so backfill can replay files in any order.
 
 No OpenTelemetry Collector and no Prometheus. They are too large for about 10 accounts.
 
@@ -309,15 +328,32 @@ Model catalogs port from Penfold's `internal/models` with their tests.
 
 ## Wire protocol
 
-`smithersd` serves HTTP on the tailnet.
+`smithersd` listens on `127.0.0.1:9766`. Penfold keeps `9765` until the cutover moves the Claude telemetry endpoint.
+Phase 2 serves the read routes on the tailnet and checks the caller's Tailscale identity.
 
-| Route | Answer |
+| Route | Caller | Answer |
+|---|---|---|
+| `POST /v1/logs` | Claude Code OTLP exporter | Stores `api_request` and `compaction` events. A malformed body answers 200, so the exporter does not retry. Limit 4 MiB. |
+| `POST /v1/metrics` | Claude Code OTLP exporter | Accepted and dropped |
+| `POST /statusline` | `smithers statusline` | Stores Claude windows for the account that owns `transcript_path`. Limit 8 KiB. |
+| `POST /bind` | `smithers hook session-start` | Stores a binding: `provider`, `session`, `rex_block` (required), `rex_session`, `source` |
+| `GET /usage` | Apps | Every configured account in settings order, with its limits. A window whose reset passed shows `percent: null` and `state: "unknown"`. |
+| `GET /usage/history` | Apps | One-minute token buckets per account for the last 20 minutes |
+| `GET /usage/sessions?since=24h` | Apps | Totals per agent session, and per block and session |
+| `GET /usage/sessions?provider=&session=` | Apps | Totals per turn of one session |
+
+Totals carry `cost_micros` for requests with a known cost, `null` when none has one, and `unknown_cost` for the count without one.
+
+### The `smithers` helper
+
+Agents call `smithers`. It never fails or slows the agent.
+
+| Command | Job |
 |---|---|
-| `GET /usage` | Latest readings per account, with observation times |
-| `GET /usage/history` | 20 one-minute burn buckets per account |
-| `GET /usage/sessions` | Tokens and compactions per agent session, turn, and Rex block |
+| `smithers statusline [-- COMMAND ARGS]` | Posts stdin to `smithersd` with a 100 ms timeout, runs the wrapped statusline command with the same stdin, and prints its output |
+| `smithers hook session-start --provider claude\|codex` | Posts the hook's `session_id` and `source` with `REX_BLOCK` and `REX_SESSION`. Does nothing outside Rex. Prints nothing and exits 0, because Claude adds SessionStart output to the conversation. |
 
-`smithersd` checks the caller's Tailscale identity. It accepts readings only from local statusline posts and local files.
+Installing these into the agent homes is part of the cutover, not phase 1.
 
 ### Rex action findings (tested 2026-10-27)
 
@@ -331,12 +367,24 @@ Model catalogs port from Penfold's `internal/models` with their tests.
 
 ## Phases
 
-1. `smithersd` collects Claude and Codex usage on one host, and the rules pass their tests.
+1. `smithersd` collects Claude and Codex usage on one host, and the rules pass their tests. Built 2026-10-28; see "Phase 1 verification".
+   1b. `smithersd` checks each hook binding against Rex's block `process` method and ends bindings from `rex events`.
 2. The Mac menu bar app merges every host and shows usage.
 3. The trigger modal, settings, and launch through Rex.
 4. The New Agent Session Rex action.
 5. Burns for iOS shows usage.
 6. Penfold's usage code retires.
+
+## Phase 1 verification
+
+Checked on Stiletto on 2026-10-28 with `make check` green and `smithersd` reading the real agent homes.
+
+| Check | Result |
+|---|---|
+| Codex totals against an independent count of the same rollouts | Exact match for 3 rollouts: requests, tokens, compactions. One had 4,053 requests and 30 compactions. |
+| Claude live: `claude -p` with OTel to `smithersd`, then `/compact` | Cost matched the CLI to the micro-dollar. The compaction counted once, its request was flagged, and the session landed on the pane's Rex block. |
+| `smithersd` down for one turn | After restart the transcript added the missing request once. Its cost reads unknown. |
+| `smithers statusline` and `smithers hook session-start` | Windows stored, wrapped command output passed through, binding stored. The hook printed nothing. |
 
 ## Open questions
 

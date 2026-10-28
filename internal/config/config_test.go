@@ -1,0 +1,75 @@
+package config
+
+import (
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+)
+
+func load(t *testing.T, body string) (Config, error) {
+	t.Helper()
+	p := filepath.Join(t.TempDir(), "accounts.json")
+	if err := os.WriteFile(p, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return Load(p, "/home/u")
+}
+
+const good = `{"accounts":[
+ {"provider":"claude","name":"personal","home":".claude-personal","kind":"subscription"},
+ {"provider":"codex","name":"work","home":"/srv/codex-work","kind":"subscription"},
+ {"provider":"codex","name":"azure","home":".codex-azure","kind":"azure"}]}`
+
+func TestLoadAndLookup(t *testing.T) {
+	c, err := load(t, good)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(c.Accounts) != 3 || c.Accounts[1].Name != "work" {
+		t.Fatalf("accounts = %+v", c.Accounts)
+	}
+	if got := c.HomeDir(c.Accounts[0]); got != "/home/u/.claude-personal" {
+		t.Fatalf("home = %q", got)
+	}
+	a, ok := c.ForPath("/home/u/.claude-personal/projects/p/s.jsonl")
+	if !ok || a.Name != "personal" {
+		t.Fatalf("ForPath = %+v, %v", a, ok)
+	}
+	if _, ok := c.ForPath("/home/u/.claude-personal2/projects/p/s.jsonl"); ok {
+		t.Fatal("a home must match as a whole path component")
+	}
+	if a, ok := c.ForPath("/srv/codex-work/sessions/r.jsonl"); !ok || a.Name != "work" {
+		t.Fatalf("absolute home = %+v, %v", a, ok)
+	}
+	if a, ok := c.Find("codex", "azure"); !ok || a.Kind != Azure {
+		t.Fatalf("Find = %+v, %v", a, ok)
+	}
+}
+
+func TestLoadRejectsBadFiles(t *testing.T) {
+	for name, body := range map[string]string{
+		"unknown field": `{"accounts":[],"extra":1}`,
+		"bad provider":  `{"accounts":[{"provider":"gemini","name":"a","home":".g","kind":"subscription"}]}`,
+		"bad kind":      `{"accounts":[{"provider":"claude","name":"a","home":".c","kind":"free"}]}`,
+		"azure claude":  `{"accounts":[{"provider":"claude","name":"a","home":".c","kind":"azure"}]}`,
+		"duplicate":     `{"accounts":[{"provider":"claude","name":"a","home":".c","kind":"subscription"},{"provider":"claude","name":"a","home":".d","kind":"subscription"}]}`,
+		"bad name":      `{"accounts":[{"provider":"claude","name":"A b","home":".c","kind":"subscription"}]}`,
+		"empty home":    `{"accounts":[{"provider":"claude","name":"a","home":"","kind":"subscription"}]}`,
+		"two documents": `{"accounts":[]}{"accounts":[]}`,
+	} {
+		if _, err := load(t, body); err == nil {
+			t.Errorf("%s: want error", name)
+		} else if strings.TrimSpace(err.Error()) == "" {
+			t.Errorf("%s: empty error", name)
+		}
+	}
+}
+
+// The documented example must stay loadable.
+func TestExampleLoads(t *testing.T) {
+	c, err := Load(filepath.Join("..", "..", "docs", "accounts.example.json"), "/home/u")
+	if err != nil || len(c.Accounts) == 0 {
+		t.Fatalf("example: %v", err)
+	}
+}

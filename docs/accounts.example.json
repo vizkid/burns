@@ -1,0 +1,9 @@
+{
+  "accounts": [
+    {"provider": "claude", "name": "personal", "home": ".claude-personal", "kind": "subscription"},
+    {"provider": "claude", "name": "work", "home": ".claude-work", "kind": "subscription"},
+    {"provider": "codex", "name": "personal", "home": ".codex-personal", "kind": "subscription"},
+    {"provider": "codex", "name": "work", "home": ".codex-work", "kind": "subscription"},
+    {"provider": "codex", "name": "azure", "home": ".codex-azure", "kind": "azure"}
+  ]
+}
