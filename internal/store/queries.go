@@ -45,7 +45,7 @@ func (s *Store) Blocks(since time.Time) ([]Group, error) {
 func fmtSums(extra string) string { return strings.Replace(sums, "%s", extra, 1) }
 
 func (s *Store) groups(q string, args ...any) ([]Group, error) {
-	rows, err := s.db.Query(q, args...)
+	rows, err := s.rdb.Query(q, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -68,7 +68,7 @@ func (s *Store) groups(q string, args ...any) ([]Group, error) {
 // History returns per-account minute buckets in [from, to), oldest first.
 func (s *Store) History(from, to time.Time) ([]Bucket, error) {
 	minute := int64(time.Minute)
-	rows, err := s.db.Query(`SELECT provider, account, at / ? AS m, sum(input + cached_input + cache_write + output)
+	rows, err := s.rdb.Query(`SELECT provider, account, at / ? AS m, sum(input + cached_input + cache_write + output)
 		FROM request WHERE at >= ? AND at < ? GROUP BY provider, account, m ORDER BY m, provider, account`,
 		minute, nanos(from), nanos(to))
 	if err != nil {

@@ -119,9 +119,11 @@ func inode(info fs.FileInfo) uint64 {
 // Changed reports whether the file may hold bytes the cursor has not read.
 func Changed(c Cursor) bool {
 	info, err := os.Stat(c.Path)
-	if err != nil {
-		return false
-	}
+	return err == nil && ChangedInfo(c, info)
+}
+
+// ChangedInfo is Changed for a stat the caller already has.
+func ChangedInfo(c Cursor, info fs.FileInfo) bool {
 	return inode(info) != c.Inode || info.Size() != c.Size || !info.ModTime().Equal(c.ModTime)
 }
 

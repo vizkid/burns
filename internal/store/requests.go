@@ -3,6 +3,7 @@ package store
 import (
 	"database/sql"
 	"errors"
+	"time"
 
 	"github.com/vizkid/burns/internal/usage"
 )
@@ -30,6 +31,9 @@ func (s *Store) AddRequests(rs []usage.Request) error {
 		}
 		if err := flagged(tx, &r); err != nil {
 			return err
+		}
+		if found && sameRequest(old, r) {
+			continue
 		}
 		if _, err := tx.Exec(`INSERT OR REPLACE INTO request (`+requestCols+`) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 			r.Provider, r.Key, r.Account, r.Session, r.Agent, r.Turn, r.Model, r.Input, r.CachedInput, r.CacheWrite,
@@ -64,13 +68,26 @@ func mergeRequest(old, next usage.Request) usage.Request {
 	return keep
 }
 
+func sameRequest(a, b usage.Request) bool {
+	ac, bc := a.CostMicros, b.CostMicros
+	a.CostMicros, b.CostMicros = nil, nil
+	if (ac == nil) != (bc == nil) || (ac != nil && *ac != *bc) || !a.At.Equal(b.At) {
+		return false
+	}
+	a.At, b.At = time.Time{}, time.Time{}
+	return a == b
+}
+
+// flagQuery finds a stored compaction that names a request.
+const flagQuery = `SELECT count(*) FROM compaction WHERE provider = ? AND request_key = ? AND request_key != ''`
+
 // flagged marks a request as compaction work when a stored compaction names it.
 func flagged(tx *sql.Tx, r *usage.Request) error {
 	if r.Compaction {
 		return nil
 	}
 	var n int
-	err := tx.QueryRow(`SELECT count(*) FROM compaction WHERE provider = ? AND request_key = ?`, r.Provider, r.Key).Scan(&n)
+	err := tx.QueryRow(flagQuery, r.Provider, r.Key).Scan(&n)
 	r.Compaction = n > 0
 	return err
 }

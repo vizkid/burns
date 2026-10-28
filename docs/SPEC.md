@@ -180,12 +180,16 @@ Rules:
    `session_meta.cli_version` decides: a rollout from 0.153.4 or later never falls back, even before its first record.
 4. Skip a malformed line. Never set a counter to zero.
 
-Every 2 seconds `smithersd` walks each Codex `sessions` tree and each Claude `projects` tree. A resumed session appends to its file in the old date folder.
-It skips a file whose size, modification time, and inode match its cursor, and a file untouched for 7 days.
+`smithersd` walks each Codex `sessions` tree and each Claude `projects` tree every 2 seconds while files are changing, and every 30 seconds after 2 minutes without a change. A resumed session appends to its file in the old date folder.
+It keeps every cursor in memory, so an unchanged file costs one `stat` and no database read. It skips a file untouched for 7 days.
+Decoding an old file still advances decoder state, but rows older than 7 days are not stored.
+Before decoding, it skips lines that carry none of the types it reads. Most rollout and transcript bytes are message content.
 It reads only complete lines from the stored offset, at most 32 MiB per read, and skips a line longer than 4 MiB.
 It stores path, inode, offset, a hash of the first 256 bytes, a hash of the 256 bytes before the offset, and the decoder state. If a hash or the inode stops matching, or the file shrinks, it re-reads from 0.
 Do not use `fsnotify`: on macOS it is not recursive.
-On 2026-10-28 the first scan of Stiletto's homes read 192 recent files in under a minute. Steady state used 23 MB of memory and 0.1 percent CPU.
+On 2026-10-28, after the performance fixes, a fresh store backfilled Stiletto's homes in about 5 seconds: 41,944 rows, 104 MB peak memory, then 0.1 percent CPU at idle.
+
+File watching (`fsnotify`) was considered and deferred. On macOS it uses kqueue, which opens a descriptor for every watched file, and missed events still need a reconciling scan. The adaptive scan already removes most idle wakeups. Measure wakeups and energy before replacing it.
 
 #### Compactions
 
@@ -266,6 +270,11 @@ Each `smithersd` keeps one SQLite file in WAL mode, using `modernc.org/sqlite` (
 | `cursor` | File path, inode, offset, size, head and tail hashes, decoder state | While the file exists |
 
 Per-session, per-turn, per-block, and per-minute views are queries over `request` joined to `binding`.
+
+One connection writes. A pool of 4 read-only connections serves queries, so WAL lets reads run during a write.
+Writes are skipped when nothing changed: a repeated request or compaction, and a batch of quota reports that folds to the stored windows. A batch of reports for one limit is folded in memory and written once.
+Compaction lookups by `request_key` and by `key` use exact indexes, checked by a query-plan test.
+`smithersd` sweeps at startup and then hourly. `since` on read routes is clamped to 7 days.
 The planned `minute` and `hour` tables were dropped during phase 1: a week of requests is about 50,000 rows, and indexed queries over them are fast enough.
 The file is created owner-only (mode 600) at `$XDG_STATE_HOME/burns/smithers.db`, or `~/.local/state/burns/smithers.db`.
 A Codex report older than a stored window never clears that window, so backfill can replay files in any order.
@@ -362,7 +371,7 @@ Totals carry `cost_micros` for requests with a known cost, `null` when none has 
 
 ### The `smithers` helper
 
-Agents call `smithers`. It never fails or slows the agent.
+Agents call `smithers`. It never fails the agent. It waits at most 100 ms (statusline) or 500 ms (hook) for `smithersd`, so install it in the background: the statusline script runs it with `&`, and hooks are registered with `async: true`.
 
 | Command | Job |
 |---|---|
@@ -390,6 +399,32 @@ Both run beside Penfold's forwarder and hooks. Adding them does not wait for the
 4. The New Agent Session Rex action.
 5. Burns for iOS shows usage.
 6. Penfold's usage code retires.
+
+## Performance review (2026-10-28)
+
+A Codex peer review of phase 1 found eight issues. Fixed the same day, with tests:
+
+| Finding | Fix |
+|---|---|
+| Compaction lookups scanned a provider's rows | `compaction_request` index; keyed lookup repeats the partial index condition |
+| Backfill rewrote quota on every historical report | Reports fold in memory per batch; unchanged results and unchanged requests are not written |
+| One connection served reads and writes | Read-only pool of 4 connections |
+| Old events in resumed files entered the store | Rows older than retention are not stored; sweep at startup |
+| Every scan read each file's cursor from SQLite | Cursors cached in memory; one `stat` per file |
+| Irrelevant lines were fully decoded | Byte markers skip lines before JSON decoding |
+| Large `since` values widened queries | Clamped to retention |
+
+Open: the hook and statusline helper wait up to 500 ms and 100 ms, so they must run in the background (see "The `smithers` helper"). Bindings that never close are bounded in phase 1b. Peak memory during a large backfill is 104 MB and not yet tuned.
+
+### Push to the apps (proposal)
+
+The apps should not poll. `GET /usage/events` would stream server-sent events to the Mac app, with these rules from the review:
+
+- Send a coalesced "changed" notice after a committed change, not every source event. Clients then fetch the routes they show.
+- Share one snapshot across subscribers. Bound each client's queue and drop slow readers without blocking ingestion.
+- Give the stream its own write deadline. `smithersd`'s 30-second `WriteTimeout` would otherwise end it.
+- Quota expiry and the rolling history window change without new data. Clients compute those from timestamps.
+- The iPhone streams only while the app is open. Widgets refresh on the system's schedule.
 
 ## Phase 1 verification
 

@@ -1,6 +1,7 @@
 package codex
 
 import (
+	"bytes"
 	"encoding/json"
 	"strconv"
 	"strings"
@@ -31,8 +32,27 @@ func (t tokens) sum() int64 {
 	return t.Input + t.Output
 }
 
+// wanted holds the line types the decoder reads. Most rollout bytes are
+// response items it never needs, so Line checks for a marker before decoding.
+var wanted = [][]byte{
+	[]byte(`"type":"session_meta"`), []byte(`"type":"turn_context"`), []byte(`"type":"token_usage_record"`),
+	[]byte(`"type":"compacted"`), []byte(`"type":"token_count"`),
+}
+
+func relevant(b []byte) bool {
+	for _, w := range wanted {
+		if bytes.Contains(b, w) {
+			return true
+		}
+	}
+	return false
+}
+
 // Line decodes one complete rollout line. Malformed lines produce nothing.
 func (d *Decoder) Line(b []byte) Output {
+	if !relevant(b) {
+		return Output{}
+	}
 	var l line
 	if json.Unmarshal(b, &l) != nil {
 		return Output{}

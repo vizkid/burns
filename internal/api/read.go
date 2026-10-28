@@ -70,7 +70,8 @@ func (s *Server) history(w http.ResponseWriter, r *http.Request) {
 }
 
 // sessions answers per-session and per-block totals, or one session's turns
-// when provider and session are given. since is a Go duration, default 24h.
+// when provider and session are given. since is a Go duration, default 24h,
+// clamped to retention.
 func (s *Server) sessions(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	if session := q.Get("session"); session != "" {
@@ -89,7 +90,7 @@ func (s *Server) sessions(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "since must be a positive duration such as 24h", http.StatusBadRequest)
 			return
 		}
-		window = d
+		window = min(d, store.Retention)
 	}
 	since := s.Now().Add(-window)
 	sessions, err := s.Store.Sessions(since)

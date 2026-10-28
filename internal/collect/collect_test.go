@@ -155,3 +155,58 @@ func fmtI(v int64) string {
 	}
 	return s
 }
+
+// A resumed old file is decoded for state, but its expired rows are not stored.
+func TestExpiredRowsInRecentFileAreDropped(t *testing.T) {
+	e := setup(t)
+	old := `{"timestamp":"2026-10-01T00:00:00Z","type":"token_usage_record","payload":{"thread_id":"t1","session_id":"t1","response_id":"old","usage":{"input_tokens":1,"output_tokens":1}}}` + "\n"
+	appendLines(t, e.rollout, old+record("r1"))
+	st := e.scan(t)
+	defer st.Close()
+	if got := totals(t, st); got["codex/work"].Requests != 1 {
+		t.Fatalf("requests = %d; want 1 (the 2026-10-01 row is past retention)", got["codex/work"].Requests)
+	}
+}
+
+// An unchanged file costs a stat, not a database read.
+func TestUnchangedFilesSkipTheStore(t *testing.T) {
+	e := setup(t)
+	appendLines(t, e.rollout, record("r1"))
+	st, err := store.Open(e.db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	c := &Collector{Store: st, Config: e.cfg, Now: func() time.Time { return now }}
+	if err := c.Scan(); err != nil {
+		t.Fatal(err)
+	}
+	loads, changed := c.cursorLoads, c.LastChange
+	if err := c.Scan(); err != nil {
+		t.Fatal(err)
+	}
+	if c.cursorLoads != loads {
+		t.Fatalf("second scan loaded %d cursors; want 0", c.cursorLoads-loads)
+	}
+	if changed.IsZero() || !c.LastChange.Equal(changed) {
+		t.Fatalf("LastChange = %v then %v; want set once", changed, c.LastChange)
+	}
+	appendLines(t, e.rollout, record("r2"))
+	later := now.Add(time.Minute)
+	c.Now = func() time.Time { return later }
+	c.Scan()
+	if !c.LastChange.Equal(later) {
+		t.Fatalf("LastChange = %v; want %v after an append", c.LastChange, later)
+	}
+}
+
+func TestIntervalAdapts(t *testing.T) {
+	c := &Collector{Now: func() time.Time { return now }}
+	if got := c.Interval(); got != SlowScan {
+		t.Fatalf("idle interval = %v; want %v", got, SlowScan)
+	}
+	c.LastChange = now.Add(-time.Minute)
+	if got := c.Interval(); got != FastScan {
+		t.Fatalf("active interval = %v; want %v", got, FastScan)
+	}
+}

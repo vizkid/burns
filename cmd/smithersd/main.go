@@ -39,7 +39,6 @@ func run() error {
 	cfgPath := flag.String("config", filepath.Join(home, ".config", "burns", "accounts.json"), "accounts file")
 	dbPath := flag.String("db", filepath.Join(stateDir(home), "smithers.db"), "SQLite store")
 	host := flag.String("host", shortHostname(), "host name reported to readers")
-	scanEvery := flag.Duration("scan", 2*time.Second, "how often to scan agent homes")
 	showVersion := flag.Bool("version", false, "print the version and exit")
 	flag.Parse()
 	if *showVersion {
@@ -62,7 +61,10 @@ func run() error {
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	go loop(ctx, &collect.Collector{Store: st, Config: cfg, Now: time.Now}, st, *scanEvery)
+	if err := st.Sweep(time.Now()); err != nil {
+		log.Printf("WARN sweep: %v", err)
+	}
+	go loop(ctx, &collect.Collector{Store: st, Config: cfg, Now: time.Now}, st)
 
 	srv := &http.Server{
 		Addr:              *addr,
@@ -87,11 +89,10 @@ func run() error {
 	return nil
 }
 
-// loop scans agent homes and sweeps old rows once an hour.
-func loop(ctx context.Context, c *collect.Collector, st *store.Store, every time.Duration) {
-	scan := time.NewTicker(every)
+// loop scans agent homes at the collector's adaptive interval and sweeps old
+// rows once an hour.
+func loop(ctx context.Context, c *collect.Collector, st *store.Store) {
 	sweep := time.NewTicker(time.Hour)
-	defer scan.Stop()
 	defer sweep.Stop()
 	lastErr := ""
 	for {
@@ -108,7 +109,7 @@ func loop(ctx context.Context, c *collect.Collector, st *store.Store, every time
 			if err := st.Sweep(time.Now()); err != nil {
 				log.Printf("WARN sweep: %v", err)
 			}
-		case <-scan.C:
+		case <-time.After(c.Interval()):
 		}
 	}
 }

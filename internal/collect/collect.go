@@ -15,11 +15,39 @@ import (
 	"github.com/vizkid/burns/internal/tail"
 )
 
+// Scan intervals. The loop scans fast while files change and slowly when idle,
+// so an idle laptop wakes every 30 seconds, not every 2.
+const (
+	FastScan   = 2 * time.Second
+	SlowScan   = 30 * time.Second
+	ActiveSpan = 2 * time.Minute
+)
+
 // Collector reads Codex rollouts and Claude transcripts for configured accounts.
+// It caches each file's cursor in memory, so an unchanged file costs one stat.
 type Collector struct {
 	Store  *store.Store
 	Config config.Config
 	Now    func() time.Time
+
+	// LastChange is when a scan last found new bytes.
+	LastChange time.Time
+
+	cache       map[string]cached
+	cursorLoads int
+}
+
+type cached struct {
+	cur   tail.Cursor
+	state json.RawMessage
+}
+
+// Interval is how long to wait before the next scan.
+func (c *Collector) Interval() time.Duration {
+	if !c.LastChange.IsZero() && c.Now().Sub(c.LastChange) < ActiveSpan {
+		return FastScan
+	}
+	return SlowScan
 }
 
 // decoder turns a batch of lines into store writes. Its state is persisted
@@ -64,10 +92,27 @@ func (c *Collector) file(a config.Account, path string) error {
 	if info.ModTime().Before(now.Add(-store.Retention)) {
 		return nil
 	}
-	cur, state, found, err := c.Store.Cursor(path)
-	if err != nil || (found && !tail.Changed(cur)) {
-		return err
+	if c.cache == nil {
+		c.cache = map[string]cached{}
 	}
+	entry, ok := c.cache[path]
+	if !ok {
+		cur, state, found, err := c.Store.Cursor(path)
+		if err != nil {
+			return err
+		}
+		c.cursorLoads++
+		entry = cached{cur: cur, state: state}
+		c.cache[path] = entry
+		if !found {
+			entry.cur = tail.Cursor{Path: path}
+		}
+	}
+	if entry.cur.Inode != 0 && !tail.ChangedInfo(entry.cur, info) {
+		return nil
+	}
+	cur, state := entry.cur, entry.state
+	defer func() { c.cache[path] = cached{cur: cur, state: state} }()
 	for {
 		lines, next, reset, err := tail.Read(cur)
 		if err != nil {
@@ -85,6 +130,9 @@ func (c *Collector) file(a config.Account, path string) error {
 		}
 		if err := c.Store.SaveCursor(next, state); err != nil {
 			return err
+		}
+		if next.Offset != cur.Offset || reset {
+			c.LastChange = now
 		}
 		if cur = next; !tail.Changed(cur) {
 			return nil

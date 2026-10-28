@@ -2,6 +2,7 @@ package claude
 
 import (
 	"bufio"
+	"bytes"
 	"encoding/json"
 	"io"
 	"time"
@@ -51,6 +52,11 @@ func (d *Transcript) Lines(lines [][]byte) ([]usage.Request, []usage.Compaction)
 	var comps []usage.Compaction
 	index := map[string]int{}
 	for _, b := range lines {
+		// Only usage, prompt, and compaction lines matter; skip the rest undecoded.
+		if !bytes.Contains(b, []byte(`"usage"`)) && !bytes.Contains(b, []byte(`"promptId"`)) &&
+			!bytes.Contains(b, []byte(`compact_boundary`)) {
+			continue
+		}
 		var l transcriptLine
 		if json.Unmarshal(b, &l) != nil {
 			continue

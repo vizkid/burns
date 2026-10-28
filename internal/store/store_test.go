@@ -182,10 +182,10 @@ func TestLimitsApplyRulesAndCredits(t *testing.T) {
 	rep := quota.Report{Provider: usage.Codex, Windows: quota.Windows{
 		300:   {Percent: p(10), ResetsAt: t0.Add(time.Hour), ObservedAt: t0},
 		10080: {Percent: p(30), ResetsAt: t0.Add(48 * time.Hour), ObservedAt: t0}}}
-	s.ApplyReport("work", "codex", rep, t0)
-	s.ApplyReport("work", "premium", quota.Report{Provider: usage.Codex}, t0)
-	s.ApplyReport("work", "codex", quota.Report{Provider: usage.Codex, Windows: quota.Windows{
-		10080: {Percent: p(31), ResetsAt: t0.Add(48 * time.Hour), ObservedAt: t0.Add(time.Minute)}}}, t0.Add(time.Minute))
+	s.ApplyReports("work", "codex", []quota.Report{rep}, t0)
+	s.ApplyReports("work", "premium", []quota.Report{{Provider: usage.Codex}}, t0)
+	s.ApplyReports("work", "codex", []quota.Report{{Provider: usage.Codex, Windows: quota.Windows{
+		10080: {Percent: p(31), ResetsAt: t0.Add(48 * time.Hour), ObservedAt: t0.Add(time.Minute)}}}}, t0.Add(time.Minute))
 	s.SetCredits(usage.Codex, "work", "codex", Credits{HasCredits: true, Balance: "12.5", ObservedAt: t0})
 	ls, err := s.Limits()
 	if err != nil {

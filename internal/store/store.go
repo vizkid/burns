@@ -16,8 +16,12 @@ const Retention = 7 * 24 * time.Hour
 // share no key; on 2026-10-28 they were 64 ms apart.
 const CompactionMatch = 5 * time.Second
 
-// Store is the SQLite store.
-type Store struct{ db *sql.DB }
+// Store is the SQLite store. db is the single writer; rdb is a small pool of
+// read-only connections, so WAL lets reads run while a write is open.
+type Store struct{ db, rdb *sql.DB }
+
+// readers bounds concurrent read connections.
+const readers = 4
 
 // Credits is the latest credits reading of one Codex limit.
 type Credits struct {
@@ -71,4 +75,7 @@ type Bucket struct {
 }
 
 // Close closes the database.
-func (s *Store) Close() error { return s.db.Close() }
+func (s *Store) Close() error {
+	s.rdb.Close()
+	return s.db.Close()
+}

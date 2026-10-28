@@ -45,6 +45,8 @@ CREATE INDEX binding_session ON binding (provider, session, start);
 CREATE TABLE cursor (
 	path TEXT PRIMARY KEY, inode INTEGER NOT NULL, "offset" INTEGER NOT NULL, size INTEGER NOT NULL,
 	mod_time INTEGER NOT NULL, head_hash TEXT NOT NULL, tail_hash TEXT NOT NULL, state TEXT NOT NULL);
+`, `
+CREATE INDEX compaction_request ON compaction (provider, request_key) WHERE request_key != '';
 `}
 
 // Open opens or creates the store and applies migrations.
@@ -65,7 +67,13 @@ func Open(path string) (*Store, error) {
 		db.Close()
 		return nil, err
 	}
-	return &Store{db: db}, nil
+	rdb, err := sql.Open("sqlite", "file:"+path+"?mode=ro&_pragma=busy_timeout(5000)")
+	if err != nil {
+		db.Close()
+		return nil, err
+	}
+	rdb.SetMaxOpenConns(readers)
+	return &Store{db: db, rdb: rdb}, nil
 }
 
 func migrate(db *sql.DB) error {

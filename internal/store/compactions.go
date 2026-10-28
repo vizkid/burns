@@ -38,7 +38,7 @@ func (s *Store) AddCompactions(cs []usage.Compaction) error {
 			return err
 		}
 		if c.RequestKey != "" {
-			if _, err := tx.Exec(`UPDATE request SET compaction = 1 WHERE provider = ? AND key = ?`, c.Provider, c.RequestKey); err != nil {
+			if _, err := tx.Exec(`UPDATE request SET compaction = 1 WHERE provider = ? AND key = ? AND compaction = 0`, c.Provider, c.RequestKey); err != nil {
 				return err
 			}
 		}
@@ -46,9 +46,12 @@ func (s *Store) AddCompactions(cs []usage.Compaction) error {
 	return tx.Commit()
 }
 
+// keyedCompactionQuery repeats the partial index's condition so SQLite can use it.
+const keyedCompactionQuery = `SELECT id, source FROM compaction WHERE provider = ? AND key = ? AND key != ''`
+
 func matchCompaction(tx *sql.Tx, c usage.Compaction) (id int64, source string, err error) {
 	if c.Key != "" {
-		err = tx.QueryRow(`SELECT id, source FROM compaction WHERE provider = ? AND key = ?`, c.Provider, c.Key).Scan(&id, &source)
+		err = tx.QueryRow(keyedCompactionQuery, c.Provider, c.Key).Scan(&id, &source)
 	} else {
 		at, window := nanos(c.At), int64(CompactionMatch)
 		err = tx.QueryRow(`SELECT id, source FROM compaction WHERE provider = ? AND session = ? AND key = ''

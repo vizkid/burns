@@ -64,7 +64,7 @@ func (s *Server) statusline(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusAccepted)
 		return
 	}
-	if err := s.Store.ApplyReport(acct.Name, claudeLimit, quota.Report{Provider: usage.Claude, Windows: st.Windows}, now); err != nil {
+	if err := s.Store.ApplyReports(acct.Name, claudeLimit, []quota.Report{{Provider: usage.Claude, At: now, Windows: st.Windows}}, now); err != nil {
 		fail(w, "store statusline", err)
 		return
 	}
