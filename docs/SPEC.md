@@ -26,6 +26,20 @@ When every quota is exhausted, it launches Azure.
 
 There is no `burnsd`. Viz decided this on 2026-10-27: the Mac app is the hub when it runs.
 
+### Merging hosts (proposal, 2026-10-28)
+
+Each `smithersd` knows only its own host. Every reader merges:
+
+1. Quota: the newest live reading per account and window wins (rule 6). Readings are never added.
+2. Tokens: summed across hosts. Each host's requests are separate work.
+
+Both apps use one shared Swift package for the merge, ported from Go `quota.Merge` and tested against the same cases.
+The iPhone reads every `smithersd` itself, not through the Mac, so it keeps working while the Mac sleeps in a bag.
+It keeps each host's last answer with its observation time. A host that cannot be reached shows its cached readings marked with their time; rule 2 still turns them unknown at reset.
+A sleeping Mac runs no agents, so its cached reading stays accurate for accounts only it uses.
+
+Known limit: usage outside any agent host, such as claude.ai chat or Codex cloud tasks, draws on the same quota but reaches no `smithersd`. A cached reading then reads low until an agent session somewhere reports again.
+
 Burns is written in Go (`smithersd`) and Swift (both apps), matching Roar, Cop, and Penfold.
 The Python preview in `burns.py` is superseded.
 
