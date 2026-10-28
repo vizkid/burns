@@ -16,19 +16,18 @@ It needs Go 1.26.
 
 ```sh
 make check
-make build
 mkdir -p ~/.config/burns
 cp docs/accounts.example.json ~/.config/burns/accounts.json   # then edit the accounts
-bin/smithersd
+make install    # binaries into ~/.local/bin; on macOS, a login agent
 curl -s http://127.0.0.1:9766/usage
 ```
 
-Agents feed it through `bin/smithers`: the statusline forwarder and the SessionStart hook.
-`docs/SPEC.md` lists the routes, the sources, and the setup each agent needs.
+Agents feed it through `smithers`: the statusline forwarder and the SessionStart hook.
+`docs/SPEC.md` lists the routes, the sources, and the setup each agent needs (see "Installing").
 
 `burns.py` is an early Python preview of the provider and account picker. The Go and Swift apps replace it.
 
-Rex owns hosts, sessions, and panes. Ping owns message delivery. Cop owns credential access.
+Rex owns hosts, sessions, and panes. Roar owns message delivery. Cop owns credential access.
 Burns must compose with these tools without requiring Penfold.
 Personal account names, paths, and hostnames belong in local configuration.
 

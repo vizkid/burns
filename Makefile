@@ -1,7 +1,7 @@
-VERSION ?= dev
+VERSION ?= $(shell git describe --always --dirty 2>/dev/null || echo dev)
 LDFLAGS := -X github.com/vizkid/burns/internal/usage.Version=$(VERSION)
 
-.PHONY: build check
+.PHONY: build check install
 
 build:
 	go build -trimpath -ldflags "$(LDFLAGS)" -o bin/smithersd ./cmd/smithersd
@@ -9,3 +9,6 @@ build:
 
 check:
 	scripts/check.sh
+
+install: build
+	scripts/install.sh

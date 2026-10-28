@@ -380,6 +380,27 @@ Agents call `smithers`. It never fails the agent. It waits at most 100 ms (statu
 
 Both run beside Penfold's forwarder and hooks. Adding them does not wait for the cutover.
 
+### Installing
+
+`make install` builds both binaries and copies them to `~/.local/bin`. On macOS it then writes the login agent `~/Library/LaunchAgents/com.vizkid.burns.smithersd.plist` and restarts it. Run it again to upgrade.
+
+| Item | Value |
+|---|---|
+| Accounts | `~/.config/burns/accounts.json`. The install does not create it, because it holds personal names. `smithersd` does not start without it. |
+| Database | `~/.local/state/burns/smithers.db`, mode 0600. A fresh database backfills the last 7 days of transcripts and rollouts in a few seconds. |
+| Log | `~/Library/Logs/burns/smithersd.log` |
+| Agent | `RunAtLoad` and `KeepAlive`, `ProcessType` `Background`, restart throttled to 10 s |
+
+The install does not touch agent configuration. Register the agent side in each home yourself:
+
+| Agent | Setting |
+|---|---|
+| Claude statusline | Pipe the statusline input to `smithers statusline` in the background, beside the existing statusline command. |
+| Claude SessionStart | A command hook `smithers hook session-start --provider claude` with `async: true` |
+| Codex SessionStart | A command hook `smithers hook session-start --provider codex` in `hooks.json`. Codex runs a changed hook only after `/hooks` marks it trusted in that home. |
+
+On Linux the install copies the binaries and prints how to run `smithersd`. A systemd user unit is not written yet.
+
 ### Rex action findings (tested 2026-10-27)
 
 | Finding | Evidence |
