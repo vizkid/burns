@@ -1,34 +1,40 @@
 # Burns
 
-Burns shows quota and token usage for coding-agent accounts, and launches new agent sessions into Rex.
-It is in design. Read the draft specification in `docs/SPEC.md`.
+Burns collects quota and token usage for Claude and Codex accounts.
+See the [design](docs/SPEC.md).
 
-Burns has three parts:
+| Part | Job | Status |
+|---|---|---|
+| `smithersd` | Collects usage on each host | Built |
+| Burns for Mac | Shows usage from every host and starts agent sessions | Planned |
+| Burns for iOS | Shows usage | Planned |
 
-- `smithersd` runs on every host and collects local Claude and Codex usage.
-- Burns for Mac shows usage from every host and opens the New Agent Session picker.
-- Burns for iOS shows usage.
+## Install smithersd
 
-## smithersd
-
-`smithersd` is built. It collects Claude and Codex usage on one host and serves it on `127.0.0.1:9766`.
-It needs Go 1.26.
+You need Go 1.26.5 or later.
 
 ```sh
-make check
 mkdir -p ~/.config/burns
-cp docs/accounts.example.json ~/.config/burns/accounts.json   # then edit the accounts
-make install    # binaries into ~/.local/bin; on macOS, a login agent
+cp docs/accounts.example.json ~/.config/burns/accounts.json
+```
+
+Edit `~/.config/burns/accounts.json` to list your accounts and their agent homes. Then install:
+
+```sh
+make install
 curl -s http://127.0.0.1:9766/usage
 ```
 
-Agents feed it through `smithers`: the statusline forwarder and the SessionStart hook.
-`docs/SPEC.md` lists the routes, the sources, and the setup each agent needs (see "Installing").
+`make install` copies `smithersd` and `smithers` to `~/.local/bin`.
+On macOS, it starts `smithersd` now and at every login.
+On Linux, start `~/.local/bin/smithersd` yourself before you run `curl`.
 
-`burns.py` is an early Python preview of the provider and account picker. The Go and Swift apps replace it.
+To send usage from your agents, follow the [agent setup](docs/SPEC.md#installing).
 
-Rex owns hosts, sessions, and panes. Roar owns message delivery. Cop owns credential access.
-Burns must compose with these tools without requiring Penfold.
-Personal account names, paths, and hostnames belong in local configuration.
+Run `make check` before you commit.
 
-Burns is released under the MIT License. See `LICENSE`.
+`burns.py` is an early prototype of the account picker. The apps will replace it.
+
+## License
+
+MIT. See `LICENSE`.
