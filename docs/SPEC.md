@@ -31,17 +31,17 @@ There is no `burnsd`. Viz decided this on 2026-10-27: the Mac app is the hub whe
 | Where | Shape | Source |
 |---|---|---|
 | Mac menu bar window | A row of Penfold rings at the top, one per account. Selecting a ring shows that account's combined burndown chart below the row. | Viz, 2026-10-29 |
-| Widgets (iOS and macOS) | CodexBar's burndown chart, per account: one window, or the five-hour and seven-day windows in one tile | Design from CodexBar (see "Cross-references"). Design only; no code is copied. |
+| Widgets (iOS and macOS) | CodexBar's burndown chart, per account: the longest live window, normally the week | Design from CodexBar (see "Cross-references"). Design only; no code is copied. |
 | Usage views in both apps | Penfold's rings, one tile per account: outer ring five hours, inner ring seven days, provider mark in the middle | Port of PenfoldKit `SpendTile`, `SpendRings`, and `SpendPace` |
 
-A burndown plots quota left from the window's start to its reset:
+A burndown plots quota left from the window's start to its reset. It charts the account's longest live window, normally the week; the five-hour window is shown only by the ring (Viz, 2026-10-29). If the week is unknown, it charts the five-hour window.
 
 | Element | Meaning |
 |---|---|
-| Solid line | Quota left over time, from the window's readings (see "Reading history"). The window starts at its reset minus its length, at 100%. The line runs straight from reading to reading, because usage grew between them. A reading lower than an earlier one in the window is stale and skipped (rule 10). With no readings yet it is a straight line to the current reading. |
-| Dashed line | The steady burn: 100% at the window's start to 0% at its reset |
-| Dotted line | The current rate projected to the reset |
-| Headline | Percent left, the pace verdict ("over pace"), and time to reset. "Budget spent" when it reached 0%. |
+| Area with a solid edge | Quota left over time, filled in the pace colour, from the window's readings (see "Reading history"). The window starts at its reset minus its length, at 100%. The line runs straight from reading to reading, because usage grew between them. A reading lower than an earlier one in the window is stale and skipped (rule 10). With no readings yet it is a straight line to the current reading. |
+| Thin faint dashed line | The steady burn: 100% at the window's start to 0% at its reset |
+| Heavy dashed line in the pace colour | The current rate projected to the reset, or to 0% left. Same dash as the steady line (Viz, 2026-10-29). |
+| Headline | For the charted window: percent left, the pace verdict ("over pace"), and time to reset. "Budget spent" when it reached 0%. |
 | Bars behind the chart | A time grid: hours for the five-hour window, days for the week. Elapsed slots are shaded. |
 
 Each ring draws two arcs: the share of quota used in the pace colour, on top, and the share of the window elapsed in a neutral blue-grey behind it.
@@ -56,7 +56,7 @@ Each ring is a button. Its App Intent stores that account as the shared selectio
 Until a ring is tapped, the selection is the account Enter would pick. A tapped selection stays until another ring is tapped.
 StandBy keeps its own swipes: left and right change screens, up and down flip the stack.
 StandBy shows only small widgets, scaled up, so five rings share one row of a small widget. On the Home Screen the layout uses the medium size.
-At night StandBy tints widgets red, so the chart must read without its colours: line style tells steady, actual, and projected apart.
+At night StandBy tints widgets red, so the chart must read without its colours: the actual line is solid, the steady line thin and the projection heavy.
 To verify on a device: ring tap targets at StandBy scale, tap latency, and that a tap does not wake the full app.
 
 The menu bar icon is the SF Symbol `flame` (Viz, 2026-10-29). It takes the pace colour of the account Enter would pick.
@@ -113,7 +113,7 @@ Decisions made while building (2026-10-29, open to Viz's change):
 |---|---|
 | Each app keeps its own host list. An entry is a tailnet name such as `host.tailnet.ts.net`. | The phone must work while the Mac sleeps, so it cannot read the Mac's list. |
 | The ring row shows every account. Each account name's Claude comes before its Codex, names in settings order, then Azure. Azure draws its full-colour mark with no rings, and selecting it shows "Microsoft credits" in place of a chart. | Azure has no quota windows. An empty track would read as unknown quota; a percent or "unlimited" would be false (rule 9). |
-| The combined burndown draws both windows on one axis from the window's start to its reset. The seven-day line is heavier. The steady burn is the same line for both, so it is drawn once. The time grid is the seven days. | Both windows fit one small widget. Each line still ends at its own reset. |
+| The burndown charts one window, the longest live one. (Until 2026-10-29 it drew both windows on one axis, which stretched the five-hour line across the week's day grid.) | Viz, 2026-10-29: "I don't think we need the 5h burndown line at all." The ring shows the five-hour window. |
 | A widget reads every host itself, at most every 15 minutes, with a 4-second timeout per host. It keeps each host's last answer in the app group. | A widget cannot rely on the app running. A host that does not answer keeps its cached answer, marked with its time. |
 | Between reads, the timeline holds an entry every 15 minutes for 2 hours, rebuilt from the cache. | The time arcs and the unknown-at-reset rule move without new data. |
 | The selected account lives in the app group. It is shared by every widget on the device and the app's window. | One tap selects the account everywhere on that device. |

@@ -1,9 +1,10 @@
 import Charts
 import SwiftUI
 
-/// The combined burndown (docs/SPEC.md, "Showing usage"). Line style alone tells actual (solid),
-/// steady (dashed) and projected (dotted) apart, so the chart still reads when StandBy tints it red
-/// at night. The seven-day line is heavier than the five-hour line.
+/// The burndown (docs/SPEC.md, "Showing usage"): quota left as an area in the pace colour, edged by
+/// a solid line. The steady burn and the projection share one dash (Viz, 2026-10-29); the steady
+/// line is thin and faint, the projection as heavy as the actual line, so weight alone still tells
+/// them apart when StandBy tints the chart red at night.
 public struct BurndownChart: View {
     let burndown: Burndown
     let palette: BurnsPalette
@@ -20,19 +21,17 @@ public struct BurndownChart: View {
         let color: Color
     }
 
+    var width: CGFloat { compact ? 1.5 : 2 }
+    let dash: [CGFloat] = [4, 3]
+    var tone: Color { palette.usage(burndown.line?.verdict) }
+
     var segments: [Segment] {
-        burndown.lines.flatMap { line -> [Segment] in
-            let width: CGFloat = line.minutes >= 1440 ? (compact ? 2 : 2.5) : (compact ? 1.2 : 1.5)
-            let tone = palette.usage(line.verdict)
-            // On the shared axis every window's steady burn is the same line: draw it once.
-            let steady = line.minutes == burndown.lines.first?.minutes
-                ? [Segment(id: "steady", points: line.steady, style: StrokeStyle(lineWidth: max(1, width - 1), dash: [4, 3]), color: .secondary)] : []
-            return steady + [
-                Segment(id: "\(line.minutes)-actual", points: line.actual, style: StrokeStyle(lineWidth: width, lineCap: .round), color: palette.used),
-                Segment(id: "\(line.minutes)-projection", points: line.projection,
-                        style: StrokeStyle(lineWidth: width, lineCap: .round, dash: [1, 3]), color: tone),
-            ]
-        }
+        guard let line = burndown.line else { return [] }
+        return [
+            Segment(id: "steady", points: line.steady, style: StrokeStyle(lineWidth: 1, dash: dash), color: Color.secondary.opacity(0.5)),
+            Segment(id: "actual", points: line.actual, style: StrokeStyle(lineWidth: width, lineCap: .round, lineJoin: .round), color: tone),
+            Segment(id: "projection", points: line.projection, style: StrokeStyle(lineWidth: width, dash: dash), color: tone),
+        ]
     }
 
     public var body: some View {
@@ -43,6 +42,11 @@ public struct BurndownChart: View {
                 if slot.x0 > 0 {
                     RuleMark(x: .value("x", slot.x0)).foregroundStyle(Color.secondary.opacity(0.25)).lineStyle(StrokeStyle(lineWidth: 0.5))
                 }
+            }
+            ForEach(Array((burndown.line?.actual ?? []).enumerated()), id: \.offset) { _, p in
+                AreaMark(x: .value("x", p.x), y: .value("left", p.left), series: .value("line", "area"))
+                    .foregroundStyle(LinearGradient(colors: [tone.opacity(0.45), tone.opacity(0.1)], startPoint: .top, endPoint: .bottom))
+                    .interpolationMethod(.linear)
             }
             ForEach(segments) { segment in
                 ForEach(Array(segment.points.enumerated()), id: \.offset) { _, p in
@@ -99,7 +103,7 @@ public struct UsageView<Cell: View>: View {
                         if !compact { Spacer(minLength: 4) }
                         Text(b.headline).font(compact ? .caption2 : .caption).foregroundStyle(.secondary).lineLimit(1).minimumScaleFactor(0.7)
                     }
-                    if b.lines.isEmpty {
+                    if b.line == nil {
                         Text(b.headline == "Microsoft credits" ? "Runs on Microsoft credits. No quota windows to draw." : "No live quota window to draw.")
                             .font(compact ? .caption2 : .footnote).foregroundStyle(.secondary)
                             .frame(maxWidth: .infinity, maxHeight: .infinity)

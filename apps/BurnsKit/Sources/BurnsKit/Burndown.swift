@@ -11,16 +11,17 @@ public struct Point: Sendable, Hashable {
     public func hash(into h: inout Hasher) { h.combine((x * 1e6).rounded()); h.combine((left * 1e6).rounded()) }
 }
 
-/// One account's combined burndown (docs/SPEC.md, "Showing usage"): each live window's line on
-/// one axis from its start to its reset, the steady burn, the projection, and a time grid.
+/// One account's burndown (docs/SPEC.md, "Showing usage"): its longest live window, normally the
+/// week, from its start to its reset, with the steady burn, the projection, and a time grid. The
+/// five-hour window is the ring's alone (Viz, 2026-10-29).
 public struct Burndown: Equatable, Sendable {
     public struct Line: Equatable, Sendable {
         public var minutes: Int
         /// Solid: quota left, straight from reading to reading. Ends at the last observation.
         public var actual: [Point]
-        /// Dashed: 100% at the start to 0% at the reset.
+        /// Faint dashed: 100% at the start to 0% at the reset.
         public var steady: [Point]
-        /// Dotted: the current rate to the reset, or to empty. Empty when it is too early to say.
+        /// Heavy dashed: the current rate to the reset, or to empty. Empty when it is too early to say.
         public var projection: [Point]
         public var verdict: SpendPace.Verdict?
         /// Where now is on this window's axis.
@@ -34,26 +35,30 @@ public struct Burndown: Equatable, Sendable {
     }
 
     public var account: AccountID
-    /// Longest window first: it is drawn heavier.
-    public var lines: [Line]
+    /// The longest live window's line; nil with no live window.
+    public var line: Line?
     /// Windows that are known to exist but have no live reading.
     public var unknown: [Int]
-    /// Days for the week, hours for a five-hour window: the longest live window's grid.
+    /// Days for the week, hours for a five-hour window: the charted window's grid.
     public var grid: [Slot]
     public var headline: String
 
+    public init(account: AccountID, line: Line?, unknown: [Int], grid: [Slot], headline: String) {
+        self.account = account; self.line = line; self.unknown = unknown; self.grid = grid; self.headline = headline
+    }
+
     public static func build(account: AccountUsage, readings: [Reading], now: Date) -> Burndown {
         let live = account.liveWindows(at: now)
-        var lines: [Line] = []
-        for (m, w) in live.sorted(by: { $0.key > $1.key }) {
-            let mine = readings.filter {
-                $0.provider == account.id.provider && $0.account == account.id.name && $0.minutes == m
-                    && abs($0.resetsAt.timeIntervalSince(w.resetsAt)) <= Merge.resetJitter
-            }
-            lines.append(line(minutes: m, window: w, readings: mine, now: now))
-        }
         let unknown = account.windows.keys.filter { live[$0] == nil }.sorted(by: >)
-        return Burndown(account: account.id, lines: lines, unknown: unknown, grid: grid(lines.first), headline: headline(live, now: now))
+        guard let (m, w) = live.max(by: { $0.key < $1.key }) else {
+            return Burndown(account: account.id, line: nil, unknown: unknown, grid: [], headline: "Usage unknown")
+        }
+        let mine = readings.filter {
+            $0.provider == account.id.provider && $0.account == account.id.name && $0.minutes == m
+                && abs($0.resetsAt.timeIntervalSince(w.resetsAt)) <= Merge.resetJitter
+        }
+        let charted = line(minutes: m, window: w, readings: mine, now: now)
+        return Burndown(account: account.id, line: charted, unknown: unknown, grid: grid(charted), headline: headline(minutes: m, window: w, now: now))
     }
 
     static func length(_ minutes: Int) -> TimeInterval { TimeInterval(minutes) * 60 }
@@ -89,8 +94,7 @@ public struct Burndown: Equatable, Sendable {
                     projection: projection, verdict: pace?.verdict, now: x(now))
     }
 
-    static func grid(_ line: Line?) -> [Slot] {
-        guard let line else { return [] }
+    static func grid(_ line: Line) -> [Slot] {
         let count = line.minutes >= 1440 ? line.minutes / 1440 : max(1, line.minutes / 60)
         return (0..<count).map { i in
             let x0 = Double(i) / Double(count), x1 = Double(i + 1) / Double(count)
@@ -98,11 +102,9 @@ public struct Burndown: Equatable, Sendable {
         }
     }
 
-    /// "34% left · 6% ahead · resets 2h", for the window with the least left.
-    static func headline(_ live: [Int: Window], now: Date) -> String {
-        guard let (m, w) = live.max(by: { ($0.value.percent ?? 0, $1.key) < ($1.value.percent ?? 0, $0.key) }), let used = w.percent else {
-            return "Usage unknown"
-        }
+    /// "34% left · 6% ahead · resets 2h", for the charted window.
+    static func headline(minutes m: Int, window w: Window, now: Date) -> String {
+        guard let used = w.percent else { return "Usage unknown" }
         let reset = SpendReset.countdown(to: w.resetsAt, now: now).map { "resets " + $0 }
         if used >= 100 { return (["Budget spent"] + [reset].compactMap { $0 }).joined(separator: " · ") }
         let words = SpendPace(usedPercent: used, resetsAt: w.resetsAt, length: length(m), now: now)?.words()

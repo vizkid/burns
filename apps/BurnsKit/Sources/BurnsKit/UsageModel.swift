@@ -77,7 +77,7 @@ public struct UsageModel: Equatable, Sendable {
         let readings = Merge.readings(snapshots.map(\.readings), accounts: accounts, now: now)
         burndown = selected.flatMap { id in accounts.first { $0.id == id } }.map { a in
             a.isQuota ? Burndown.build(account: a, readings: readings, now: now)
-                : Burndown(account: a.id, lines: [], unknown: [], grid: [], headline: "Microsoft credits")
+                : Burndown(account: a.id, line: nil, unknown: [], grid: [], headline: "Microsoft credits")
         }
         oldestFetch = snapshots.map(\.fetchedAt).min()
     }

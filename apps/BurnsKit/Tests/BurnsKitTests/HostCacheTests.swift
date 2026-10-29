@@ -72,7 +72,7 @@ struct HostCacheTests {
         let azure = AccountID(provider: "codex", name: "beta-azure")
         let model = UsageModel(snapshots: [snap], selected: azure, now: now)
         #expect(model.selected == azure)
-        #expect(model.burndown?.lines.isEmpty == true && model.burndown?.headline == "Microsoft credits")
+        #expect(model.burndown?.line == nil && model.burndown?.headline == "Microsoft credits")
     }
 
     /// Rule 2 at display time: a cached window whose reset passed reads unknown.
