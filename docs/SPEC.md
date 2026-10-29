@@ -474,7 +474,7 @@ Both run beside Penfold's forwarder and hooks. Adding them does not wait for the
 |---|---|
 | Accounts | `~/.config/burns/accounts.json`. The install does not create it, because it holds personal names. `smithersd` does not start without it. |
 | Database | `~/.local/state/burns/smithers.db`, mode 0600. A fresh database backfills the last 7 days of transcripts and rollouts in a few seconds. |
-| Log | `~/Library/Logs/burns/smithersd.log` |
+| Log | macOS: `~/Library/Logs/burns/smithersd.log`. Linux: `journalctl --user -u burns-smithersd`. |
 | Agent | `RunAtLoad` and `KeepAlive`, `ProcessType` `Background`, restart throttled to 10 s |
 | Rex | The install passes `--rex` with the path of `rex` on its own PATH, because launchd's PATH lacks it. Without it, claims stay unverified and bindings stay open. |
 
@@ -486,7 +486,7 @@ The install does not touch agent configuration. Register the agent side in each 
 | Claude SessionStart | A command hook `smithers hook session-start --provider claude` with `async: true` |
 | Codex SessionStart | A command hook `smithers hook session-start --provider codex` in `hooks.json`. Codex runs a changed hook only after `/hooks` marks it trusted in that home. |
 
-On Linux the install copies the binaries and prints how to run `smithersd`. A systemd user unit is not written yet.
+On Linux the install writes the systemd user unit `~/.config/systemd/user/burns-smithersd.service`, enables it, and restarts it. Its log is in `journalctl --user -u burns-smithersd`. Without lingering (`loginctl enable-linger`) it stops at logout, and the install says so. Without a systemd user manager it only copies the binaries.
 
 ### Rex action findings (tested 2026-10-27)
 

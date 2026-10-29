@@ -27,7 +27,7 @@ make install
 
 `make install` copies `smithersd` and `smithers` to `~/.local/bin`.
 On macOS, it starts `smithersd` now and at every login.
-On Linux, start `~/.local/bin/smithersd` yourself before you run `smithers usage`.
+On Linux, it runs `smithersd` as a systemd user service.
 `smithers usage` prints each account's quota and its consumption over the last 24 hours. Add `--since 1h` for another window.
 
 To send usage from your agents, follow the [agent setup](docs/SPEC.md#installing).
