@@ -53,6 +53,8 @@ An unknown window draws an empty track and says "unknown", never 0%. A gap with 
 StandBy (iPhone on its side while charging), proposal: one small widget that cycles through every account's combined burndown.
 StandBy shows only small widgets, scaled up, in Smart Stacks that swipe vertically; a horizontal swipe leaves the widget view. So the widget cycles itself: its timeline holds one entry per account, a few minutes apart, and each refresh writes a new cycle.
 iOS decides when to show each entry, so the interval is approximate. Each account is also a configurable widget, for a fixed card in a stack.
+A tap flips cards: the whole widget is a button whose App Intent moves the shared selection to the next account and reloads the widget. StandBy's swipes stay with StandBy (left and right change screens, up and down flip the stack).
+After a tap, automatic cycling pauses for 10 minutes so the chosen card stays. To verify on a device: tap latency in StandBy, and that a tap does not wake the full app.
 At night StandBy tints widgets red, so the chart must read without its colours: line style tells steady, actual, and projected apart.
 The menu bar icon is not decided.
 Proposal: when the window opens, the ring selected is the account Enter would pick, so the chart answers "how long will my next session's account last". A click selects another ring until the window closes.
