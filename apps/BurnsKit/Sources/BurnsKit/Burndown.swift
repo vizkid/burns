@@ -16,7 +16,7 @@ public struct Point: Sendable, Hashable {
 public struct Burndown: Equatable, Sendable {
     public struct Line: Equatable, Sendable {
         public var minutes: Int
-        /// Solid: quota left from the readings. Ends at the last observation, so a gap draws nothing.
+        /// Solid: quota left, straight from reading to reading. Ends at the last observation.
         public var actual: [Point]
         /// Dashed: 100% at the start to 0% at the reset.
         public var steady: [Point]
@@ -62,19 +62,19 @@ public struct Burndown: Equatable, Sendable {
         let length = length(minutes), start = w.resetsAt.addingTimeInterval(-length)
         func x(_ d: Date) -> Double { min(max(d.timeIntervalSince(start) / length, 0), 1) }
         let used = w.percent ?? 0
+        // Readings sample usage that grew between them, so the line runs straight from one to the
+        // next: a flat hold and a cliff would claim nothing was used until the reading. Rule 10: a
+        // reading below an earlier one is stale and is skipped.
         var actual = [Point(x: 0, left: 100)]
-        var last: Double?
-        for r in readings.sorted(by: { $0.observedAt < $1.observedAt }) where r.observedAt >= start {
-            // A reading is a change: the previous value held until it.
-            if let last { actual.append(Point(x: x(r.observedAt), left: 100 - last)) }
-            actual.append(Point(x: x(r.observedAt), left: 100 - r.percent))
-            last = r.percent
+        var high = 0.0
+        // An equal reading later on is kept: usage was still flat then.
+        for r in readings.sorted(by: { $0.observedAt < $1.observedAt }) where r.observedAt >= start && r.percent >= high {
+            let p = Point(x: x(r.observedAt), left: 100 - r.percent)
+            if p != actual.last { actual.append(p) }
+            high = r.percent
         }
         let observed = Point(x: x(w.observedAt), left: 100 - used)
-        if let lastPoint = actual.last, observed.x > lastPoint.x {
-            if last != nil, last != used { actual.append(Point(x: observed.x, left: lastPoint.left)) }
-            actual.append(observed)
-        }
+        if let lastPoint = actual.last, observed.x > lastPoint.x, used >= high { actual.append(observed) }
         let pace = SpendPace(usedPercent: used, resetsAt: w.resetsAt, length: length, now: now)
         var projection: [Point] = []
         if let pace, pace.verdict != nil {

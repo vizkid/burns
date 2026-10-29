@@ -38,7 +38,7 @@ A burndown plots quota left from the window's start to its reset:
 
 | Element | Meaning |
 |---|---|
-| Solid line | Quota left over time, from the window's readings (see "Reading history"). The window starts at its reset minus its length, at 100%. With no readings yet it is a straight line to the current reading. |
+| Solid line | Quota left over time, from the window's readings (see "Reading history"). The window starts at its reset minus its length, at 100%. The line runs straight from reading to reading, because usage grew between them. A reading lower than an earlier one in the window is stale and skipped (rule 10). With no readings yet it is a straight line to the current reading. |
 | Dashed line | The steady burn: 100% at the window's start to 0% at its reset |
 | Dotted line | The current rate projected to the reset |
 | Headline | Percent left, the pace verdict ("over pace"), and time to reset. "Budget spent" when it reached 0%. |
@@ -80,7 +80,7 @@ Readings start when the table does. Claude has no earlier source. Codex rollouts
 
 Each `smithersd` knows only its own host. Every reader merges:
 
-1. Quota is shared: it belongs to the account, so any awake host can report it. The newest live reading per account and window wins (rule 6). Readings are never added.
+1. Quota is shared: it belongs to the account, so any awake host can report it. The newest live reading per account and window wins, and within one window the highest (rules 6 and 10). Readings are never added.
 2. Spend is not shared: tokens and cost belong to the host that did the work. Sum every host's answer.
 
 Both apps use one shared Swift package for the merge, ported from Go `quota.Merge` and tested against the same cases.
@@ -210,10 +210,11 @@ Burns rewrites the code from these rules. Each rule gets a test.
 3. A reported zero with a future reset is a real reading.
 4. If Claude omits a window, keep the stored reading until its reset passes.
 5. If Codex omits the five-hour window, clear it. A Codex account can report only a weekly window.
-6. When merging hosts, take the newest live reading per window. Keep source times unchanged.
+6. When merging hosts, take the newest live reading per window. Within one window the highest percent wins (rule 10). Keep source times unchanged.
 7. Never infer a percentage or a reset time from token counts.
 8. A burn rate needs two samples from one session. Until then it is unavailable.
 9. Unknown or stale data never displays as zero or unlimited.
+10. Usage in one window never goes down. A lower percent for the same reset (within one minute) is stale: an idle session repeats the value of its last response. It is not stored, recorded as a reading, or merged. A new window may start lower.
 
 ### Sources
 

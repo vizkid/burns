@@ -139,3 +139,19 @@ func TestNewWindowSupersedesEarlierOne(t *testing.T) {
 		t.Fatalf("readings = %v; want [2]: the superseded window's readings are dropped", got)
 	}
 }
+
+// A stale lower percent of the same window adds no reading, so the line never
+// climbs back up.
+func TestReadingsSkipStaleLowerPercent(t *testing.T) {
+	s := open(t)
+	reset := t0.Add(72 * time.Hour)
+	for i, pct := range []float64{24, 25, 24, 26, 23, 27} {
+		at := t0.Add(time.Duration(i) * time.Minute)
+		if err := s.ApplyReports("work", "codex", []quota.Report{weekly(pct, reset, at)}, at); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if got := percents(t, s, t0.Add(time.Hour)); !equal(got, []float64{24, 25, 26, 27}) {
+		t.Fatalf("readings = %v; want 24 25 26 27", got)
+	}
+}

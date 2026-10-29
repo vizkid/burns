@@ -85,9 +85,11 @@ func TestOlderReportIgnored(t *testing.T) {
 }
 
 // Rule 6: when merging hosts, take the newest live reading per window. Keep source times.
+// The five-hour readings have resets 30 minutes apart: two windows, so the newer one wins
+// even though it is lower (rule 10 applies only within one window).
 func TestRule6MergeNewestPerWindow(t *testing.T) {
 	a := Windows{300: win(10, time.Hour, time.Minute), 10080: win(60, 48*time.Hour, time.Hour)}
-	b := Windows{300: win(20, time.Hour, time.Hour), 10080: win(70, 48*time.Hour, time.Minute)}
+	b := Windows{300: win(20, 30*time.Minute, time.Hour), 10080: win(70, 48*time.Hour, time.Minute)}
 	got := Merge(now, a, b)
 	mustValue(t, got[300], 10)
 	mustValue(t, got[10080], 70)
@@ -116,4 +118,32 @@ func TestOlderCodexReportDoesNotClear(t *testing.T) {
 	stored := Windows{300: win(40, time.Hour, time.Minute)}
 	got := Apply(stored, Report{Provider: "codex", At: now.Add(-time.Hour), Windows: Windows{}}, now)
 	mustValue(t, got[300], 40)
+}
+
+// Rule 10: usage in one window never goes down. A lower percent for the same
+// reset comes from a session reporting its last-known value: it is stale.
+func TestRule10LowerPercentInSameWindowIsStale(t *testing.T) {
+	stored := Windows{10080: win(30, 48*time.Hour, time.Minute)}
+	got := Apply(stored, Report{Provider: "claude", Windows: Windows{10080: win(29, 48*time.Hour+30*time.Second, 0)}}, now)
+	mustValue(t, got[10080], 30)
+	got = Apply(stored, Report{Provider: "claude", Windows: Windows{10080: win(31, 48*time.Hour, 0)}}, now)
+	mustValue(t, got[10080], 31)
+}
+
+// A new window (a reset more than a minute away) starts low: that is not stale.
+func TestRule10NewWindowMayBeLower(t *testing.T) {
+	stored := Windows{10080: win(90, time.Hour, time.Minute)}
+	got := Apply(stored, Report{Provider: "codex", Windows: Windows{10080: win(2, 7*24*time.Hour, 0)}}, now)
+	mustValue(t, got[10080], 2)
+}
+
+// Across hosts, the same window keeps its highest percent even when another
+// host's newer reading is stale.
+func TestRule10MergeKeepsHighestOfSameWindow(t *testing.T) {
+	a := Windows{10080: win(31, 48*time.Hour, 5*time.Minute)}
+	b := Windows{10080: win(30, 48*time.Hour, time.Minute)}
+	mustValue(t, Merge(now, a, b)[10080], 31)
+	mustValue(t, Merge(now, b, a)[10080], 31)
+	c := Windows{10080: win(1, 7*24*time.Hour, 0)}
+	mustValue(t, Merge(now, a, c)[10080], 1)
 }

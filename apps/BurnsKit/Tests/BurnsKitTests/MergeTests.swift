@@ -17,13 +17,22 @@ struct MergeTests {
         #expect(unknown.accounts[0].limits.isEmpty)
     }
 
+    /// The five-hour resets are 30 minutes apart: two windows, so the newer wins although lower.
     @Test func newestLiveReadingWinsPerWindow() {
         let older = [300: Window(percent: 40, resetsAt: now + h, observedAt: now - 60)]
-        let newer = [300: Window(percent: 10, resetsAt: now + h, observedAt: now - 10),
+        let newer = [300: Window(percent: 10, resetsAt: now + h / 2, observedAt: now - 10),
                      10080: Window(percent: 5, resetsAt: now + 50 * h, observedAt: now - 3600)]
         let m = Merge.windows([older, newer], now: now)
         #expect(m[300]?.percent == 10 && m[10080]?.percent == 5)
         #expect(Merge.windows([newer, older], now: now) == m, "host order does not matter")
+    }
+
+    /// Rule 10: within one window the highest percent wins, whichever host read it last.
+    @Test func sameWindowKeepsHighestPercent() {
+        let high = [10080: Window(percent: 31, resetsAt: now + 50 * h, observedAt: now - 300)]
+        let stale = [10080: Window(percent: 30, resetsAt: now + 50 * h + 30, observedAt: now - 10)]
+        #expect(Merge.windows([high, stale], now: now)[10080]?.percent == 31)
+        #expect(Merge.windows([stale, high], now: now)[10080]?.percent == 31)
     }
 
     /// Rule 2: a reading whose reset passed is unknown, never zero, and loses to nothing.

@@ -7,10 +7,6 @@ import (
 	"github.com/vizkid/burns/internal/quota"
 )
 
-// resetJitter is how far a reported reset may move within one window. Larger
-// moves start a new window.
-const resetJitter = time.Minute
-
 // Reading is one change of a quota window (docs/SPEC.md, "Reading history").
 type Reading struct {
 	Provider   string    `json:"provider"`
@@ -36,13 +32,13 @@ func recordReadings(tx *sql.Tx, provider, account, limitID string, reports []quo
 			if !w.Live(now) {
 				continue
 			}
-			if prev, ok := last[m]; ok && (!w.ObservedAt.After(prev.ObservedAt) || sameReading(prev, w)) {
+			if prev, ok := last[m]; ok && (!w.ObservedAt.After(prev.ObservedAt) || sameReading(prev, w) || quota.Stale(prev, w)) {
 				continue
 			}
 			// A new window supersedes the old one even before the old reset
 			// passes: Codex can restart a week early.
 			if _, err := tx.Exec(`DELETE FROM reading WHERE provider = ? AND account = ? AND limit_id = ? AND minutes = ?
-				AND abs(resets_at - ?) > ?`, provider, account, limitID, m, nanos(w.ResetsAt), int64(resetJitter)); err != nil {
+				AND abs(resets_at - ?) > ?`, provider, account, limitID, m, nanos(w.ResetsAt), int64(quota.ResetJitter)); err != nil {
 				return false, err
 			}
 			if _, err := tx.Exec(`INSERT OR IGNORE INTO reading VALUES (?,?,?,?,?,?,?)`, provider, account, limitID, m,
@@ -56,8 +52,7 @@ func recordReadings(tx *sql.Tx, provider, account, limitID string, reports []quo
 }
 
 func sameReading(a, b quota.Window) bool {
-	d := a.ResetsAt.Sub(b.ResetsAt)
-	return *a.Percent == *b.Percent && d <= resetJitter && d >= -resetJitter
+	return *a.Percent == *b.Percent && quota.SameWindow(a, b)
 }
 
 // lastReadings returns the newest reading of each window of one limit.

@@ -44,7 +44,13 @@ public enum Merge {
         var out: [Int: Window] = [:]
         for set in sets {
             for (m, w) in set where w.isLive(at: now) {
-                if let prev = out[m], w.observedAt <= prev.observedAt { continue }
+                if let prev = out[m] {
+                    if abs(prev.resetsAt.timeIntervalSince(w.resetsAt)) <= resetJitter, let p = prev.percent, let q = w.percent {
+                        // Rule 10: within one window usage never goes down, so the highest
+                        // wins; another host's newer reading can be stale.
+                        if q < p || (q == p && w.observedAt <= prev.observedAt) { continue }
+                    } else if w.observedAt <= prev.observedAt { continue }
+                }
                 out[m] = w
             }
         }

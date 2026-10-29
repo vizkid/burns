@@ -17,13 +17,27 @@ struct BurndownTests {
 
     func usage(_ windows: [Int: Window]) -> AccountUsage { AccountUsage(id: id, kind: "subscription", windows: windows) }
 
-    /// The line starts at 100% at the window's start, then holds each reading until the next change.
-    @Test func actualLineStepsThroughReadings() throws {
+    /// The line starts at 100% at the window's start and runs straight from reading to reading.
+    /// Readings are samples of usage that grew between them, so no flat hold and cliff
+    /// ("a gap with no readings draws no line, never a flat one").
+    @Test func actualLineJoinsReadings() throws {
         let u = usage([10080: Window(percent: 30, resetsAt: weekReset, observedAt: now - h)])
         let b = Burndown.build(account: u, readings: [reading(10080, 20, resets: weekReset, hoursAgo: 5), reading(10080, 30, resets: weekReset, hoursAgo: 1)], now: now)
         let line = try #require(b.lines.first)
-        #expect(line.actual == [Point(x: 0, left: 100), Point(x: x(5), left: 80), Point(x: x(1), left: 80), Point(x: x(1), left: 70)])
+        #expect(line.actual == [Point(x: 0, left: 100), Point(x: x(5), left: 80), Point(x: x(1), left: 70)])
         #expect(line.steady == [Point(x: 0, left: 100), Point(x: 1, left: 0)])
+    }
+
+    /// Rule 10: a reading lower than an earlier one in the window is stale and drawn nowhere,
+    /// so the line never climbs back up.
+    @Test func staleReadingsAreSkipped() throws {
+        let u = usage([10080: Window(percent: 30, resetsAt: weekReset, observedAt: now - h)])
+        let rs = [reading(10080, 20, resets: weekReset, hoursAgo: 5), reading(10080, 25, resets: weekReset, hoursAgo: 4),
+                  reading(10080, 22, resets: weekReset, hoursAgo: 3), reading(10080, 25, resets: weekReset, hoursAgo: 2),
+                  reading(10080, 30, resets: weekReset, hoursAgo: 1)]
+        let line = try #require(Burndown.build(account: u, readings: rs, now: now).lines.first)
+        // The later 25 stays: usage was still flat two hours ago.
+        #expect(line.actual == [Point(x: 0, left: 100), Point(x: x(5), left: 80), Point(x: x(4), left: 75), Point(x: x(2), left: 75), Point(x: x(1), left: 70)])
     }
 
     /// No readings yet: a straight line from the start to the current reading, held to its observation.

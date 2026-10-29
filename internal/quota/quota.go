@@ -7,6 +7,10 @@ import "time"
 // Codex is classified by window_minutes, never by position.
 const FiveHourMax = 600
 
+// ResetJitter is how far a reported reset may move within one window. Larger
+// moves start a new window.
+const ResetJitter = time.Minute
+
 // Window is one quota window. A nil Percent was not reported.
 type Window struct {
 	Percent    *float64  `json:"percent"`
@@ -36,6 +40,20 @@ func (w Window) Value(now time.Time) (pct float64, ok bool) {
 	return *w.Percent, true
 }
 
+// SameWindow reports whether two readings belong to one window: their resets
+// are at most ResetJitter apart.
+func SameWindow(a, b Window) bool {
+	d := a.ResetsAt.Sub(b.ResetsAt)
+	return d <= ResetJitter && d >= -ResetJitter
+}
+
+// Stale reports whether w is lower than prev in the same window (rule 10).
+// Usage in a window never goes down; a lower percent comes from a session
+// that repeats the value of its last response.
+func Stale(prev, w Window) bool {
+	return prev.Percent != nil && w.Percent != nil && SameWindow(prev, w) && *w.Percent < *prev.Percent
+}
+
 // Apply folds a report into the stored windows of one account and limit.
 //
 // A reported window replaces the stored one when it is live and not older.
@@ -56,7 +74,7 @@ func Apply(stored Windows, r Report, now time.Time) Windows {
 		if !w.Live(now) {
 			continue
 		}
-		if prev, ok := out[m]; ok && prev.Live(now) && w.ObservedAt.Before(prev.ObservedAt) {
+		if prev, ok := out[m]; ok && prev.Live(now) && (w.ObservedAt.Before(prev.ObservedAt) || Stale(prev, w)) {
 			continue
 		}
 		out[m] = w
@@ -64,7 +82,9 @@ func Apply(stored Windows, r Report, now time.Time) Windows {
 	return out
 }
 
-// Merge keeps the newest live reading per window across hosts.
+// Merge keeps the newest live reading per window across hosts. Within one
+// window it keeps the highest percent instead: another host's newer reading
+// can be stale (rule 10).
 func Merge(now time.Time, sets ...Windows) Windows {
 	out := Windows{}
 	for _, set := range sets {
@@ -72,8 +92,15 @@ func Merge(now time.Time, sets ...Windows) Windows {
 			if !w.Live(now) {
 				continue
 			}
-			if prev, ok := out[m]; ok && !w.ObservedAt.After(prev.ObservedAt) {
-				continue
+			if prev, ok := out[m]; ok {
+				if SameWindow(prev, w) {
+					higher := *w.Percent > *prev.Percent
+					if !higher && (*w.Percent < *prev.Percent || !w.ObservedAt.After(prev.ObservedAt)) {
+						continue
+					}
+				} else if !w.ObservedAt.After(prev.ObservedAt) {
+					continue
+				}
 			}
 			out[m] = w
 		}
