@@ -401,6 +401,7 @@ Agents call `smithers`. It never fails the agent. It waits at most 100 ms (statu
 |---|---|
 | `smithers statusline [-- COMMAND ARGS]` | Posts stdin to `smithersd` with a 100 ms timeout, runs the wrapped statusline command with the same stdin, and prints its output |
 | `smithers hook session-start --provider claude\|codex` | Posts the hook's `session_id` and `source` with `REX_BLOCK` and `REX_SESSION`. Does nothing outside Rex. Prints nothing and exits 0, because Claude adds SessionStart output to the conversation. |
+| `smithers usage [--since 24h]` | Prints, for each configured account, its quota windows and its requests, tokens and cost over `--since`. Reads `GET /usage` and `GET /usage/sessions`. Unknown quota prints `unknown`; requests with no cost print as an unknown count, never as $0. Exits 1 if `smithersd` does not answer. |
 
 Both run beside Penfold's forwarder and hooks. Adding them does not wait for the cutover.
 

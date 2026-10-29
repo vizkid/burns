@@ -22,12 +22,13 @@ Edit `~/.config/burns/accounts.json` to list your accounts and their agent homes
 
 ```sh
 make install
-curl -s http://127.0.0.1:9766/usage
+~/.local/bin/smithers usage
 ```
 
 `make install` copies `smithersd` and `smithers` to `~/.local/bin`.
 On macOS, it starts `smithersd` now and at every login.
-On Linux, start `~/.local/bin/smithersd` yourself before you run `curl`.
+On Linux, start `~/.local/bin/smithersd` yourself before you run `smithers usage`.
+`smithers usage` prints each account's quota and its consumption over the last 24 hours. Add `--since 1h` for another window.
 
 To send usage from your agents, follow the [agent setup](docs/SPEC.md#installing).
 
