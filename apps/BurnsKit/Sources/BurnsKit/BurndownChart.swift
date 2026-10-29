@@ -43,7 +43,8 @@ public struct BurndownChart: View {
     }
 
     var width: CGFloat { compact ? 1.5 : 2 }
-    /// Round caps grow each dash by the line width, so the gap is wider than it looks here.
+    /// Butt caps, so every dash is exactly 2 pt on both lines: round caps add the line's width to
+    /// each dash, which left the thin steady line's dashes looking unchanged (Viz, 2026-10-29).
     let dash: [CGFloat] = [2, 5]
     var tone: Color { palette.usage(burndown.line?.verdict) }
 
@@ -79,8 +80,8 @@ public struct BurndownChart: View {
         let origin = steady.first.flatMap(screen) ?? .zero
         let phase = projection.first.flatMap(screen).map { Self.dashPhase(origin: origin, start: $0, period: dash.reduce(0, +)) } ?? 0
         return ZStack {
-            path(steady).stroke(Color.secondary.opacity(0.5), style: StrokeStyle(lineWidth: 1, lineCap: .round, dash: dash))
-            path(projection).stroke(Color.secondary, style: StrokeStyle(lineWidth: width, lineCap: .round, dash: dash, dashPhase: phase))
+            path(steady).stroke(Color.secondary.opacity(0.5), style: StrokeStyle(lineWidth: 1, lineCap: .butt, dash: dash))
+            path(projection).stroke(Color.secondary, style: StrokeStyle(lineWidth: width, lineCap: .butt, dash: dash, dashPhase: phase))
         }
         .allowsHitTesting(false)
     }
