@@ -158,6 +158,7 @@ Decisions made while building (2026-10-29, open to Viz's change):
 Burns takes over usage from Penfold (Viz, 2026-10-27). Penfold's usage code retires after Burns ships.
 The switch is a single cutover, not a period of running both (Viz, 2026-10-27).
 Only the Claude telemetry endpoint needs the cutover: Claude sends OTLP to one endpoint.
+The cutover happened on 2026-10-29 (Viz): the dotfiles `claude` launcher sends OTLP to `http://localhost:9766` on every host. Sessions started before it keep sending to Penfold until they restart.
 The statusline forwarder and the SessionStart hook are additive. Claude runs every configured hook, and the statusline script already fans its input out, so `smithers` runs beside Penfold before the cutover.
 On 2026-10-28 Viz's statusline script gained the `smithers statusline` forwarder, guarded so that hosts without `smithers` skip it.
 `smithersd` does not forward data to Penfold.
@@ -489,7 +490,7 @@ Model catalogs port from Penfold's `internal/models` with their tests.
 
 ## Wire protocol
 
-`smithersd` listens on `127.0.0.1:9766`. Penfold keeps `9765` until the cutover moves the Claude telemetry endpoint.
+`smithersd` listens on `127.0.0.1:9766`. Since the cutover (2026-10-29), Claude sends its telemetry here, not to Penfold on `9765`.
 `smithersd` also serves the `GET` routes on the host's tailnet address, port 9766, and checks each caller there (see "Tailnet listener"). Every route stays on loopback.
 
 | Route | Caller | Answer |
