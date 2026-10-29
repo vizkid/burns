@@ -20,7 +20,9 @@ settings:
     MARKETING_VERSION: "0.1"
     CURRENT_PROJECT_VERSION: "1"
     GENERATE_INFOPLIST_FILE: NO
-    # iOS app groups are registered names; a macOS one is the team ID as a prefix.
+    # iOS app groups are registered names; a macOS one is the team ID as a prefix. These feed
+    # Info.plist. The entitlements spell the same names with ${...}, which xcodegen expands, so
+    # Xcode's App Groups editor shows a real name it can register.
     BURNS_IOS_GROUP: group.$(BURNS_ID_DOMAIN).Burns
     BURNS_MAC_GROUP: $(BURNS_TEAM).$(BURNS_ID_DOMAIN).Burns
 packages:
@@ -58,7 +60,7 @@ targets:
     entitlements:
       path: Mac/BurnsMac.entitlements
       properties:
-        com.apple.security.application-groups: [$(BURNS_MAC_GROUP)]
+        com.apple.security.application-groups: ["${BURNS_TEAM}.${BURNS_ID_DOMAIN}.Burns"]
 
   BurnsMacWidget:
     type: app-extension
@@ -84,7 +86,7 @@ targets:
       properties:
         com.apple.security.app-sandbox: true
         com.apple.security.network.client: true
-        com.apple.security.application-groups: [$(BURNS_MAC_GROUP)]
+        com.apple.security.application-groups: ["${BURNS_TEAM}.${BURNS_ID_DOMAIN}.Burns"]
 
   Burns:
     type: application
@@ -108,7 +110,7 @@ targets:
     entitlements:
       path: iOS/Burns.entitlements
       properties:
-        com.apple.security.application-groups: [$(BURNS_IOS_GROUP)]
+        com.apple.security.application-groups: ["group.${BURNS_ID_DOMAIN}.Burns"]
 
   BurnsWidget:
     type: app-extension
@@ -132,4 +134,4 @@ targets:
     entitlements:
       path: iOS/BurnsWidget.entitlements
       properties:
-        com.apple.security.application-groups: [$(BURNS_IOS_GROUP)]
+        com.apple.security.application-groups: ["group.${BURNS_ID_DOMAIN}.Burns"]

@@ -16,6 +16,8 @@ env="${XDG_CONFIG_HOME:-$HOME/.config}/burns/signing.env"
 [ -f "$env" ] || { echo "missing $env: set BURNS_TEAM and BURNS_ID_DOMAIN there" >&2; exit 1; }
 . "$env"
 : "${BURNS_TEAM:?BURNS_TEAM is not set in $env}" "${BURNS_ID_DOMAIN:?BURNS_ID_DOMAIN is not set in $env}"
+# xcodegen expands ${BURNS_...} in project.yml's entitlements from the environment.
+export BURNS_TEAM BURNS_ID_DOMAIN
 if [ -z "${DEVELOPER_DIR:-}" ] && [ -d /Applications/Xcode.app/Contents/Developer ]; then
 	export DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer
 fi
