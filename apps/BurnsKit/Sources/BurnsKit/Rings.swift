@@ -9,10 +9,13 @@ public struct BurnsPalette: Sendable {
     public var critical: Color
     public var track: Color
 
+    /// Amber and red are fixed sRGB values, not `.orange` and `.red`: the Mac's menu bar window
+    /// blends system colours with what is behind it, which turned amber pale yellow and red salmon
+    /// beside the fixed yellow (Viz, 2026-10-29).
     public static func standard(increasedContrast: Bool = false) -> BurnsPalette {
         BurnsPalette(used: Color(red: 0.96, green: 0.74, blue: 0.20),
                      spare: increasedContrast ? .secondary : Color(red: 0.616, green: 0.698, blue: 0.769).opacity(0.42),
-                     over: .orange, critical: .red,
+                     over: Color(red: 1.0, green: 0.55, blue: 0.10), critical: Color(red: 0.93, green: 0.23, blue: 0.20),
                      track: Color.secondary.opacity(increasedContrast ? 0.45 : 0.25))
     }
 
