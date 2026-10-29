@@ -112,8 +112,16 @@ public struct RingCell: View {
 
     public var body: some View {
         VStack(spacing: 2) {
-            SpendRings(model: ring.tile, palette: palette, diameter: diameter) {
-                ProviderSymbol(provider: ring.id.provider).foregroundStyle(selected ? Color.primary : Color.secondary)
+            if ring.credits {
+                // No windows, so no track either: an empty track would read as unknown quota.
+                Image("AzureMark", bundle: .module).renderingMode(.original).resizable().interpolation(.high).scaledToFit()
+                    .padding(diameter * 0.18)
+                    .frame(width: diameter, height: diameter)
+                    .opacity(selected ? 1 : 0.75)
+            } else {
+                SpendRings(model: ring.tile, palette: palette, diameter: diameter) {
+                    ProviderSymbol(provider: ring.id.provider).foregroundStyle(selected ? Color.primary : Color.secondary)
+                }
             }
             if showsName {
                 Text(ring.id.name).font(.caption2).lineLimit(1).foregroundStyle(selected ? .primary : .secondary)
@@ -122,7 +130,7 @@ public struct RingCell: View {
         }
         .contentShape(Rectangle())
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(ring.tile.accessibilityLabel)
+        .accessibilityLabel(ring.credits ? "\(ring.tile.account): Microsoft credits" : ring.tile.accessibilityLabel)
         .accessibilityAddTraits(selected ? [.isButton, .isSelected] : .isButton)
     }
 }

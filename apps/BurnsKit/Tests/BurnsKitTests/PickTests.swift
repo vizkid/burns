@@ -42,10 +42,11 @@ struct PickTests {
         #expect(Pick.choose(accounts, now: now) == .unknown(AccountID(provider: "claude", name: "alpha")))
     }
 
-    /// Rings: quota accounts only, each name's Claude then its Codex, names in settings order.
+    /// Rings: each name's Claude then its Codex, names in settings order, then Azure, which has no
+    /// quota windows and draws its mark alone.
     @Test func ringOrder() {
-        let accounts = [account("codex", "beta", [:]), account("claude", "alpha", [:]), account("codex", "alpha", [:]),
-                        account("claude", "beta", [:]), account("codex", "beta-azure", kind: "azure", [:])]
-        #expect(RingOrder.ordered(accounts).map(\.id.label) == ["Claude beta", "Codex beta", "Claude alpha", "Codex alpha"])
+        let accounts = [account("codex", "beta-azure", kind: "azure", [:]), account("codex", "beta", [:]), account("claude", "alpha", [:]),
+                        account("codex", "alpha", [:]), account("claude", "beta", [:])]
+        #expect(RingOrder.ordered(accounts).map(\.id.label) == ["Claude beta", "Codex beta", "Claude alpha", "Codex alpha", "Codex beta-azure"])
     }
 }

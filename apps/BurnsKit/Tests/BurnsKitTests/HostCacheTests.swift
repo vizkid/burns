@@ -47,7 +47,8 @@ struct HostCacheTests {
         let d = defaults()
         let snap = try Fixture.snapshot("one", usage: Fixture.usage(host: "one", alpha5: 90, alpha7: 30, beta7: 20))
         var model = UsageModel(snapshots: [snap], selected: nil, now: now)
-        #expect(model.rings.map(\.id.label) == ["Claude alpha", "Codex alpha", "Claude beta", "Codex beta"])
+        #expect(model.rings.map(\.id.label) == ["Claude alpha", "Codex alpha", "Claude beta", "Codex beta", "Codex beta-azure"])
+        #expect(model.rings.map(\.credits) == [false, false, false, false, true])
         #expect(model.selected == AccountID(provider: "codex", name: "beta"), "Enter's pick: 80% left")
         #expect(model.burndown?.account == model.selected)
 
@@ -63,6 +64,15 @@ struct HostCacheTests {
         // Nothing known: the first ring.
         let blank = try Fixture.snapshot("one", usage: Fixture.usage(host: "one", alpha5: nil, alpha7: nil, beta7: nil))
         #expect(UsageModel(snapshots: [blank], selected: nil, now: now).selected == AccountID(provider: "claude", name: "alpha"))
+    }
+
+    /// Azure selected: no chart, and Microsoft credits named, never a percent or "unlimited".
+    @Test func azureSelectionNamesCredits() throws {
+        let snap = try Fixture.snapshot("one", usage: Fixture.usage(host: "one", alpha5: 90, alpha7: 30, beta7: 20))
+        let azure = AccountID(provider: "codex", name: "beta-azure")
+        let model = UsageModel(snapshots: [snap], selected: azure, now: now)
+        #expect(model.selected == azure)
+        #expect(model.burndown?.lines.isEmpty == true && model.burndown?.headline == "Microsoft credits")
     }
 
     /// Rule 2 at display time: a cached window whose reset passed reads unknown.

@@ -36,8 +36,8 @@ public enum Pick: Equatable, Sendable {
     }
 }
 
-/// The ring row's order: quota accounts only, each name's Claude then its Codex, names in the
-/// order settings list them (docs/SPEC.md, "Showing usage").
+/// The ring row's order: each name's Claude then its Codex, names in the order settings list
+/// them, then the Azure accounts (docs/SPEC.md, "Showing usage").
 public enum RingOrder {
     public static func ordered(_ accounts: [AccountUsage]) -> [AccountUsage] {
         let quota = accounts.filter(\.isQuota)
@@ -46,6 +46,6 @@ public enum RingOrder {
         let rank = ["claude": 0, "codex": 1]
         return names.flatMap { name in
             quota.filter { $0.id.name == name }.sorted { (rank[$0.id.provider] ?? 2) < (rank[$1.id.provider] ?? 2) }
-        }
+        } + accounts.filter { !$0.isQuota }
     }
 }

@@ -99,7 +99,13 @@ public struct UsageView<Cell: View>: View {
                         if !compact { Spacer(minLength: 4) }
                         Text(b.headline).font(compact ? .caption2 : .caption).foregroundStyle(.secondary).lineLimit(1).minimumScaleFactor(0.7)
                     }
-                    BurndownChart(burndown: b, compact: compact)
+                    if b.lines.isEmpty {
+                        Text(b.headline == "Microsoft credits" ? "Runs on Microsoft credits. No quota windows to draw." : "No live quota window to draw.")
+                            .font(compact ? .caption2 : .footnote).foregroundStyle(.secondary)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    } else {
+                        BurndownChart(burndown: b, compact: compact)
+                    }
                 }
             }
         }

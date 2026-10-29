@@ -42,6 +42,8 @@ public struct UsageModel: Equatable, Sendable {
     public struct Ring: Equatable, Sendable, Identifiable {
         public var id: AccountID
         public var tile: SpendTileModel
+        /// Azure: Microsoft credits, no quota windows. It draws its mark without rings.
+        public var credits: Bool
     }
 
     public var rings: [Ring]
@@ -61,7 +63,7 @@ public struct UsageModel: Equatable, Sendable {
             let tile = SpendTileModel(account: a.id.label, fiveHourPercent: five?.percent, fiveHourResetsAt: five?.resetsAt,
                                       sevenDayPercent: seven?.percent, sevenDayResetsAt: seven?.resetsAt,
                                       onCredits: false, now: now, calendar: calendar)
-            return Ring(id: a.id, tile: tile)
+            return Ring(id: a.id, tile: tile, credits: !a.isQuota)
         }
         pick = Pick.choose(accounts, now: now)
         let ids = rings.map(\.id)
@@ -73,7 +75,10 @@ public struct UsageModel: Equatable, Sendable {
             selected = ids.first
         }
         let readings = Merge.readings(snapshots.map(\.readings), accounts: accounts, now: now)
-        burndown = selected.flatMap { id in accounts.first { $0.id == id } }.map { Burndown.build(account: $0, readings: readings, now: now) }
+        burndown = selected.flatMap { id in accounts.first { $0.id == id } }.map { a in
+            a.isQuota ? Burndown.build(account: a, readings: readings, now: now)
+                : Burndown(account: a.id, lines: [], unknown: [], grid: [], headline: "Microsoft credits")
+        }
         oldestFetch = snapshots.map(\.fetchedAt).min()
     }
 

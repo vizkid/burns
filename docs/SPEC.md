@@ -111,12 +111,12 @@ Decisions made while building (2026-10-29, open to Viz's change):
 | Decision | Reason |
 |---|---|
 | Each app keeps its own host list. An entry is a tailnet name such as `host.tailnet.ts.net`. | The phone must work while the Mac sleeps, so it cannot read the Mac's list. |
-| The ring row shows the quota accounts: every Claude and Codex account except Azure. Each account name's Claude comes before its Codex, names in settings order. | Azure has no windows to draw. The Enter pick already treats it as the fallback. |
+| The ring row shows every account. Each account name's Claude comes before its Codex, names in settings order, then Azure. Azure draws its full-colour mark with no rings, and selecting it shows "Microsoft credits" in place of a chart. | Azure has no quota windows. An empty track would read as unknown quota; a percent or "unlimited" would be false (rule 9). |
 | The combined burndown draws both windows on one axis from the window's start to its reset. The seven-day line is heavier. The steady burn is the same line for both, so it is drawn once. The time grid is the seven days. | Both windows fit one small widget. Each line still ends at its own reset. |
 | A widget reads every host itself, at most every 15 minutes, with a 4-second timeout per host. It keeps each host's last answer in the app group. | A widget cannot rely on the app running. A host that does not answer keeps its cached answer, marked with its time. |
 | Between reads, the timeline holds an entry every 15 minutes for 2 hours, rebuilt from the cache. | The time arcs and the unknown-at-reset rule move without new data. |
 | The selected account lives in the app group. It is shared by every widget on the device and the app's window. | One tap selects the account everywhere on that device. |
-| A ring's middle shows the provider's one-colour glyph, tinted: Penfold's vectors in `BurnsKit/Resources`, Claude's spark from Anthropic's press kit and Codex's cloud from the MIT-licensed LobeHub drawing. | Viz, 2026-10-29: Rex shows the same glyphs, and naming the provider this way is fair use. |
+| A ring's middle shows the provider's one-colour glyph, tinted: Penfold's vectors in `BurnsKit/Resources`, Claude's spark from Anthropic's press kit and Codex's cloud from the MIT-licensed LobeHub drawing. Azure keeps its own full-colour mark, as in Penfold. | Viz, 2026-10-29: Rex shows the same glyphs, and naming the provider this way is fair use. |
 | The Mac app polls every 60 seconds and reloads the widgets only when a host's data changed. | The flame's colour needs fresh quota; widget reloads count against a budget. |
 | A widget tap reuses a cache fetched in the last 14 minutes. | The tap answers from the cache, without waiting on the network. |
 
