@@ -39,11 +39,23 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /v1/metrics", s.metrics)
 	mux.HandleFunc("POST /statusline", s.statusline)
 	mux.HandleFunc("POST /bind", s.bind)
+	s.reads(mux)
+	return mux
+}
+
+// ReadHandler returns the read routes alone, for the tailnet listener: nothing
+// reachable from another device writes usage or binds a session.
+func (s *Server) ReadHandler() http.Handler {
+	mux := http.NewServeMux()
+	s.reads(mux)
+	return mux
+}
+
+func (s *Server) reads(mux *http.ServeMux) {
 	mux.HandleFunc("GET /usage", s.usage)
 	mux.HandleFunc("GET /usage/readings", s.readings)
 	mux.HandleFunc("GET /usage/history", s.history)
 	mux.HandleFunc("GET /usage/sessions", s.sessions)
-	return mux
 }
 
 // readBody reads at most limit bytes. It answers 413 and returns false when the body is larger.

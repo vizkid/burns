@@ -43,6 +43,7 @@ func run() error {
 	dbPath := flag.String("db", filepath.Join(stateDir(home), "smithers.db"), "SQLite store")
 	host := flag.String("host", shortHostname(), "host name reported to readers")
 	rexPath := flag.String("rex", lookRex(), "rex CLI that checks and ends bindings; empty disables")
+	tailscalePath := flag.String("tailscale", lookTailscale(), "tailscale CLI for the tailnet read listener; empty disables")
 	showVersion := flag.Bool("version", false, "print the version and exit")
 	flag.Parse()
 	if *showVersion {
@@ -78,6 +79,11 @@ func run() error {
 		log.Printf("checking bindings with %s", *rexPath)
 	} else {
 		log.Printf("WARN rex not found: bindings stay unverified and open")
+	}
+	if *tailscalePath != "" {
+		go serveTailnet(ctx, *tailscalePath, server.ReadHandler())
+	} else {
+		log.Printf("WARN tailscale not found: no tailnet listener")
 	}
 	srv := &http.Server{
 		Addr:              *addr,

@@ -23,6 +23,8 @@ fi
 
 # A service's PATH may lack rex; an empty --rex leaves bindings unchecked.
 rex=$(command -v rex || true)
+# Likewise tailscale; an empty --tailscale serves no tailnet listener.
+tailscale=$(command -v tailscale || true)
 
 if [ "$(uname -s)" != Darwin ]; then
 	if ! command -v systemctl >/dev/null || ! systemctl --user show-environment >/dev/null 2>&1; then
@@ -36,7 +38,7 @@ if [ "$(uname -s)" != Darwin ]; then
 Description=Burns smithersd
 
 [Service]
-ExecStart="$bin/smithersd" --config "$config" --rex "$rex"
+ExecStart="$bin/smithersd" --config "$config" --rex "$rex" --tailscale "$tailscale"
 Restart=always
 RestartSec=10
 
@@ -71,6 +73,8 @@ cat >"$plist" <<EOF
 		<string>$config</string>
 		<string>--rex</string>
 		<string>$rex</string>
+		<string>--tailscale</string>
+		<string>$tailscale</string>
 	</array>
 	<key>RunAtLoad</key>
 	<true/>
