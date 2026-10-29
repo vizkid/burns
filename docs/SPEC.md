@@ -116,7 +116,7 @@ Decisions made while building (2026-10-29, open to Viz's change):
 | A widget reads every host itself, at most every 15 minutes, with a 4-second timeout per host. It keeps each host's last answer in the app group. | A widget cannot rely on the app running. A host that does not answer keeps its cached answer, marked with its time. |
 | Between reads, the timeline holds an entry every 15 minutes for 2 hours, rebuilt from the cache. | The time arcs and the unknown-at-reset rule move without new data. |
 | The selected account lives in the app group. It is shared by every widget on the device and the app's window. | One tap selects the account everywhere on that device. |
-| A ring's middle shows an SF Symbol: a sparkle for Claude, a cloud for Codex. | The public repository carries no vendor logos. Penfold's glyphs are vendor artwork. |
+| A ring's middle shows the provider's one-colour glyph, tinted: Penfold's vectors in `BurnsKit/Resources`, Claude's spark from Anthropic's press kit and Codex's cloud from the MIT-licensed LobeHub drawing. | Viz, 2026-10-29: Rex shows the same glyphs, and naming the provider this way is fair use. |
 | The Mac app polls every 60 seconds and reloads the widgets only when a host's data changed. | The flame's colour needs fresh quota; widget reloads count against a budget. |
 | A widget tap reuses a cache fetched in the last 14 minutes. | The tap answers from the cache, without waiting on the network. |
 

@@ -9,7 +9,7 @@ let package = Package(
     platforms: [.macOS(.v14), .iOS(.v17)],
     products: [.library(name: "BurnsKit", targets: ["BurnsKit"])],
     targets: [
-        .target(name: "BurnsKit", path: "Sources/BurnsKit"),
+        .target(name: "BurnsKit", path: "Sources/BurnsKit", resources: [.process("Resources")]),
         .testTarget(name: "BurnsKitTests", dependencies: ["BurnsKit"], path: "Tests/BurnsKitTests"),
     ],
     swiftLanguageVersions: [.v5]

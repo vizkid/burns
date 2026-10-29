@@ -26,14 +26,24 @@ public struct BurnsPalette: Sendable {
     }
 }
 
-/// A provider's mark in the middle of a ring. SF Symbols, so the public repository carries no
-/// vendor logos: a sparkle for Claude, a cloud for Codex.
+/// A provider's one-colour mark in the middle of a ring, tinted by the caller. Penfold's vectors:
+/// Claude's spark from Anthropic's press kit, and Codex's cloud from the MIT-licensed LobeHub
+/// drawing (@lobehub/icons, codex-color). Used to name the provider, as Rex and Penfold do.
 public struct ProviderSymbol: View {
     let provider: String
     public init(provider: String) { self.provider = provider }
+
+    /// Codex's solid cloud fills its image; Claude's thin spark does not. At one size the cloud
+    /// looks much larger, so it draws at Penfold's 0.68.
+    var scale: CGFloat { provider == "codex" ? 0.68 : 1 }
+
     public var body: some View {
-        Image(systemName: provider == "codex" ? "cloud.fill" : "sparkle")
-            .resizable().scaledToFit()
+        GeometryReader { geo in
+            Image(provider == "codex" ? "CodexGlyph" : "ClaudeGlyph", bundle: .module)
+                .renderingMode(.template).resizable().interpolation(.high).scaledToFit()
+                .frame(width: geo.size.width * scale, height: geo.size.height * scale)
+                .frame(width: geo.size.width, height: geo.size.height)
+        }
     }
 }
 
@@ -57,7 +67,7 @@ public struct SpendRings<Mark: View>: View {
         ZStack {
             ring(model.fiveHour, diameter: diameter)
             ring(model.sevenDay, diameter: inner)
-            mark.frame(width: max(8, inner - 2 * stroke - 6), height: max(8, inner - 2 * stroke - 6))
+            mark.frame(width: max(8, inner - 2 * stroke - 2), height: max(8, inner - 2 * stroke - 2))
         }
         .frame(width: diameter, height: diameter)
         .accessibilityHidden(true)
