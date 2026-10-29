@@ -47,13 +47,42 @@ public struct BurndownChart: View {
     let dash: [CGFloat] = [3, 5]
     var tone: Color { palette.usage(burndown.line?.verdict) }
 
+    var projectionArea: [Point] {
+        guard let p = burndown.line?.projection, let first = p.first else { return [] }
+        return [Point(x: max(0, first.x - 0.005), left: first.left)] + p
+    }
+
     var segments: [Segment] {
-        guard let line = burndown.line else { return [] }
-        return [
-            Segment(id: "steady", points: line.steady, style: StrokeStyle(lineWidth: 1, lineCap: .round, dash: dash), color: Color.secondary.opacity(0.5)),
-            Segment(id: "actual", points: actual, style: StrokeStyle(lineWidth: width, lineCap: .round, lineJoin: .round), color: tone, curve: .monotone),
-            Segment(id: "projection", points: line.projection, style: StrokeStyle(lineWidth: width, lineCap: .round, dash: dash), color: .secondary),
-        ]
+        [Segment(id: "actual", points: actual, style: StrokeStyle(lineWidth: width, lineCap: .round, lineJoin: .round), color: tone, curve: .monotone)]
+    }
+
+    /// Where a dashed line starting at `start` must begin its pattern so its dashes fall on those of
+    /// a line with the same pattern starting at `origin`. On pace the projection lies on the steady
+    /// line, and two patterns out of step there read as one jagged, beaded line.
+    static func dashPhase(origin: CGPoint, start: CGPoint, period: CGFloat) -> CGFloat {
+        guard period > 0 else { return 0 }
+        return hypot(start.x - origin.x, start.y - origin.y).truncatingRemainder(dividingBy: period)
+    }
+
+    /// The steady burn and the projection, drawn over the plot in screen points: Swift Charts gives
+    /// no dash phase, and the two patterns must line up where the lines meet.
+    func dashedLines(_ proxy: ChartProxy, _ geo: GeometryProxy) -> some View {
+        let plot = proxy.plotFrame.map { geo[$0] } ?? .zero
+        func screen(_ p: Point) -> CGPoint? {
+            guard let x = proxy.position(forX: p.x), let y = proxy.position(forY: p.left) else { return nil }
+            return CGPoint(x: plot.minX + x, y: plot.minY + y)
+        }
+        func path(_ points: [Point]) -> Path {
+            Path { path in path.addLines(points.compactMap(screen)) }
+        }
+        let steady = burndown.line?.steady ?? [], projection = burndown.line?.projection ?? []
+        let origin = steady.first.flatMap(screen) ?? .zero
+        let phase = projection.first.flatMap(screen).map { Self.dashPhase(origin: origin, start: $0, period: dash.reduce(0, +)) } ?? 0
+        return ZStack {
+            path(steady).stroke(Color.secondary.opacity(0.5), style: StrokeStyle(lineWidth: 1, lineCap: .round, dash: dash))
+            path(projection).stroke(Color.secondary, style: StrokeStyle(lineWidth: width, lineCap: .round, dash: dash, dashPhase: phase))
+        }
+        .allowsHitTesting(false)
     }
 
     public var body: some View {
@@ -65,8 +94,14 @@ public struct BurndownChart: View {
                     RuleMark(x: .value("x", slot.x0)).foregroundStyle(Color.secondary.opacity(0.25)).lineStyle(StrokeStyle(lineWidth: 0.5))
                 }
             }
+            // The quota the projection says would be left, faintly: the future part of the area. Drawn
+            // first and started a little early, under the actual area, so the two leave no seam.
+            ForEach(Array(projectionArea.enumerated()), id: \.offset) { _, p in
+                AreaMark(x: .value("x", p.x), y: .value("left", p.left), series: .value("area", "projection"))
+                    .foregroundStyle(Color.secondary.opacity(0.12))
+            }
             ForEach(Array(actual.enumerated()), id: \.offset) { _, p in
-                AreaMark(x: .value("x", p.x), y: .value("left", p.left))
+                AreaMark(x: .value("x", p.x), y: .value("left", p.left), series: .value("area", "actual"))
                     .foregroundStyle(LinearGradient(colors: [tone.opacity(0.45), tone.opacity(0.1)], startPoint: .top, endPoint: .bottom))
                     .interpolationMethod(.monotone)
             }
@@ -93,6 +128,7 @@ public struct BurndownChart: View {
             }
         }
         .chartLegend(.hidden)
+        .chartOverlay { proxy in GeometryReader { geo in dashedLines(proxy, geo) } }
         .accessibilityLabel(burndown.headline)
     }
 }

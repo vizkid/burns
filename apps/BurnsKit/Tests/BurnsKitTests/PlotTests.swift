@@ -1,3 +1,4 @@
+import CoreGraphics
 import Testing
 @testable import BurnsKit
 
@@ -26,5 +27,12 @@ struct PlotTests {
         #expect(BurndownChart.plotted(two, minGap: 0.01).first == two[0])
         #expect(BurndownChart.plotted(two, minGap: 0.01).last == two[1])
         #expect(BurndownChart.plotted([], minGap: 0.01).isEmpty)
+    }
+
+    /// A dash pattern started part-way along the steady line continues its dashes in step.
+    @Test func dashPhaseContinuesThePattern() {
+        let phase = BurndownChart.dashPhase(origin: .zero, start: CGPoint(x: 6, y: 8), period: 8)
+        #expect(abs(phase - 2) < 1e-9, "10 points along an 8-point pattern is 2 into it")
+        #expect(BurndownChart.dashPhase(origin: .zero, start: CGPoint(x: 3, y: 4), period: 0) == 0)
     }
 }
