@@ -39,6 +39,12 @@ func recordReadings(tx *sql.Tx, provider, account, limitID string, reports []quo
 			if prev, ok := last[m]; ok && (!w.ObservedAt.After(prev.ObservedAt) || sameReading(prev, w)) {
 				continue
 			}
+			// A new window supersedes the old one even before the old reset
+			// passes: Codex can restart a week early.
+			if _, err := tx.Exec(`DELETE FROM reading WHERE provider = ? AND account = ? AND limit_id = ? AND minutes = ?
+				AND abs(resets_at - ?) > ?`, provider, account, limitID, m, nanos(w.ResetsAt), int64(resetJitter)); err != nil {
+				return false, err
+			}
 			if _, err := tx.Exec(`INSERT OR IGNORE INTO reading VALUES (?,?,?,?,?,?,?)`, provider, account, limitID, m,
 				*w.Percent, nanos(w.ResetsAt), nanos(w.ObservedAt)); err != nil {
 				return false, err

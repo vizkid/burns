@@ -69,7 +69,7 @@ The solid line shows when the quota was used, so `smithersd` keeps every change 
 |---|---|
 | Recorded | A reported live window whose percent differs from the account's last reading of that window, or whose reset moved by more than a minute (a new window). Newer than the last reading only. |
 | Not recorded | Repeats. The Claude statusline posts the same percent on every render. |
-| Kept | Until the window resets. Then the next window starts empty. |
+| Kept | Until the window resets, or until a new window replaces it: Codex can restart a week before the old reset. Then the next window starts empty. |
 | Size | Readings change in whole percents, so a window holds about 100 rows. |
 | Served | `GET /usage/readings`: every reading of the live windows, oldest first |
 | Merging hosts | The union of every host's readings for an account, ordered by observation time |
@@ -551,6 +551,7 @@ Checked on Stiletto on 2026-10-28 with `make check` green and `smithersd` readin
 | 1b: block lookup scope | Inside a pane, `REX_SESSION` limits `rex block call` to that session. `smithersd` removes `REX_SESSION` and `REX_BLOCK` before calling `rex`. |
 | Readings, 2026-10-29 | After migration 4, the first statusline post stored one reading per Claude window. Later posts at the same percent stored nothing. |
 | Account without a label, 2026-10-29 | `claude -p` with OTel to `smithersd` and no `burns.account`. The request arrived unattributed with its cost, then took the personal account when the transcript was read about 30 seconds later. |
+| Baroni and Colonelk, 2026-10-29 | Installed from `main`: launchd on Baroni (macOS), systemd user service on Colonelk (Linux). A fresh store backfilled 7 days on each, including Codex readings. Colonelk and Baroni held newer Codex quota than Stiletto: Codex nfx at 100%, which Stiletto showed as 9% from an older reading. |
 
 ## Open questions
 

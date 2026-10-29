@@ -126,3 +126,16 @@ func TestReadingsServeLiveWindowsAndSweep(t *testing.T) {
 		t.Fatalf("%d readings after sweep; want 2: the five-hour window reset", n)
 	}
 }
+
+// Codex can restart a week early. The old window's reset has not passed, but a
+// new window supersedes it, so its readings must not mix into the chart.
+func TestNewWindowSupersedesEarlierOne(t *testing.T) {
+	s := open(t)
+	oldReset, newReset := t0.Add(48*time.Hour), t0.Add(7*24*time.Hour)
+	s.ApplyReports("work", "codex", []quota.Report{weekly(60, oldReset, t0)}, t0)
+	at := t0.Add(time.Hour)
+	s.ApplyReports("work", "codex", []quota.Report{weekly(2, newReset, at)}, at)
+	if got := percents(t, s, at); !equal(got, []float64{2}) {
+		t.Fatalf("readings = %v; want [2]: the superseded window's readings are dropped", got)
+	}
+}
