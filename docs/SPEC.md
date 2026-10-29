@@ -30,15 +30,33 @@ There is no `burnsd`. Viz decided this on 2026-10-27: the Mac app is the hub whe
 
 | Where | Shape | Source |
 |---|---|---|
-| Mac menu bar icon | A two-bar burndown meter: top bar for the five-hour window, bottom bar for the week | Design from CodexBar (see "Cross-references"). Design only; no code is copied. |
-| Usage views in both apps and the iOS widget | Penfold's rings, one tile per account: outer ring five hours, inner ring seven days, provider mark in the middle | Port of PenfoldKit `SpendTile`, `SpendRings`, and `SpendPace` |
+| Widgets (iOS and macOS) | CodexBar's burndown chart, per account: one window, or the five-hour and seven-day windows in one tile | Design from CodexBar (see "Cross-references"). Design only; no code is copied. |
+| Usage views in both apps | Penfold's rings, one tile per account: outer ring five hours, inner ring seven days, provider mark in the middle | Port of PenfoldKit `SpendTile`, `SpendRings`, and `SpendPace` |
+
+A burndown plots quota left from the window's start to its reset:
+
+| Element | Meaning |
+|---|---|
+| Solid line | Quota left, from every reading in the window |
+| Dashed line | The steady burn: 100% at the window's start to 0% at its reset |
+| Dotted line | The current rate projected to the reset |
+| Headline | Percent left, the pace verdict ("over pace"), and time to reset. "Budget spent" when it reached 0%. |
+| Day bars (seven-day window) | Proposal, to confirm: each day's share of the week's quota against one seventh |
 
 Each ring draws two arcs: the share of quota used, and the share of the window elapsed in the pace colour.
 The pace colour is quiet on or under pace, amber when 100% is projected with a quarter of the window or less left, and red when it is projected earlier or already reached.
 Rings carry no pace tick (Viz, 2026-10-01, in Penfold). Tiles list each account's Claude then its Codex, in settings order.
-An unknown window draws an empty track and says "unknown", never 0%.
+Rings and burndowns share `SpendPace`, so they give the same verdict.
+An unknown window draws an empty track and says "unknown", never 0%. A gap with no readings draws no line, never a flat one.
 
-Open: which account the menu bar meter shows. Proposal: the account Enter would pick, so the icon answers "can I start a session now".
+The menu bar icon is not decided.
+
+#### Reading history (proposal)
+
+`latest` keeps only the newest reading, so a burndown has nothing to draw. `smithersd` would add a `reading` table: one row per account, `limit_id`, and window each time the percent or the reset changes, kept 8 days.
+Readings change in whole percents, so a window holds at most about 100 rows per reset.
+Codex can backfill: every rollout `token_count` line carries its rate limits. Claude cannot: its readings come only from the live statusline, so each day before the table exists is lost.
+A route such as `GET /usage/readings?since=7d` would return them. The merge takes the union of every host's readings for an account, ordered by observation time.
 
 ### Merging hosts (proposal, 2026-10-28)
 
