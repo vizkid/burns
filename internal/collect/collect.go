@@ -63,21 +63,29 @@ type decoder interface {
 func (c *Collector) Scan() error {
 	var first error
 	for _, a := range c.Config.Accounts {
-		root, pattern := filepath.Join(c.Config.HomeDir(a), "projects"), "*.jsonl"
-		if a.Provider == "codex" {
-			root, pattern = filepath.Join(c.Config.HomeDir(a), "sessions"), "rollout-*.jsonl"
-		}
-		files, err := tail.Find(root, pattern)
-		if errors.Is(err, fs.ErrNotExist) {
-			continue
-		}
-		if err != nil && first == nil {
-			first = err
-		}
-		for _, f := range files {
-			if err := c.file(a, f); err != nil && first == nil {
-				first = fmt.Errorf("%s: %w", f, err)
+		for _, home := range c.Config.HomeDirs(a) {
+			if err := c.home(a, home); err != nil && first == nil {
+				first = err
 			}
+		}
+	}
+	return first
+}
+
+// home reads the changed files of one of the account's homes.
+func (c *Collector) home(a config.Account, home string) error {
+	root, pattern := filepath.Join(home, "projects"), "*.jsonl"
+	if a.Provider == "codex" {
+		root, pattern = filepath.Join(home, "sessions"), "rollout-*.jsonl"
+	}
+	files, err := tail.Find(root, pattern)
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil
+	}
+	first := err
+	for _, f := range files {
+		if err := c.file(a, f); err != nil && first == nil {
+			first = fmt.Errorf("%s: %w", f, err)
 		}
 	}
 	return first

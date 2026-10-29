@@ -57,12 +57,36 @@ func TestLoadRejectsBadFiles(t *testing.T) {
 		"bad name":      `{"accounts":[{"provider":"claude","name":"A b","home":".c","kind":"subscription"}]}`,
 		"empty home":    `{"accounts":[{"provider":"claude","name":"a","home":"","kind":"subscription"}]}`,
 		"two documents": `{"accounts":[]}{"accounts":[]}`,
+		"empty extra":   `{"accounts":[{"provider":"claude","name":"a","home":".c","extra_homes":[" "],"kind":"subscription"}]}`,
+		"home twice":    `{"accounts":[{"provider":"claude","name":"a","home":".c","kind":"subscription"},{"provider":"claude","name":"b","home":".d","extra_homes":[".c"],"kind":"subscription"}]}`,
 	} {
 		if _, err := load(t, body); err == nil {
 			t.Errorf("%s: want error", name)
 		} else if strings.TrimSpace(err.Error()) == "" {
 			t.Errorf("%s: empty error", name)
 		}
+	}
+}
+
+// Another home signed in to the same account counts as that account: its
+// files are scanned and its paths belong to the account.
+func TestExtraHomesBelongToTheAccount(t *testing.T) {
+	c, err := load(t, `{"accounts":[
+ {"provider":"claude","name":"personal","home":".claude-personal","extra_homes":[".claude","/srv/claude"],"kind":"subscription"}]}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"/home/u/.claude-personal", "/home/u/.claude", "/srv/claude"}
+	if got := c.HomeDirs(c.Accounts[0]); strings.Join(got, " ") != strings.Join(want, " ") {
+		t.Fatalf("HomeDirs = %v; want %v", got, want)
+	}
+	for _, p := range []string{"/home/u/.claude/projects/p/s.jsonl", "/srv/claude/projects/p/s.jsonl"} {
+		if a, ok := c.ForPath(p); !ok || a.Name != "personal" {
+			t.Fatalf("ForPath(%s) = %+v, %v", p, a, ok)
+		}
+	}
+	if a, ok := c.ForPath("/home/u/.claude-personal/projects/p/s.jsonl"); !ok || a.Name != "personal" {
+		t.Fatalf("main home = %+v, %v", a, ok)
 	}
 }
 

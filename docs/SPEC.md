@@ -179,10 +179,11 @@ Shared source uses example names only.
 | `provider` | `claude` or `codex` |
 | `name` | Lowercase letters, digits, and hyphens |
 | `home` | Agent home, absolute or relative to the user's home, such as `.codex-work` |
+| `extra_homes` | Optional. Other homes signed in to the same account, such as the CLI's default `.claude` or `.codex`. They share one quota, so they are one account. Each home belongs to one account only. |
 | `kind` | `subscription`, or `azure` (Codex only) |
 
 Unknown fields are errors. File order is the settings order used for ties.
-A statusline post or file belongs to the account whose home contains its path, matched as a whole path component.
+A statusline post or file belongs to the account one of whose homes contains its path, matched as a whole path component.
 
 ### Readings
 

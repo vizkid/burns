@@ -25,12 +25,15 @@ const maxFile = 1 << 20
 var namePattern = regexp.MustCompile(`^[a-z][a-z0-9-]{0,31}$`)
 
 // Account is one provider and account name with its agent home.
-// Home is absolute, or relative to the user's home directory.
+// Home is absolute, or relative to the user's home directory. ExtraHomes are
+// other homes signed in to the same account, such as the CLI's default home:
+// they are one quota, so they are one account, not a second one.
 type Account struct {
-	Provider string `json:"provider"`
-	Name     string `json:"name"`
-	Home     string `json:"home"`
-	Kind     string `json:"kind"`
+	Provider   string   `json:"provider"`
+	Name       string   `json:"name"`
+	Home       string   `json:"home"`
+	ExtraHomes []string `json:"extra_homes,omitempty"`
+	Kind       string   `json:"kind"`
 }
 
 // Config is the accounts file. Order is the settings order used for ties.
@@ -67,7 +70,7 @@ func Load(path, userHome string) (Config, error) {
 }
 
 func (c Config) validate() error {
-	seen := map[string]bool{}
+	seen, homes := map[string]bool{}, map[string]bool{}
 	for i, a := range c.Accounts {
 		var problem string
 		switch {
@@ -83,6 +86,8 @@ func (c Config) validate() error {
 			problem = "azure accounts exist only for codex"
 		case seen[a.Provider+"/"+a.Name]:
 			problem = "duplicate account"
+		default:
+			problem = c.checkHomes(a, homes)
 		}
 		if problem != "" {
 			return fmt.Errorf("account %d (%s %s): %s", i+1, a.Provider, a.Name, problem)
@@ -95,20 +100,50 @@ func (c Config) validate() error {
 	return nil
 }
 
-// HomeDir is the account's absolute agent home.
-func (c Config) HomeDir(a Account) string {
-	if filepath.IsAbs(a.Home) {
-		return filepath.Clean(a.Home)
+// checkHomes reports an empty extra home, or a home already claimed: a home's
+// files can belong to one account only.
+func (c Config) checkHomes(a Account, claimed map[string]bool) string {
+	for _, h := range a.ExtraHomes {
+		if strings.TrimSpace(h) == "" {
+			return "extra_homes entries must not be empty"
+		}
 	}
-	return filepath.Join(c.userHome, a.Home)
+	for _, d := range c.HomeDirs(a) {
+		if claimed[d] {
+			return "home " + d + " belongs to another account"
+		}
+		claimed[d] = true
+	}
+	return ""
 }
 
-// ForPath returns the account whose home contains path.
+// HomeDir is the account's absolute agent home.
+func (c Config) HomeDir(a Account) string { return c.abs(a.Home) }
+
+// HomeDirs is the account's home followed by its extra homes, all absolute.
+func (c Config) HomeDirs(a Account) []string {
+	dirs := []string{c.abs(a.Home)}
+	for _, h := range a.ExtraHomes {
+		dirs = append(dirs, c.abs(h))
+	}
+	return dirs
+}
+
+func (c Config) abs(home string) string {
+	if filepath.IsAbs(home) {
+		return filepath.Clean(home)
+	}
+	return filepath.Join(c.userHome, home)
+}
+
+// ForPath returns the account one of whose homes contains path.
 func (c Config) ForPath(path string) (Account, bool) {
 	clean := filepath.Clean(path)
 	for _, a := range c.Accounts {
-		if strings.HasPrefix(clean, c.HomeDir(a)+string(filepath.Separator)) {
-			return a, true
+		for _, d := range c.HomeDirs(a) {
+			if strings.HasPrefix(clean, d+string(filepath.Separator)) {
+				return a, true
+			}
 		}
 	}
 	return Account{}, false

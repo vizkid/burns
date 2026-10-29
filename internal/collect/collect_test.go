@@ -210,3 +210,33 @@ func TestIntervalAdapts(t *testing.T) {
 		t.Fatalf("active interval = %v; want %v", got, FastScan)
 	}
 }
+
+// A default home signed in to the same account is scanned as that account.
+func TestScanReadsExtraHomes(t *testing.T) {
+	e := setup(t)
+	cfgPath := filepath.Join(e.home, "accounts.json")
+	os.WriteFile(cfgPath, []byte(`{"accounts":[
+	 {"provider":"claude","name":"personal","home":".claude-x","extra_homes":[".claude"],"kind":"subscription"}]}`), 0o600)
+	cfg, err := config.Load(cfgPath, e.home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	e.cfg = cfg
+	extra := filepath.Join(e.home, ".claude", "projects", "-p", "s2.jsonl")
+	os.MkdirAll(filepath.Dir(extra), 0o700)
+	appendLines(t, extra, `{"type":"assistant","requestId":"q2","sessionId":"s2","timestamp":"2026-10-28T03:00:01Z","message":{"id":"m2","usage":{"input_tokens":1,"output_tokens":2}}}`+"\n")
+	appendLines(t, e.transcript, `{"type":"assistant","requestId":"q1","sessionId":"s1","timestamp":"2026-10-28T03:00:01Z","message":{"id":"m1","usage":{"input_tokens":1,"output_tokens":2}}}`+"\n")
+	st := e.scan(t)
+	defer st.Close()
+	gs, err := st.Sessions(now.Add(-time.Hour))
+	if err != nil {
+		t.Fatal(err)
+	}
+	accounts := map[string]int64{}
+	for _, g := range gs {
+		accounts[g.Provider+"/"+g.Account] += g.Requests
+	}
+	if accounts["claude/personal"] != 2 || len(accounts) != 1 {
+		t.Fatalf("requests by account = %v; want both homes under claude/personal", accounts)
+	}
+}
