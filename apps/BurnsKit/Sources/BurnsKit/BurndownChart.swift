@@ -19,18 +19,40 @@ public struct BurndownChart: View {
         let points: [Point]
         let style: StrokeStyle
         let color: Color
+        var curve: InterpolationMethod = .linear
+    }
+
+    /// The actual line as drawn: one monotone curve, which never turns back or overshoots a point.
+    var actual: [Point] { Self.plotted(burndown.line?.actual ?? [], minGap: 0.01) }
+
+    /// Readings closer than `minGap` of the window merge into the later one: a near-vertical step
+    /// makes a monotone curve overshoot far past the chart. The span before the first reading, where
+    /// nothing was read, gets points along its straight line, so the curve does not bow there.
+    static func plotted(_ actual: [Point], minGap: Double) -> [Point] {
+        guard actual.count > 2, let start = actual.first else { return actual }
+        var read: [Point] = []
+        for p in actual.dropFirst() {
+            if let last = read.last, p.x - last.x < minGap { read[read.count - 1] = p } else { read.append(p) }
+        }
+        guard let first = read.first else { return actual }
+        let lead = (0..<4).map { i -> Point in
+            let f = Double(i) / 4
+            return Point(x: start.x + (first.x - start.x) * f, left: start.left + (first.left - start.left) * f)
+        }
+        return lead + read
     }
 
     var width: CGFloat { compact ? 1.5 : 2 }
-    let dash: [CGFloat] = [4, 3]
+    /// Round caps grow each dash by the line width, so the gap is wider than it looks here.
+    let dash: [CGFloat] = [3, 5]
     var tone: Color { palette.usage(burndown.line?.verdict) }
 
     var segments: [Segment] {
         guard let line = burndown.line else { return [] }
         return [
-            Segment(id: "steady", points: line.steady, style: StrokeStyle(lineWidth: 1, dash: dash), color: Color.secondary.opacity(0.5)),
-            Segment(id: "actual", points: line.actual, style: StrokeStyle(lineWidth: width, lineCap: .round, lineJoin: .round), color: tone),
-            Segment(id: "projection", points: line.projection, style: StrokeStyle(lineWidth: width, dash: dash), color: .secondary),
+            Segment(id: "steady", points: line.steady, style: StrokeStyle(lineWidth: 1, lineCap: .round, dash: dash), color: Color.secondary.opacity(0.5)),
+            Segment(id: "actual", points: actual, style: StrokeStyle(lineWidth: width, lineCap: .round, lineJoin: .round), color: tone, curve: .monotone),
+            Segment(id: "projection", points: line.projection, style: StrokeStyle(lineWidth: width, lineCap: .round, dash: dash), color: .secondary),
         ]
     }
 
@@ -43,17 +65,19 @@ public struct BurndownChart: View {
                     RuleMark(x: .value("x", slot.x0)).foregroundStyle(Color.secondary.opacity(0.25)).lineStyle(StrokeStyle(lineWidth: 0.5))
                 }
             }
-            ForEach(Array((burndown.line?.actual ?? []).enumerated()), id: \.offset) { _, p in
-                AreaMark(x: .value("x", p.x), y: .value("left", p.left), series: .value("line", "area"))
+            ForEach(Array(actual.enumerated()), id: \.offset) { _, p in
+                AreaMark(x: .value("x", p.x), y: .value("left", p.left))
                     .foregroundStyle(LinearGradient(colors: [tone.opacity(0.45), tone.opacity(0.1)], startPoint: .top, endPoint: .bottom))
-                    .interpolationMethod(.linear)
+                    .interpolationMethod(.monotone)
             }
             ForEach(segments) { segment in
                 ForEach(Array(segment.points.enumerated()), id: \.offset) { _, p in
                     LineMark(x: .value("x", p.x), y: .value("left", p.left), series: .value("line", segment.id))
                         .foregroundStyle(segment.color)
                         .lineStyle(segment.style)
-                        .interpolationMethod(.linear)
+                        // Monotone through readings: a smooth curve that never turns back or
+                        // overshoots one, so it adds no usage that was not read.
+                        .interpolationMethod(segment.curve)
                 }
             }
         }

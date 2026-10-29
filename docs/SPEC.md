@@ -38,7 +38,7 @@ A burndown plots quota left from the window's start to its reset. It charts the 
 
 | Element | Meaning |
 |---|---|
-| Area with a solid edge | Quota left over time, filled in the pace colour, from the window's readings (see "Reading history"). The window starts at its reset minus its length, at 100%. The line runs straight from reading to reading, because usage grew between them. A reading lower than an earlier one in the window is stale and skipped (rule 10). With no readings yet it is a straight line to the current reading. |
+| Area with a solid edge | Quota left over time, filled in the pace colour, from the window's readings (see "Reading history"). The window starts at its reset minus its length, at 100%. Readings are whole percents, so the line keeps the moment usage first reached each one, and readings closer than 1% of the window merge into the later one. A monotone curve joins them: it never turns back or overshoots a reading. A reading lower than an earlier one in the window is stale and skipped (rule 10). Before the first reading, and with no readings yet, it is a straight line. It ends at the current percent. |
 | Thin faint dashed line | The steady burn: 100% at the window's start to 0% at its reset |
 | Heavy grey dashed line | The current rate projected to the reset, or to 0% left. Same dash as the steady line, grey (Viz, 2026-10-29). |
 | Headline | For the charted window: percent left, the pace verdict ("over pace"), and time to reset. "Budget spent" when it reached 0%. |

@@ -29,15 +29,23 @@ struct BurndownTests {
     }
 
     /// Rule 10: a reading lower than an earlier one in the window is stale and drawn nowhere,
-    /// so the line never climbs back up.
+    /// so the line never climbs back up. Readings are whole percents, so the line keeps the moment
+    /// usage first reached each one; a repeat adds a flat shoulder that reads as a staircase.
     @Test func staleReadingsAreSkipped() throws {
         let u = usage([10080: Window(percent: 30, resetsAt: weekReset, observedAt: now - h)])
         let rs = [reading(10080, 20, resets: weekReset, hoursAgo: 5), reading(10080, 25, resets: weekReset, hoursAgo: 4),
                   reading(10080, 22, resets: weekReset, hoursAgo: 3), reading(10080, 25, resets: weekReset, hoursAgo: 2),
                   reading(10080, 30, resets: weekReset, hoursAgo: 1)]
         let line = try #require(Burndown.build(account: u, readings: rs, now: now).line)
-        // The later 25 stays: usage was still flat two hours ago.
-        #expect(line.actual == [Point(x: 0, left: 100), Point(x: x(5), left: 80), Point(x: x(4), left: 75), Point(x: x(2), left: 75), Point(x: x(1), left: 70)])
+        #expect(line.actual == [Point(x: 0, left: 100), Point(x: x(5), left: 80), Point(x: x(4), left: 75), Point(x: x(1), left: 70)])
+    }
+
+    /// The current reading is drawn even when it was observed no later than the last reading:
+    /// the line must end at the percent the headline states.
+    @Test func lineEndsAtTheCurrentPercent() throws {
+        let u = usage([10080: Window(percent: 8, resetsAt: weekReset, observedAt: now - 2 * h)])
+        let line = try #require(Burndown.build(account: u, readings: [reading(10080, 5, resets: weekReset, hoursAgo: 2)], now: now).line)
+        #expect(line.actual.last?.left == 92)
     }
 
     /// No readings yet: a straight line from the start to the current reading, held to its observation.

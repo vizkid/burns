@@ -72,14 +72,17 @@ public struct Burndown: Equatable, Sendable {
         // reading below an earlier one is stale and is skipped.
         var actual = [Point(x: 0, left: 100)]
         var high = 0.0
-        // An equal reading later on is kept: usage was still flat then.
-        for r in readings.sorted(by: { $0.observedAt < $1.observedAt }) where r.observedAt >= start && r.percent >= high {
-            let p = Point(x: x(r.observedAt), left: 100 - r.percent)
-            if p != actual.last { actual.append(p) }
+        // Readings are whole percents: keep the moment usage first reached each one. A later repeat
+        // would add a flat shoulder, and the line would read as a staircase.
+        for r in readings.sorted(by: { $0.observedAt < $1.observedAt }) where r.observedAt >= start && (r.percent > high || actual.count == 1) {
+            actual.append(Point(x: x(r.observedAt), left: 100 - r.percent))
             high = r.percent
         }
-        let observed = Point(x: x(w.observedAt), left: 100 - used)
-        if let lastPoint = actual.last, observed.x > lastPoint.x, used >= high { actual.append(observed) }
+        // The line ends at the current percent, the one the headline states, even when that
+        // reading's time is no later than the last reading drawn.
+        if let lastPoint = actual.last, used > high || actual.count == 1 {
+            actual.append(Point(x: max(x(w.observedAt), lastPoint.x), left: 100 - used))
+        }
         let pace = SpendPace(usedPercent: used, resetsAt: w.resetsAt, length: length, now: now)
         var projection: [Point] = []
         if let pace, pace.verdict != nil {
