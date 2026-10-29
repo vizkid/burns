@@ -59,6 +59,16 @@ func (s *Server) usage(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"host": s.Host, "observed_at": now, "accounts": accounts})
 }
 
+// readings answers every change of the windows that have not reset, oldest first.
+func (s *Server) readings(w http.ResponseWriter, r *http.Request) {
+	readings, err := s.Store.Readings(s.Now())
+	if err != nil {
+		fail(w, "read readings", err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"host": s.Host, "readings": orEmpty(readings)})
+}
+
 func (s *Server) history(w http.ResponseWriter, r *http.Request) {
 	now := s.Now()
 	buckets, err := s.Store.History(now.Add(-HistoryWindow), now.Add(time.Nanosecond))

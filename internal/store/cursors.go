@@ -34,7 +34,8 @@ func (s *Store) SaveCursor(c tail.Cursor, state json.RawMessage) error {
 	return err
 }
 
-// Sweep deletes rows older than Retention and cursors of files that no longer exist.
+// Sweep deletes rows older than Retention, readings of windows that have reset,
+// and cursors of files that no longer exist.
 func (s *Store) Sweep(now time.Time) error {
 	cut := nanos(now.Add(-Retention))
 	for _, q := range []string{
@@ -45,6 +46,10 @@ func (s *Store) Sweep(now time.Time) error {
 		if _, err := s.db.Exec(q, cut); err != nil {
 			return err
 		}
+	}
+	// A reading is needed only until its window resets.
+	if _, err := s.db.Exec(`DELETE FROM reading WHERE resets_at <= ?`, nanos(now)); err != nil {
+		return err
 	}
 	rows, err := s.db.Query(`SELECT path FROM cursor`)
 	if err != nil {

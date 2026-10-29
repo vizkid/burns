@@ -51,6 +51,11 @@ CREATE INDEX compaction_request ON compaction (provider, request_key) WHERE requ
 ALTER TABLE binding ADD COLUMN verified INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE binding ADD COLUMN fg_pid INTEGER;
 CREATE INDEX binding_open ON binding (host, block) WHERE "end" IS NULL;
+`, `
+CREATE TABLE reading (
+	provider TEXT NOT NULL, account TEXT NOT NULL, limit_id TEXT NOT NULL, minutes INTEGER NOT NULL,
+	percent REAL NOT NULL, resets_at INTEGER NOT NULL, observed_at INTEGER NOT NULL,
+	PRIMARY KEY (provider, account, limit_id, minutes, observed_at)) WITHOUT ROWID;
 `}
 
 // Open opens or creates the store and applies migrations.

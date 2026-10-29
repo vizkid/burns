@@ -9,7 +9,8 @@ import (
 
 // ApplyReports folds reports, in order, into the latest windows of one limit.
 // It reads the stored windows once and writes only when the result differs,
-// so replaying old files costs reads, not rewrites.
+// so replaying old files costs reads, not rewrites. Each change is also kept
+// as a reading.
 func (s *Store) ApplyReports(account, limitID string, reports []quota.Report, now time.Time) error {
 	if len(reports) == 0 {
 		return nil
@@ -28,7 +29,14 @@ func (s *Store) ApplyReports(account, limitID string, reports []quota.Report, no
 	for _, r := range reports {
 		next = quota.Apply(next, r, now)
 	}
+	recorded, err := recordReadings(tx, provider, account, limitID, reports, now)
+	if err != nil {
+		return err
+	}
 	if sameWindows(stored, next) {
+		if recorded {
+			return tx.Commit()
+		}
 		return nil
 	}
 	if _, err := tx.Exec(`DELETE FROM latest WHERE provider = ? AND account = ? AND limit_id = ?`, provider, account, limitID); err != nil {

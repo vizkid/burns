@@ -38,7 +38,7 @@ A burndown plots quota left from the window's start to its reset:
 
 | Element | Meaning |
 |---|---|
-| Solid line | Quota left: a straight line from 100% at the window's start to the current reading now. The start is the reset minus the window length. |
+| Solid line | Quota left over time, from the window's readings (see "Reading history"). The window starts at its reset minus its length, at 100%. With no readings yet it is a straight line to the current reading. |
 | Dashed line | The steady burn: 100% at the window's start to 0% at its reset |
 | Dotted line | The current rate projected to the reset |
 | Headline | Percent left, the pace verdict ("over pace"), and time to reset. "Budget spent" when it reached 0%. |
@@ -61,11 +61,20 @@ To verify on a device: ring tap targets at StandBy scale, tap latency, and that 
 The menu bar icon is not decided.
 Proposal: when the window opens, the ring selected is the account Enter would pick, so the chart answers "how long will my next session's account last". A click selects another ring until the window closes.
 
-#### Reading history (not needed)
+#### Reading history (Viz, 2026-10-29; built the same day)
 
-The burndown needs only the current reading, its reset, and the window length, so `smithersd` keeps no reading history.
-The projection is the average rate since the window started, the same rate `SpendPace` uses.
-A history table would let the solid line show where the quota went, such as one heavy morning. It is not planned. Codex could backfill it from rollouts; Claude could not.
+The solid line shows when the quota was used, so `smithersd` keeps every change of each window in a `reading` table.
+
+| Rule | Detail |
+|---|---|
+| Recorded | A reported live window whose percent differs from the account's last reading of that window, or whose reset moved by more than a minute (a new window). Newer than the last reading only. |
+| Not recorded | Repeats. The Claude statusline posts the same percent on every render. |
+| Kept | Until the window resets. Then the next window starts empty. |
+| Size | Readings change in whole percents, so a window holds about 100 rows. |
+| Served | `GET /usage/readings`: every reading of the live windows, oldest first |
+| Merging hosts | The union of every host's readings for an account, ordered by observation time |
+
+Readings start when the table does. Claude has no earlier source. Codex rollouts carry their rate limits, but `smithersd` has already read them, and re-reading is not built.
 
 ### Merging hosts (proposal, 2026-10-28)
 
@@ -329,6 +338,7 @@ Each `smithersd` keeps one SQLite file in WAL mode, using `modernc.org/sqlite` (
 |---|---|---|
 | `latest` | Newest reading per account, `limit_id`, and window, with observation time. Claude windows use `limit_id` `claude`. | Until replaced |
 | `credits` | Newest Codex credits reading per account and `limit_id` | Until replaced |
+| `reading` | Each change of a quota window: account, `limit_id`, window, percent, reset, observation time | Until the window resets |
 | `request` | One row per Claude request or Codex response: dedupe key, account, agent session, turn, subagent, compaction flag, tokens, cost | 7 days |
 | `compaction` | One row per compaction: account, agent session, turn, trigger, context before and after, duration, request key | 7 days |
 | `binding` | Host, block, provider, agent session, start, end | 7 days after end |
@@ -428,6 +438,7 @@ Phase 2 serves the read routes on the tailnet and checks the caller's Tailscale 
 | `POST /statusline` | `smithers statusline` | Stores Claude windows for the account that owns `transcript_path`. Limit 8 KiB. |
 | `POST /bind` | `smithers hook session-start` | Checks and stores a binding: `provider`, `session`, `rex_block` (required), `rex_session`, `source`, `pids` |
 | `GET /usage` | Apps | Every configured account in settings order, with its limits. A window whose reset passed shows `percent: null` and `state: "unknown"`. |
+| `GET /usage/readings` | Apps | Every quota reading of the live windows, oldest first. See "Reading history". |
 | `GET /usage/history` | Apps | One-minute token buckets per account for the last 20 minutes |
 | `GET /usage/sessions?since=24h` | Apps | Totals per agent session, and per block and session |
 | `GET /usage/sessions?provider=&session=` | Apps | Totals per turn of one session |
@@ -529,6 +540,7 @@ Checked on Stiletto on 2026-10-28 with `make check` green and `smithersd` readin
 | 1b: a pane that closes | Its binding ended when the pane closed, from the events stream. |
 | 1b: a pane that closes while `smithersd` is down | The binding ended at restart, from the reconcile. |
 | 1b: block lookup scope | Inside a pane, `REX_SESSION` limits `rex block call` to that session. `smithersd` removes `REX_SESSION` and `REX_BLOCK` before calling `rex`. |
+| Readings, 2026-10-29 | After migration 4, the first statusline post stored one reading per Claude window. Later posts at the same percent stored nothing. |
 
 ## Open questions
 

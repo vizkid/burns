@@ -40,6 +40,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /statusline", s.statusline)
 	mux.HandleFunc("POST /bind", s.bind)
 	mux.HandleFunc("GET /usage", s.usage)
+	mux.HandleFunc("GET /usage/readings", s.readings)
 	mux.HandleFunc("GET /usage/history", s.history)
 	mux.HandleFunc("GET /usage/sessions", s.sessions)
 	return mux

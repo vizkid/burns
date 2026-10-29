@@ -203,3 +203,37 @@ func TestBindAndLimits(t *testing.T) {
 }
 
 func itoa(v int64) string { b, _ := json.Marshal(v); return string(b) }
+
+// Readings serve each change of a live window, with its account, oldest first.
+func TestReadingsRoute(t *testing.T) {
+	ts, s := server(t)
+	status := func(pct int) string {
+		return `{"transcript_path":"/home/u/.claude-personal/projects/p/s.jsonl",
+		 "rate_limits":{"five_hour":{"used_percentage":` + itoa(int64(pct)) + `,"resets_at":` + itoa(now.Add(time.Hour).Unix()) + `}}}`
+	}
+	for i, pct := range []int{4, 4, 6} {
+		at := now.Add(time.Duration(i) * time.Minute)
+		s.Now = func() time.Time { return at }
+		post(t, ts.URL+"/statusline", status(pct))
+	}
+	var doc struct {
+		Host     string
+		Readings []struct {
+			Provider, Account string
+			LimitID           string `json:"limit_id"`
+			Minutes           int
+			Percent           float64
+			ResetsAt          time.Time `json:"resets_at"`
+			ObservedAt        time.Time `json:"observed_at"`
+		}
+	}
+	getJSON(t, ts.URL+"/usage/readings", &doc)
+	if doc.Host != "host-1" || len(doc.Readings) != 2 {
+		t.Fatalf("readings = %+v; want two changes", doc)
+	}
+	first, second := doc.Readings[0], doc.Readings[1]
+	if first.Provider != "claude" || first.Account != "personal" || first.LimitID != "claude" || first.Minutes != 300 ||
+		first.Percent != 4 || second.Percent != 6 || !second.ObservedAt.Equal(now.Add(2*time.Minute)) {
+		t.Fatalf("readings = %+v", doc.Readings)
+	}
+}
