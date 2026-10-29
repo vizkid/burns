@@ -50,7 +50,9 @@ ios)
 			for (i = 2; i <= NF; i++) if ($i == "(UDID)") { print $(i-1); exit } }')
 	fi
 	[ -n "$device" ] || { echo "no available iPhone: connect and unlock it, or name it" >&2; exit 1; }
-	xcodebuild -project Burns.xcodeproj -scheme Burns -configuration Release -destination 'generic/platform=iOS' \
+	# Building for this phone, not a generic iOS device, lets Xcode register it and put it in
+	# the profile; a profile without the phone fails the install.
+	xcodebuild -project Burns.xcodeproj -scheme Burns -configuration Release -destination "platform=iOS,id=$device" \
 		-derivedDataPath "$build" -allowProvisioningUpdates -allowProvisioningDeviceRegistration -quiet build
 	xcrun devicectl device install app --device "$device" "$build/Build/Products/Release-iphoneos/Burns.app"
 	echo "installed Burns on $device"
