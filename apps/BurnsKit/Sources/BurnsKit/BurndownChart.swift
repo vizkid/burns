@@ -2,9 +2,9 @@ import Charts
 import SwiftUI
 
 /// The burndown (docs/SPEC.md, "Showing usage"): quota left as an area in the pace colour, edged by
-/// a solid line. The steady burn and the projection share one dash (Viz, 2026-10-29); the steady
-/// line is thin and faint, the projection as heavy as the actual line, so weight alone still tells
-/// them apart when StandBy tints the chart red at night.
+/// a solid line. The steady burn and the projection share one dash and are grey (Viz, 2026-10-29);
+/// the steady line is thin and faint, the projection as heavy as the actual line, so weight alone
+/// still tells them apart when StandBy tints the chart red at night.
 public struct BurndownChart: View {
     let burndown: Burndown
     let palette: BurnsPalette
@@ -30,7 +30,7 @@ public struct BurndownChart: View {
         return [
             Segment(id: "steady", points: line.steady, style: StrokeStyle(lineWidth: 1, dash: dash), color: Color.secondary.opacity(0.5)),
             Segment(id: "actual", points: line.actual, style: StrokeStyle(lineWidth: width, lineCap: .round, lineJoin: .round), color: tone),
-            Segment(id: "projection", points: line.projection, style: StrokeStyle(lineWidth: width, dash: dash), color: tone),
+            Segment(id: "projection", points: line.projection, style: StrokeStyle(lineWidth: width, dash: dash), color: .secondary),
         ]
     }
 
