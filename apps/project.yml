@@ -1,20 +1,22 @@
 # Burns for Mac and iOS with their widgets (docs/SPEC.md, "Apps and widgets").
-# scripts/build-apps.sh runs xcodegen, then xcodebuild with BURNS_TEAM and BURNS_ID_DOMAIN from
-# ~/.config/burns/signing.env: bundle identifiers and app groups are built from the domain, and
-# neither is written here.
+# scripts/build-apps.sh writes Signing.generated.xcconfig from ~/.config/burns/signing.env, then
+# runs xcodegen: bundle identifiers and app groups are built from BURNS_ID_DOMAIN, and neither
+# value is written here. The xcconfig, not the xcodebuild command line, carries them, so the
+# project opened in Xcode shows the real names.
 name: Burns
 options:
   deploymentTarget:
     iOS: "26.0"
     macOS: "26.0"
   createIntermediateGroups: true
+configFiles:
+  Debug: Signing.generated.xcconfig
+  Release: Signing.generated.xcconfig
 settings:
   base:
     SWIFT_VERSION: "5.0"
     CODE_SIGN_STYLE: Automatic
     DEVELOPMENT_TEAM: $(BURNS_TEAM)
-    BURNS_TEAM: ""
-    BURNS_ID_DOMAIN: ""
     MARKETING_VERSION: "0.1"
     CURRENT_PROJECT_VERSION: "1"
     GENERATE_INFOPLIST_FILE: NO

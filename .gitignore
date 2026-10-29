@@ -2,6 +2,7 @@ accounts.local.json
 __pycache__/
 bin/
 apps/Burns.xcodeproj/
+apps/Signing.generated.xcconfig
 apps/.build-apps/
 apps/BurnsKit/.build/
 apps/*/Info.plist

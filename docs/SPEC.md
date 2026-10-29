@@ -125,7 +125,8 @@ Decisions made while building (2026-10-29, open to Viz's change):
 | Item | Detail |
 |---|---|
 | Source | `apps/BurnsKit` (Swift package, `swift test`), `apps/Shared`, `apps/Mac`, `apps/iOS`, `apps/Widget`, and the xcodegen spec `apps/project.yml` |
-| Signing | `~/.config/burns/signing.env` sets `BURNS_TEAM` and `BURNS_ID_DOMAIN`. It is not committed. Bundle identifiers and app groups are built from the domain. Xcode must be signed in to the team, because the build provisions automatically. |
+| Signing | `~/.config/burns/signing.env` sets `BURNS_TEAM` and `BURNS_ID_DOMAIN`. It is not committed. The script copies both into `apps/Signing.generated.xcconfig`, which Git ignores, so the Xcode window shows the same names the build uses. Bundle identifiers and app groups are built from the domain. Xcode must be signed in to the team, because the build provisions automatically. |
+| Project in Xcode | `scripts/build-apps.sh project` generates the project and opens it. Edits made in Xcode last until the next build regenerates the project. |
 | App groups | iOS: `group.<domain>.Burns`, a registered name. macOS: `<team>.<domain>.Burns`, which needs no registration. |
 | First iPhone build | Command-line provisioning creates the app IDs and profiles but does not register a new iOS app group. The profiles then carry an empty group list, and the build fails with "doesn't match the entitlements file's value". Register `group.<domain>.Burns` once, in Xcode's Signing & Capabilities or in the developer account, and assign it to both app IDs. The team must also have accepted Apple's latest Program License Agreement. |
 | Mac | `scripts/build-apps.sh mac` builds Release, installs `/Applications/Burns.app`, and opens it. The widget comes inside the app. |
