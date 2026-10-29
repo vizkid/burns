@@ -192,6 +192,15 @@ Only the log event carries `prompt.id`, `request_id`, `agent_id`, and the 5-minu
 | `cache_read_tokens`, `cache_creation_tokens` | Cache tokens. Also `cache_creation_5m_tokens` and `cache_creation_1h_tokens` (seen on the wire, not documented). |
 | `cost_usd_micros` | Integer cost. Four live events summed to the CLI's own `total_cost_usd` exactly. |
 
+An OTel event names no account (Viz, 2026-10-29). `smithersd` takes it from the session: the session's transcript sits in one Claude home, and that home is the account.
+
+| Case | Account |
+|---|---|
+| The session already has a stored row with an account | That account |
+| The transcript has not been read yet | None: the request is unattributed. When the transcript's rows arrive, every unattributed row of that session gets their account. |
+
+The settings are then the same in every Claude home. There is no per-home label to keep correct.
+
 Claude keeps no buffer. If `smithersd` is down, the events of that time are lost.
 The transcript fills the gap: join on `requestId` and add only requests that OTel never delivered.
 
@@ -274,7 +283,7 @@ So a binding is an interval: host, block, provider, agent session, start, end.
 
 | Path | Provider | How |
 |---|---|---|
-| Resource attribute | Claude | The Claude home sets `OTEL_RESOURCE_ATTRIBUTES=burns.account=<account>,rex.block=$REX_BLOCK,rex.session=$REX_SESSION`. Every `api_request` names its block. Verified on the wire 2026-10-28. |
+| Resource attribute | Claude | The Claude home sets `OTEL_RESOURCE_ATTRIBUTES=rex.block=$REX_BLOCK,rex.session=$REX_SESSION`. Every `api_request` names its block. Verified on the wire 2026-10-28. |
 | SessionStart hook | Claude and Codex | The hook posts provider, agent session ID, `source`, `REX_SESSION`, `REX_BLOCK`, and its ancestor process IDs (`pids`, parent first, at most 16) to `smithersd`. Claude fires it on startup, resume, clear, compact, and fork. Codex fires it at the first prompt. |
 | Check | Both | `smithersd` calls Rex's read-only block `process` method (`rex block call --block B process`). See "Checking a claim". |
 | End | Both | One `rex events --all --json` stream per host ends bindings. See "Ending a binding". |
@@ -541,6 +550,7 @@ Checked on Stiletto on 2026-10-28 with `make check` green and `smithersd` readin
 | 1b: a pane that closes while `smithersd` is down | The binding ended at restart, from the reconcile. |
 | 1b: block lookup scope | Inside a pane, `REX_SESSION` limits `rex block call` to that session. `smithersd` removes `REX_SESSION` and `REX_BLOCK` before calling `rex`. |
 | Readings, 2026-10-29 | After migration 4, the first statusline post stored one reading per Claude window. Later posts at the same percent stored nothing. |
+| Account without a label, 2026-10-29 | `claude -p` with OTel to `smithersd` and no `burns.account`. The request arrived unattributed with its cost, then took the personal account when the transcript was read about 30 seconds later. |
 
 ## Open questions
 

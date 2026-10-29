@@ -18,7 +18,11 @@ func (s *Store) AddCompactions(cs []usage.Compaction) error {
 		return err
 	}
 	defer tx.Rollback()
+	attr := newAttribution(tx)
 	for _, c := range cs {
+		if err := attr.fill(c.Provider, c.Session, &c.Account); err != nil {
+			return err
+		}
 		id, source, err := matchCompaction(tx, c)
 		if err != nil {
 			return err

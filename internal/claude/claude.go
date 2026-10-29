@@ -10,6 +10,7 @@ import (
 const compactSource = "compact"
 
 // FromEvents converts api_request and compaction log events. Other events are ignored.
+// Events name no account; the store takes it from the session.
 // Events without a session, or an api_request without a request_id, are dropped:
 // they cannot be deduplicated against the transcript.
 func FromEvents(evs []otlp.Event) ([]usage.Request, []usage.Compaction) {
@@ -38,7 +39,6 @@ func request(e otlp.Event, session string) (usage.Request, bool) {
 		return usage.Request{}, false
 	}
 	r := usage.Request{Provider: usage.Claude, Key: key, Session: session, Source: usage.SourceOTel, At: e.Time}
-	r.Account, _ = e.String("burns.account")
 	r.Block, _ = e.String("rex.block")
 	r.RexSession, _ = e.String("rex.session")
 	r.Turn, _ = e.String("prompt.id")
@@ -58,7 +58,6 @@ func request(e otlp.Event, session string) (usage.Request, bool) {
 
 func compaction(e otlp.Event, session string) usage.Compaction {
 	c := usage.Compaction{Provider: usage.Claude, Session: session, Source: usage.SourceOTel, At: e.Time}
-	c.Account, _ = e.String("burns.account")
 	c.Turn, _ = e.String("prompt.id")
 	c.Trigger, _ = e.String("trigger")
 	c.PreTokens = optInt(e, "pre_tokens")

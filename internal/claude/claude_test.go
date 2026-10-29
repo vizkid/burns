@@ -57,7 +57,8 @@ func TestFromEvents(t *testing.T) {
 		t.Fatalf("got %d requests, %d compactions; want 2, 1", len(reqs), len(comps))
 	}
 	r := reqs[0]
-	if r.Key != "req_1" || r.Session != "s1" || r.Turn != "p1" || r.Account != "personal" ||
+	// A leftover burns.account label is ignored: the store takes the account from the session.
+	if r.Key != "req_1" || r.Session != "s1" || r.Turn != "p1" || r.Account != "" ||
 		r.Block != "block:b1" || r.RexSession != "session:r1" || r.Source != usage.SourceOTel {
 		t.Fatalf("identity fields wrong: %+v", r)
 	}
@@ -72,7 +73,7 @@ func TestFromEvents(t *testing.T) {
 	}
 	c := comps[0]
 	if c.Trigger != "manual" || *c.PreTokens != 35988 || *c.PostTokens != 14838 || *c.DurationMs != 6739 ||
-		c.Turn != "p2" || c.Account != "personal" || c.Source != usage.SourceOTel {
+		c.Turn != "p2" || c.Account != "" || c.Source != usage.SourceOTel {
 		t.Fatalf("compaction wrong: %+v", c)
 	}
 }

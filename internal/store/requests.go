@@ -21,6 +21,7 @@ func (s *Store) AddRequests(rs []usage.Request) error {
 		return err
 	}
 	defer tx.Rollback()
+	attr := newAttribution(tx)
 	for _, r := range rs {
 		old, found, err := loadRequest(tx, r.Provider, r.Key)
 		if err != nil {
@@ -28,6 +29,9 @@ func (s *Store) AddRequests(rs []usage.Request) error {
 		}
 		if found {
 			r = mergeRequest(old, r)
+		}
+		if err := attr.fill(r.Provider, r.Session, &r.Account); err != nil {
+			return err
 		}
 		if err := flagged(tx, &r); err != nil {
 			return err
