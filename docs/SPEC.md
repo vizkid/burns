@@ -26,6 +26,20 @@ When every quota is exhausted, it launches Azure.
 
 There is no `burnsd`. Viz decided this on 2026-10-27: the Mac app is the hub when it runs.
 
+### Showing usage (Viz, 2026-10-29)
+
+| Where | Shape | Source |
+|---|---|---|
+| Mac menu bar icon | A two-bar burndown meter: top bar for the five-hour window, bottom bar for the week | Design from CodexBar (see "Cross-references"). Design only; no code is copied. |
+| Usage views in both apps and the iOS widget | Penfold's rings, one tile per account: outer ring five hours, inner ring seven days, provider mark in the middle | Port of PenfoldKit `SpendTile`, `SpendRings`, and `SpendPace` |
+
+Each ring draws two arcs: the share of quota used, and the share of the window elapsed in the pace colour.
+The pace colour is quiet on or under pace, amber when 100% is projected with a quarter of the window or less left, and red when it is projected earlier or already reached.
+Rings carry no pace tick (Viz, 2026-10-01, in Penfold). Tiles list each account's Claude then its Codex, in settings order.
+An unknown window draws an empty track and says "unknown", never 0%.
+
+Open: which account the menu bar meter shows. Proposal: the account Enter would pick, so the icon answers "can I start a session now".
+
 ### Merging hosts (proposal, 2026-10-28)
 
 Each `smithersd` knows only its own host. Every reader merges:
@@ -506,3 +520,5 @@ Checked on Stiletto on 2026-10-28 with `make check` green and `smithersd` readin
 - Penfold launch: `docs/specs/LAUNCH_SPEC.md`, sections "Launcher ownership", "Models", "Launch confirmation"
 - Penfold quota: `docs/specs/CLAUDE_QUOTA_INGESTION_SPEC.md`, `docs/specs/TOKEN_BURN_SPEC.md`
 - Penfold marks: `apps/PenfoldKit/Sources/PenfoldKit/ProviderMark.swift`, `WidgetProvider.swift`
+- Penfold rings and pace: `apps/PenfoldKit/Sources/PenfoldKit/SpendTile.swift`, `SpendPace.swift`
+- Prior art: CodexBar (github.com/steipete/CodexBar), a menu bar quota meter for Claude and Codex; it reads OAuth and browser cookies, which Burns does not
