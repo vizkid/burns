@@ -36,7 +36,10 @@ mac)
 ios)
 	device="${2:-}"
 	if [ -z "$device" ]; then
-		device=$(xcrun devicectl list devices 2>/dev/null | awk '/iPhone/ && /physical/ && !/unavailable/ {print $(NF-4); exit}')
+		# The identifier is the field before "(UDID)": model names have spaces, so no fixed
+		# column holds it. A phone still pairing has no "physical" tag yet, so skip simulators.
+		device=$(xcrun devicectl list devices 2>/dev/null | awk '/iPhone/ && !/simulated/ && !/unavailable/ {
+			for (i = 2; i <= NF; i++) if ($i == "(UDID)") { print $(i-1); exit } }')
 	fi
 	[ -n "$device" ] || { echo "no available iPhone: connect and unlock it, or name it" >&2; exit 1; }
 	# shellcheck disable=SC2086
