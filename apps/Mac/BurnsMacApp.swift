@@ -26,7 +26,7 @@ struct BurnsMacApp: App {
         }
         .menuBarExtraStyle(.window)
         Settings {
-            HostSettings(store: store).frame(width: 380, height: 260).padding()
+            HostSettings(store: store).frame(width: 460).frame(minHeight: 280)
         }
     }
 }
@@ -37,6 +37,7 @@ struct MenuWindow: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
+            header
             UsageView(model: store.model, diameter: 40) { ring, selected in
                 Button { store.select(ring.id) } label: { RingCell(ring: ring, selected: selected, diameter: 40, showsName: true) }
                     .buttonStyle(.plain)
@@ -44,18 +45,32 @@ struct MenuWindow: View {
             .frame(height: store.model.rings.isEmpty ? 60 : 250)
             Divider()
             HostStatusList(statuses: store.statuses)
-            HStack {
-                Button("Refresh") { Task { await store.refresh() } }
-                Button("Settings…") { NSApp.activate(); openSettings() }
-                Spacer()
-                Button("Quit") { NSApp.terminate(nil) }
-            }
-            .buttonStyle(.borderless)
-            .font(.caption)
         }
         .padding(14)
         .frame(width: 380)
         .task { await store.refresh() }
+    }
+}
+
+extension MenuWindow {
+    /// Actions in the top right, as in Apple's menu bar extras, never along the bottom edge: refresh,
+    /// settings, and Quit in the More menu.
+    var header: some View {
+        HStack(spacing: 12) {
+            Text("Usage").font(.headline)
+            Spacer()
+            Button { Task { await store.refresh() } } label: { Image(systemName: "arrow.clockwise") }
+                .help("Refresh").accessibilityLabel("Refresh")
+            Button { NSApp.activate(); openSettings() } label: { Image(systemName: "gearshape") }
+                .help("Settings").accessibilityLabel("Settings")
+            Menu {
+                Button("Quit Burns") { NSApp.terminate(nil) }.keyboardShortcut("q")
+            } label: { Image(systemName: "ellipsis.circle") }
+                .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
+                .help("More").accessibilityLabel("More")
+        }
+        .buttonStyle(.borderless)
+        .imageScale(.large)
     }
 }
 

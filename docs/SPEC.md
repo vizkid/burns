@@ -100,7 +100,7 @@ Viz wants the widgets built before the OTel cutover. This pulls the usage half o
 
 | Piece | Scope |
 |---|---|
-| Burns for Mac | Menu bar app with a `flame` icon. Its window shows the ring row and the selected account's combined burndown. A settings window holds the host list. |
+| Burns for Mac | Menu bar app with a `flame` icon. Its window shows the ring row and the selected account's burndown, with refresh, settings and a More menu (Quit) in its top right. A settings window, a grouped form as in System Settings, holds the host list. |
 | Mac widget | Small and medium, the same layout as the window |
 | Burns for iOS | One screen with the same view, and a settings screen with the host list. No launch. |
 | iPhone widget | Small for StandBy, medium for the Home Screen. Ring taps select an account through an App Intent. |

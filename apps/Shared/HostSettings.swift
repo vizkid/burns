@@ -1,7 +1,8 @@
 import BurnsKit
 import SwiftUI
 
-/// The host list (docs/SPEC.md, "Apps and widgets"): one tailnet name per smithersd.
+/// The host list (docs/SPEC.md, "Apps and widgets"): one tailnet name per smithersd. A grouped
+/// form, as in System Settings: the hosts and the add row in one section, the note as its footer.
 struct HostSettings: View {
     @ObservedObject var store: UsageStore
     @State private var draft = ""
@@ -11,15 +12,17 @@ struct HostSettings: View {
             Section {
                 ForEach(store.hosts, id: \.self) { host in
                     HStack {
-                        Text(host)
+                        Label(host, systemImage: "server.rack")
                         Spacer()
                         Button(role: .destructive) { store.hosts.removeAll { $0 == host } } label: { Image(systemName: "minus.circle") }
                             .buttonStyle(.borderless)
+                            .help("Remove \(host)")
                             .accessibilityLabel("Remove \(host)")
                     }
                 }
                 HStack {
-                    TextField("host.tailnet.ts.net", text: $draft)
+                    TextField("Add a host", text: $draft, prompt: Text("host.tailnet.ts.net"))
+                        .labelsHidden()
                         .autocorrectionDisabled()
                         #if os(iOS)
                         .textInputAutocapitalization(.never)
@@ -32,8 +35,10 @@ struct HostSettings: View {
                 Text("Hosts")
             } footer: {
                 Text("Each host runs smithersd. Burns reads it over Tailscale on port 9766.")
+                    .font(.footnote).foregroundStyle(.secondary)
             }
         }
+        .formStyle(.grouped)
     }
 
     private func add() {
