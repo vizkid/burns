@@ -44,7 +44,7 @@ public struct BurndownChart: View {
 
     var width: CGFloat { compact ? 1.5 : 2 }
     /// Round caps grow each dash by the line width, so the gap is wider than it looks here.
-    let dash: [CGFloat] = [3, 5]
+    let dash: [CGFloat] = [2, 5]
     var tone: Color { palette.usage(burndown.line?.verdict) }
 
     var projectionArea: [Point] {
