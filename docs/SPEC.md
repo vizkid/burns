@@ -38,11 +38,11 @@ A burndown plots quota left from the window's start to its reset:
 
 | Element | Meaning |
 |---|---|
-| Solid line | Quota left, from every reading in the window |
+| Solid line | Quota left: a straight line from 100% at the window's start to the current reading now. The start is the reset minus the window length. |
 | Dashed line | The steady burn: 100% at the window's start to 0% at its reset |
 | Dotted line | The current rate projected to the reset |
 | Headline | Percent left, the pace verdict ("over pace"), and time to reset. "Budget spent" when it reached 0%. |
-| Day bars (seven-day window) | Proposal, to confirm: each day's share of the week's quota against one seventh |
+| Bars behind the chart | A time grid: hours for the five-hour window, days for the week. Elapsed slots are shaded. |
 
 Each ring draws two arcs: the share of quota used, and the share of the window elapsed in the pace colour.
 The pace colour is quiet on or under pace, amber when 100% is projected with a quarter of the window or less left, and red when it is projected earlier or already reached.
@@ -61,12 +61,11 @@ To verify on a device: ring tap targets at StandBy scale, tap latency, and that 
 The menu bar icon is not decided.
 Proposal: when the window opens, the ring selected is the account Enter would pick, so the chart answers "how long will my next session's account last". A click selects another ring until the window closes.
 
-#### Reading history (proposal)
+#### Reading history (not needed)
 
-`latest` keeps only the newest reading, so a burndown has nothing to draw. `smithersd` would add a `reading` table: one row per account, `limit_id`, and window each time the percent or the reset changes, kept 8 days.
-Readings change in whole percents, so a window holds at most about 100 rows per reset.
-Codex can backfill: every rollout `token_count` line carries its rate limits. Claude cannot: its readings come only from the live statusline, so each day before the table exists is lost.
-A route such as `GET /usage/readings?since=7d` would return them. The merge takes the union of every host's readings for an account, ordered by observation time.
+The burndown needs only the current reading, its reset, and the window length, so `smithersd` keeps no reading history.
+The projection is the average rate since the window started, the same rate `SpendPace` uses.
+A history table would let the solid line show where the quota went, such as one heavy morning. It is not planned. Codex could backfill it from rollouts; Claude could not.
 
 ### Merging hosts (proposal, 2026-10-28)
 
