@@ -336,7 +336,7 @@ So a binding is an interval: host, block, provider, agent session, start, end.
 
 | Path | Provider | How |
 |---|---|---|
-| Resource attribute | Claude | The Claude home sets `OTEL_RESOURCE_ATTRIBUTES=rex.block=$REX_BLOCK,rex.session=$REX_SESSION`. Every `api_request` names its block. Verified on the wire 2026-10-28. |
+| Resource attribute | Claude | Inside Rex, the dotfiles `claude` launcher sets `OTEL_RESOURCE_ATTRIBUTES=rex.block=$REX_BLOCK,rex.session=$REX_SESSION` (since 2026-10-29). Every `api_request` names its block. Verified on the wire 2026-10-28. Without it, a request takes its block from the session's binding. |
 | SessionStart hook | Claude and Codex | The hook posts provider, agent session ID, `source`, `REX_SESSION`, `REX_BLOCK`, and its ancestor process IDs (`pids`, parent first, at most 16) to `smithersd`. Claude fires it on startup, resume, clear, compact, and fork. Codex fires it at the first prompt. |
 | Check | Both | `smithersd` calls Rex's read-only block `process` method (`rex block call --block B process`). See "Checking a claim". |
 | End | Both | One `rex events --all --json` stream per host ends bindings. See "Ending a binding". |
