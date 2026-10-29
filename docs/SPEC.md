@@ -30,6 +30,7 @@ There is no `burnsd`. Viz decided this on 2026-10-27: the Mac app is the hub whe
 
 | Where | Shape | Source |
 |---|---|---|
+| Mac menu bar window | A row of Penfold rings at the top, one per account. Selecting a ring shows that account's combined burndown chart below the row. | Viz, 2026-10-29 |
 | Widgets (iOS and macOS) | CodexBar's burndown chart, per account: one window, or the five-hour and seven-day windows in one tile | Design from CodexBar (see "Cross-references"). Design only; no code is copied. |
 | Usage views in both apps | Penfold's rings, one tile per account: outer ring five hours, inner ring seven days, provider mark in the middle | Port of PenfoldKit `SpendTile`, `SpendRings`, and `SpendPace` |
 
@@ -50,6 +51,7 @@ Rings and burndowns share `SpendPace`, so they give the same verdict.
 An unknown window draws an empty track and says "unknown", never 0%. A gap with no readings draws no line, never a flat one.
 
 The menu bar icon is not decided.
+Proposal: when the window opens, the ring selected is the account Enter would pick, so the chart answers "how long will my next session's account last". A click selects another ring until the window closes.
 
 #### Reading history (proposal)
 
