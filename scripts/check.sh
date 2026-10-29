@@ -15,3 +15,8 @@ over=$(find cmd internal -name '*.go' -exec wc -l {} + | awk -v l=$limit '$2 != 
 if [ -n "$over" ]; then
 	echo "Files over $limit lines:"; echo "$over"; exit 1
 fi
+
+# The apps' shared Swift package, where a Swift toolchain exists (macOS).
+if command -v swift >/dev/null && [ "$(uname -s)" = Darwin ]; then
+	(cd apps/BurnsKit && swift test --quiet)
+fi

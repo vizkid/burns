@@ -1,0 +1,86 @@
+import AppKit
+import BurnsKit
+import SwiftUI
+
+/// Burns for Mac (docs/SPEC.md, "Apps and widgets"): a flame in the menu bar, and a window with
+/// the ring row over the selected account's burndown.
+@main
+struct BurnsMacApp: App {
+    @StateObject private var store = UsageStore()
+
+    /// `open -a Burns --args --hosts a.ts.net,b.ts.net` replaces the host list: macOS keeps the
+    /// app group's preferences from other processes, so a script cannot write them directly.
+    init() {
+        let args = ProcessInfo.processInfo.arguments
+        if let i = args.firstIndex(of: "--hosts"), i + 1 < args.count {
+            HostList(defaults: AppGroup.defaults).hosts = args[i + 1].split(separator: ",").map(String.init)
+        }
+    }
+
+    var body: some Scene {
+        MenuBarExtra {
+            MenuWindow(store: store)
+        } label: {
+            Image(nsImage: FlameIcon.image(store.model.pickVerdict))
+                .task { await store.poll() }
+        }
+        .menuBarExtraStyle(.window)
+        Settings {
+            HostSettings(store: store).frame(width: 380, height: 260).padding()
+        }
+    }
+}
+
+struct MenuWindow: View {
+    @ObservedObject var store: UsageStore
+    @Environment(\.openSettings) private var openSettings
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            UsageView(model: store.model, diameter: 40) { ring, selected in
+                Button { store.select(ring.id) } label: { RingCell(ring: ring, selected: selected, diameter: 40, showsName: true) }
+                    .buttonStyle(.plain)
+            }
+            .frame(height: store.model.rings.isEmpty ? 60 : 250)
+            Divider()
+            HostStatusList(statuses: store.statuses)
+            HStack {
+                Button("Refresh") { Task { await store.refresh() } }
+                Button("Settings…") { NSApp.activate(); openSettings() }
+                Spacer()
+                Button("Quit") { NSApp.terminate(nil) }
+            }
+            .buttonStyle(.borderless)
+            .font(.caption)
+        }
+        .padding(14)
+        .frame(width: 380)
+        .task { await store.refresh() }
+    }
+}
+
+/// The menu bar flame: a template image on or under pace, amber or red when Enter's pick is not.
+enum FlameIcon {
+    static func image(_ verdict: SpendPace.Verdict?) -> NSImage {
+        let base = NSImage(systemSymbolName: "flame.fill", accessibilityDescription: "Burns") ?? NSImage()
+        let color: NSColor? = switch verdict {
+        case .critical?: .systemRed
+        case .over?: .systemOrange
+        default: nil
+        }
+        guard let color else { base.isTemplate = true; return base }
+        let tinted = base.withSymbolConfiguration(.init(paletteColors: [color])) ?? base
+        tinted.isTemplate = false
+        return tinted
+    }
+}
+
+extension UsageStore {
+    /// Every 60 seconds while the app runs: the flame's colour needs fresh quota.
+    func poll() async {
+        while !Task.isCancelled {
+            await refresh()
+            try? await Task.sleep(for: .seconds(60))
+        }
+    }
+}

@@ -1,3 +1,9 @@
 accounts.local.json
 __pycache__/
 bin/
+apps/Burns.xcodeproj/
+apps/.build-apps/
+apps/BurnsKit/.build/
+apps/*/Info.plist
+apps/*/Widget-Info.plist
+apps/*/*.entitlements

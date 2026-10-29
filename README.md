@@ -32,7 +32,21 @@ On Linux, it runs `smithersd` as a systemd user service.
 
 To send usage from your agents, follow the [agent setup](docs/SPEC.md#installing).
 
-Run `make check` before you commit.
+`smithersd` also answers the read routes on its Tailscale address, port 9766, to devices of the Tailscale user who owns the host.
+
+## Apps and widgets
+
+Burns for Mac (menu bar) and Burns for iOS show a ring per account and the selected account's burndown, in the app and in widgets.
+Put your Apple team and identifier domain in `~/.config/burns/signing.env` as `BURNS_TEAM` and `BURNS_ID_DOMAIN`, then:
+
+```sh
+scripts/build-apps.sh mac        # installs /Applications/Burns.app
+scripts/build-apps.sh ios        # installs on a connected iPhone
+```
+
+Add each host's Tailscale name in the app's settings. See [Apps and widgets](docs/SPEC.md#apps-and-widgets-viz-2026-10-29).
+
+Run `make check` before you commit. It also runs the apps' Swift tests on macOS.
 
 `burns.py` is an early prototype of the account picker. The apps will replace it.
 

@@ -1,6 +1,6 @@
 # Burns
 
-Owner: Viz · Last updated: 2026-10-28 · Status: draft, not ratified
+Owner: Viz · Last updated: 2026-10-29 · Status: draft, not ratified
 
 ## Problem and solution
 
@@ -58,7 +58,7 @@ StandBy shows only small widgets, scaled up, so five rings share one row of a sm
 At night StandBy tints widgets red, so the chart must read without its colours: line style tells steady, actual, and projected apart.
 To verify on a device: ring tap targets at StandBy scale, tap latency, and that a tap does not wake the full app.
 
-The menu bar icon is not decided.
+The menu bar icon is the SF Symbol `flame` (Viz, 2026-10-29). It takes the pace colour of the account Enter would pick.
 Proposal: when the window opens, the ring selected is the account Enter would pick, so the chart answers "how long will my next session's account last". A click selects another ring until the window closes.
 
 #### Reading history (Viz, 2026-10-29; built the same day)
@@ -92,6 +92,56 @@ Known limit: usage outside any agent host, such as claude.ai chat or Codex cloud
 
 Burns is written in Go (`smithersd`) and Swift (both apps), matching Roar, Cop, and Penfold.
 The Python preview in `burns.py` is superseded.
+
+### Apps and widgets (Viz, 2026-10-29)
+
+Viz wants the widgets built before the OTel cutover. This pulls the usage half of phases 2 and 5 forward; settings for launch, the trigger modal, and launch stay in phase 3.
+
+| Piece | Scope |
+|---|---|
+| Burns for Mac | Menu bar app with a `flame` icon. Its window shows the ring row and the selected account's combined burndown. A settings window holds the host list. |
+| Mac widget | Small and medium, the same layout as the window |
+| Burns for iOS | One screen with the same view, and a settings screen with the host list. No launch. |
+| iPhone widget | Small for StandBy, medium for the Home Screen. Ring taps select an account through an App Intent. |
+| `BurnsKit` | Swift package for both apps: the wire types, merge, pace, the Enter pick, the burndown series, the per-host cache, and the views |
+| `smithersd` | Tailnet listener for the read routes, with a caller check |
+
+Decisions made while building (2026-10-29, open to Viz's change):
+
+| Decision | Reason |
+|---|---|
+| Each app keeps its own host list. An entry is a tailnet name such as `host.tailnet.ts.net`. | The phone must work while the Mac sleeps, so it cannot read the Mac's list. |
+| The ring row shows the quota accounts: every Claude and Codex account except Azure. Each account name's Claude comes before its Codex, names in settings order. | Azure has no windows to draw. The Enter pick already treats it as the fallback. |
+| The combined burndown draws both windows on one axis from the window's start to its reset. The seven-day line is heavier. The steady burn is the same line for both, so it is drawn once. The time grid is the seven days. | Both windows fit one small widget. Each line still ends at its own reset. |
+| A widget reads every host itself, at most every 15 minutes, with a 4-second timeout per host. It keeps each host's last answer in the app group. | A widget cannot rely on the app running. A host that does not answer keeps its cached answer, marked with its time. |
+| Between reads, the timeline holds an entry every 15 minutes for 2 hours, rebuilt from the cache. | The time arcs and the unknown-at-reset rule move without new data. |
+| The selected account lives in the app group. It is shared by every widget on the device and the app's window. | One tap selects the account everywhere on that device. |
+| A ring's middle shows an SF Symbol: a sparkle for Claude, a cloud for Codex. | The public repository carries no vendor logos. Penfold's glyphs are vendor artwork. |
+| The Mac app polls every 60 seconds and reloads the widgets only when a host's data changed. | The flame's colour needs fresh quota; widget reloads count against a budget. |
+| A widget tap reuses a cache fetched in the last 14 minutes. | The tap answers from the cache, without waiting on the network. |
+
+#### Building the apps (built 2026-10-29)
+
+| Item | Detail |
+|---|---|
+| Source | `apps/BurnsKit` (Swift package, `swift test`), `apps/Shared`, `apps/Mac`, `apps/iOS`, `apps/Widget`, and the xcodegen spec `apps/project.yml` |
+| Signing | `~/.config/burns/signing.env` sets `BURNS_TEAM` and `BURNS_ID_DOMAIN`. It is not committed. Bundle identifiers and app groups are built from the domain. Xcode must be signed in to the team, because the build provisions automatically. |
+| App groups | iOS: `group.<domain>.Burns`, a registered name. macOS: `<team>.<domain>.Burns`, which needs no registration. |
+| Mac | `scripts/build-apps.sh mac` builds Release, installs `/Applications/Burns.app`, and opens it. The widget comes inside the app. |
+| iPhone | `scripts/build-apps.sh ios [device]` builds and installs on a connected, unlocked iPhone. |
+| Host list from a script | `open -a Burns --args --hosts a.tailnet.ts.net,b.tailnet.ts.net` on the Mac. macOS keeps an app group's preferences from other processes, so a script cannot write them. |
+| Looking without a device | `BURNS_RENDER_DIR=<dir> swift test --filter RenderTests` renders the window and both widget sizes, light and dark, for every ring, from saved `<host>-usage.json` and `<host>-usage-readings.json` answers. |
+
+#### Tailnet listener
+
+| Rule | Detail |
+|---|---|
+| Address | The first tailnet IPv4 address from `tailscale ip -4`, port 9766. If Tailscale is down at start, `smithersd` retries every 30 seconds. |
+| Routes | `GET /usage`, `/usage/readings`, `/usage/history` and `/usage/sessions` only. Every other route answers 404 there. |
+| Caller check | `tailscale whois --json` on the caller's address. The caller's login must equal the login that owns this host's node. A tagged node, another user, or a failed lookup answers 403. |
+| Cache | A lookup is kept 5 minutes per caller address. |
+| Transport | Plain HTTP inside the tailnet, which WireGuard encrypts. The iOS app allows plain HTTP only for `ts.net` names. |
+| Flag | `--tailscale` names the CLI. The install passes the path it finds, as it does for `rex`. Empty disables the listener. |
 
 ## Boundaries
 
@@ -438,7 +488,7 @@ Model catalogs port from Penfold's `internal/models` with their tests.
 ## Wire protocol
 
 `smithersd` listens on `127.0.0.1:9766`. Penfold keeps `9765` until the cutover moves the Claude telemetry endpoint.
-Phase 2 serves the read routes on the tailnet and checks the caller's Tailscale identity.
+`smithersd` also serves the `GET` routes on the host's tailnet address, port 9766, and checks each caller there (see "Tailnet listener"). Every route stays on loopback.
 
 | Route | Caller | Answer |
 |---|---|---|
@@ -477,6 +527,7 @@ Both run beside Penfold's forwarder and hooks. Adding them does not wait for the
 | Log | macOS: `~/Library/Logs/burns/smithersd.log`. Linux: `journalctl --user -u burns-smithersd`. |
 | Agent | `RunAtLoad` and `KeepAlive`, `ProcessType` `Background`, restart throttled to 10 s |
 | Rex | The install passes `--rex` with the path of `rex` on its own PATH, because launchd's PATH lacks it. Without it, claims stay unverified and bindings stay open. |
+| Tailscale | The install passes `--tailscale` with the path of `tailscale` on its own PATH. Without it, `smithersd` serves no tailnet listener and the apps cannot read this host. |
 
 The install does not touch agent configuration. Register the agent side in each home yourself:
 
@@ -502,7 +553,7 @@ On Linux the install writes the systemd user unit `~/.config/systemd/user/burns-
 
 1. `smithersd` collects Claude and Codex usage on one host, and the rules pass their tests. Built 2026-10-28; see "Phase 1 verification".
    1b. `smithersd` checks each hook binding against Rex's block `process` method and ends bindings from `rex events`. Built 2026-10-28; see "Phase 1 verification".
-2. The Mac menu bar app merges every host and shows usage.
+2. The Mac menu bar app merges every host and shows usage. Its usage view and widgets were built 2026-10-29 with Burns for iOS's (see "Apps and widgets"); the tailnet listener too.
 3. The trigger modal, settings, and launch through Rex.
 4. The New Agent Session Rex action.
 5. Burns for iOS shows usage.
@@ -553,6 +604,17 @@ Checked on Stiletto on 2026-10-28 with `make check` green and `smithersd` readin
 | Account without a label, 2026-10-29 | `claude -p` with OTel to `smithersd` and no `burns.account`. The request arrived unattributed with its cost, then took the personal account when the transcript was read about 30 seconds later. |
 | Baroni and Colonelk, 2026-10-29 | Installed from `main`: launchd on Baroni (macOS), systemd user service on Colonelk (Linux). A fresh store backfilled 7 days on each, including Codex readings. Colonelk and Baroni held newer Codex quota than Stiletto: Codex nfx at 100%, which Stiletto showed as 9% from an older reading. |
 
+## Widget verification (2026-10-29)
+
+| Check | Result |
+|---|---|
+| Tailnet listener on all three hosts | Each logs `tailnet listener on <tailnet IP>:9766` for the owner's login. From Stiletto, `GET /usage` and `/usage/readings` answer 200 on each host's tailnet name, and `POST /bind` answers 404. Loopback is unchanged. |
+| Burns for iOS in the simulator, reading the three hosts | All three hosts fresh. Rings for Claude and Codex of both accounts. Enter's pick (the personal Codex account, 81% left) selected at start, with its burndown, steady line and projection. |
+| Merge against `smithers usage` | The personal Codex account's 19% and the personal Claude account's seven-day 28% match. The work Codex account shows Baroni and Colonelk's newer 100%, not Stiletto's stale 9%. The work Claude account, unknown on Stiletto, shows the other hosts' reading. |
+| Widget layouts | Rendered from the hosts' saved answers in both sizes, light and dark, for every ring. |
+| Burns for Mac | Built, signed and installed in `/Applications`. Its window was not captured: this session has no Screen Recording or Accessibility permission. |
+| Not yet verified | Burns for iOS on the iPhone: Xcode's sign-in to the Apple account was refused, so the app group cannot be provisioned. On a device: StandBy ring tap targets, tap latency, and that a tap does not wake the app. On the Mac: adding the widget and a ring tap. |
+
 ## Open questions
 
 | Question | Status |
@@ -561,7 +623,7 @@ Checked on Stiletto on 2026-10-28 with `make check` green and `smithersd` readin
 | Does `open` from a Rex action open the deeplink on Stiletto? | Yes. Tested 2026-10-27. |
 | Should the account also be picked by quota left, not only the provider? | Yes: Enter ranks provider and account pairs. Azure is the fallback. (Viz, 2026-10-27) |
 | Should Burns track the Azure credit balance? | Probably yes, but deferred (Viz, 2026-10-27). Not in the current phases. |
-| Does the iOS app read hosts from synced settings or its own list? | Open |
+| Does the iOS app read hosts from synced settings or its own list? | Its own list, in each app's settings (decided 2026-10-29 while building the widgets; see "Apps and widgets") |
 | Source license | MIT (Viz, 2026-10-27) |
 
 ## Cross-references

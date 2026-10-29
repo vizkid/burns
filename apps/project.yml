@@ -1,0 +1,133 @@
+# Burns for Mac and iOS with their widgets (docs/SPEC.md, "Apps and widgets").
+# scripts/build-apps.sh runs xcodegen, then xcodebuild with BURNS_TEAM and BURNS_ID_DOMAIN from
+# ~/.config/burns/signing.env: bundle identifiers and app groups are built from the domain, and
+# neither is written here.
+name: Burns
+options:
+  deploymentTarget:
+    iOS: "26.0"
+    macOS: "26.0"
+  createIntermediateGroups: true
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    CODE_SIGN_STYLE: Automatic
+    DEVELOPMENT_TEAM: $(BURNS_TEAM)
+    BURNS_TEAM: ""
+    BURNS_ID_DOMAIN: ""
+    MARKETING_VERSION: "0.1"
+    CURRENT_PROJECT_VERSION: "1"
+    GENERATE_INFOPLIST_FILE: NO
+    # iOS app groups are registered names; a macOS one is the team ID as a prefix.
+    BURNS_IOS_GROUP: group.$(BURNS_ID_DOMAIN).Burns
+    BURNS_MAC_GROUP: $(BURNS_TEAM).$(BURNS_ID_DOMAIN).Burns
+packages:
+  BurnsKit:
+    path: BurnsKit
+
+# smithersd answers plain HTTP inside the tailnet, which WireGuard encrypts. Only ts.net names.
+x-ats: &ats
+  NSAppTransportSecurity:
+    NSExceptionDomains:
+      ts.net:
+        NSIncludesSubdomains: true
+        NSExceptionAllowsInsecureHTTPLoads: true
+
+targets:
+  BurnsMac:
+    type: application
+    platform: macOS
+    sources: [Mac, Shared]
+    dependencies:
+      - package: BurnsKit
+      - target: BurnsMacWidget
+    settings:
+      base:
+        PRODUCT_NAME: Burns
+        PRODUCT_BUNDLE_IDENTIFIER: $(BURNS_ID_DOMAIN).BurnsMac
+        ENABLE_HARDENED_RUNTIME: YES
+    info:
+      path: Mac/Info.plist
+      properties:
+        CFBundleDisplayName: Burns
+        LSUIElement: true
+        BurnsAppGroup: $(BURNS_MAC_GROUP)
+        <<: *ats
+    entitlements:
+      path: Mac/BurnsMac.entitlements
+      properties:
+        com.apple.security.application-groups: [$(BURNS_MAC_GROUP)]
+
+  BurnsMacWidget:
+    type: app-extension
+    platform: macOS
+    sources: [Widget, Shared/UsageStore.swift]
+    dependencies:
+      - package: BurnsKit
+    settings:
+      base:
+        PRODUCT_NAME: BurnsWidget
+        PRODUCT_BUNDLE_IDENTIFIER: $(BURNS_ID_DOMAIN).BurnsMac.Widget
+        ENABLE_HARDENED_RUNTIME: YES
+    info:
+      path: Mac/Widget-Info.plist
+      properties:
+        CFBundleDisplayName: Burns
+        BurnsAppGroup: $(BURNS_MAC_GROUP)
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.widgetkit-extension
+        <<: *ats
+    entitlements:
+      path: Mac/BurnsMacWidget.entitlements
+      properties:
+        com.apple.security.app-sandbox: true
+        com.apple.security.network.client: true
+        com.apple.security.application-groups: [$(BURNS_MAC_GROUP)]
+
+  Burns:
+    type: application
+    platform: iOS
+    sources: [iOS, Shared]
+    dependencies:
+      - package: BurnsKit
+      - target: BurnsWidget
+    settings:
+      base:
+        PRODUCT_NAME: Burns
+        PRODUCT_BUNDLE_IDENTIFIER: $(BURNS_ID_DOMAIN).Burns
+        TARGETED_DEVICE_FAMILY: "1"
+    info:
+      path: iOS/Info.plist
+      properties:
+        CFBundleDisplayName: Burns
+        UILaunchScreen: {}
+        BurnsAppGroup: $(BURNS_IOS_GROUP)
+        <<: *ats
+    entitlements:
+      path: iOS/Burns.entitlements
+      properties:
+        com.apple.security.application-groups: [$(BURNS_IOS_GROUP)]
+
+  BurnsWidget:
+    type: app-extension
+    platform: iOS
+    sources: [Widget, Shared/UsageStore.swift]
+    dependencies:
+      - package: BurnsKit
+    settings:
+      base:
+        PRODUCT_NAME: BurnsWidget
+        PRODUCT_BUNDLE_IDENTIFIER: $(BURNS_ID_DOMAIN).Burns.Widget
+        TARGETED_DEVICE_FAMILY: "1"
+    info:
+      path: iOS/Widget-Info.plist
+      properties:
+        CFBundleDisplayName: Burns
+        BurnsAppGroup: $(BURNS_IOS_GROUP)
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.widgetkit-extension
+        <<: *ats
+    entitlements:
+      path: iOS/BurnsWidget.entitlements
+      properties:
+        com.apple.security.application-groups: [$(BURNS_IOS_GROUP)]
