@@ -23,7 +23,7 @@ public struct BurndownChart: View {
     var segments: [Segment] {
         burndown.lines.flatMap { line -> [Segment] in
             let width: CGFloat = line.minutes >= 1440 ? (compact ? 2 : 2.5) : (compact ? 1.2 : 1.5)
-            let tone = line.verdict == nil || line.verdict == .onPace ? palette.used : palette.tone(line.verdict)
+            let tone = palette.usage(line.verdict)
             // On the shared axis every window's steady burn is the same line: draw it once.
             let steady = line.minutes == burndown.lines.first?.minutes
                 ? [Segment(id: "steady", points: line.steady, style: StrokeStyle(lineWidth: max(1, width - 1), dash: [4, 3]), color: .secondary)] : []

@@ -44,8 +44,9 @@ A burndown plots quota left from the window's start to its reset:
 | Headline | Percent left, the pace verdict ("over pace"), and time to reset. "Budget spent" when it reached 0%. |
 | Bars behind the chart | A time grid: hours for the five-hour window, days for the week. Elapsed slots are shaded. |
 
-Each ring draws two arcs: the share of quota used, and the share of the window elapsed in the pace colour.
-The pace colour is quiet on or under pace, amber when 100% is projected with a quarter of the window or less left, and red when it is projected earlier or already reached.
+Each ring draws two arcs: the share of quota used in the pace colour, on top, and the share of the window elapsed in a neutral blue-grey behind it.
+The pace colour is yellow on or under pace, amber when 100% is projected with a quarter of the window or less left, and red when it is projected earlier or already reached. The chart's lines use the same colour.
+The pace colour sits on usage, as on Penfold's Mac bars, not on the time arc as in Penfold's rings (Viz, 2026-10-29). An amber time arc over a yellow usage arc of nearly the same length hid the yellow and read as a second shade of it.
 Rings carry no pace tick (Viz, 2026-10-01, in Penfold). Tiles list each account's Claude then its Codex, in settings order.
 Rings and burndowns share `SpendPace`, so they give the same verdict.
 An unknown window draws an empty track and says "unknown", never 0%. A gap with no readings draws no line, never a flat one.

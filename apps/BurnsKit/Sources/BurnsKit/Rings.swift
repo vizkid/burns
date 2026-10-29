@@ -1,7 +1,7 @@
 import SwiftUI
 
 /// The colours the rings and the burndown use. Ported from Penfold's spend palette: used in the
-/// paid yellow, over pace amber, out red, the unused part a blue-grey.
+/// paid yellow, over pace amber, out red, the time arc a blue-grey.
 public struct BurnsPalette: Sendable {
     public var used: Color
     public var spare: Color
@@ -16,12 +16,15 @@ public struct BurnsPalette: Sendable {
                      track: Color.secondary.opacity(increasedContrast ? 0.45 : 0.25))
     }
 
-    /// A verdict's colour: quiet on or under pace, amber over it, red when it runs out early.
-    public func tone(_ verdict: SpendPace.Verdict?) -> Color {
+    /// The usage arc's and the chart line's colour: yellow on or under pace, amber over it, red when
+    /// it runs out early. The pace colour goes on usage, as on Penfold's Mac bars, not on the time
+    /// arc: a time arc in amber over a yellow usage arc of nearly the same length hid the yellow and
+    /// read as a second shade of it (Viz, 2026-10-29).
+    public func usage(_ verdict: SpendPace.Verdict?) -> Color {
         switch verdict {
         case .critical?: return critical
         case .over?: return over
-        case .onPace?, nil: return spare
+        case .onPace?, nil: return used
         }
     }
 }
@@ -48,8 +51,10 @@ public struct ProviderSymbol: View {
 }
 
 /// Two rings with a mark in the middle (ported from Penfold's `SpendRings`): outer five-hour,
-/// inner seven-day, each with a usage arc and a time arc in the verdict's colour. An unknown
-/// window draws only its empty track.
+/// inner seven-day, each with a usage arc in the pace colour and a neutral time arc. Usage is
+/// always on top: under pace the time arc shows past it, and over pace the usage colour already
+/// says so. The translucent time arc drawn over usage would tint it. An unknown window draws only
+/// its empty track.
 public struct SpendRings<Mark: View>: View {
     let model: SpendTileModel
     let palette: BurnsPalette
@@ -74,17 +79,10 @@ public struct SpendRings<Mark: View>: View {
     }
 
     private func ring(_ w: SpendTileModel.Window, diameter: CGFloat) -> some View {
-        let elapsed = w.elapsed ?? 0
-        let timeOnTop = elapsed < w.fill
-        return ZStack {
+        ZStack {
             Circle().stroke(palette.track, lineWidth: stroke)
-            if timeOnTop {
-                arc(w.fill, palette.used, diameter)
-                arc(elapsed, palette.tone(w.verdict), diameter)
-            } else {
-                arc(elapsed, palette.tone(w.verdict), diameter)
-                arc(w.fill, palette.used, diameter)
-            }
+            arc(w.elapsed ?? 0, palette.spare, diameter)
+            arc(w.fill, palette.usage(w.verdict), diameter)
         }
         .frame(width: diameter, height: diameter)
     }
