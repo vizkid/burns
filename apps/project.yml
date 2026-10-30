@@ -25,6 +25,8 @@ settings:
     # Xcode's App Groups editor shows a real name it can register.
     BURNS_IOS_GROUP: group.$(BURNS_ID_DOMAIN).Burns
     BURNS_MAC_GROUP: $(BURNS_TEAM).$(BURNS_ID_DOMAIN).Burns
+# Shared/AppIcon.icon is the Icon Composer icon both apps compile (docs/SPEC.md, "Icons"). The
+# widgets show their app's icon, so they need none of their own.
 packages:
   BurnsKit:
     path: BurnsKit
@@ -41,7 +43,9 @@ targets:
   BurnsMac:
     type: application
     platform: macOS
-    sources: [Mac, Shared]
+    # The widget's Info.plist sits in the app's folder; the widget target names it, so the app
+    # must not copy it in as a resource.
+    sources: [{path: Mac, excludes: [Widget-Info.plist]}, Shared]
     dependencies:
       - package: BurnsKit
       - target: BurnsMacWidget
@@ -50,6 +54,7 @@ targets:
         PRODUCT_NAME: Burns
         PRODUCT_BUNDLE_IDENTIFIER: $(BURNS_ID_DOMAIN).BurnsMac
         ENABLE_HARDENED_RUNTIME: YES
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
     info:
       path: Mac/Info.plist
       properties:
@@ -91,7 +96,7 @@ targets:
   Burns:
     type: application
     platform: iOS
-    sources: [iOS, Shared]
+    sources: [{path: iOS, excludes: [Widget-Info.plist]}, Shared]
     dependencies:
       - package: BurnsKit
       - target: BurnsWidget
@@ -100,6 +105,7 @@ targets:
         PRODUCT_NAME: Burns
         PRODUCT_BUNDLE_IDENTIFIER: $(BURNS_ID_DOMAIN).Burns
         TARGETED_DEVICE_FAMILY: "1"
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
     info:
       path: iOS/Info.plist
       properties:

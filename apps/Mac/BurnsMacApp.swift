@@ -77,16 +77,12 @@ extension MenuWindow {
 /// The menu bar flame: a template image on or under pace, amber or red when Enter's pick is not.
 enum FlameIcon {
     static func image(_ verdict: SpendPace.Verdict?) -> NSImage {
-        let base = NSImage(systemSymbolName: "flame.fill", accessibilityDescription: "Burns") ?? NSImage()
         let color: NSColor? = switch verdict {
         case .critical?: .systemRed
         case .over?: .systemOrange
         default: nil
         }
-        guard let color else { base.isTemplate = true; return base }
-        let tinted = base.withSymbolConfiguration(.init(paletteColors: [color])) ?? base
-        tinted.isTemplate = false
-        return tinted
+        return BurnsFlame.menuBarImage(tint: color) ?? NSImage()
     }
 }
 

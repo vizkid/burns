@@ -8,3 +8,5 @@ apps/BurnsKit/.build/
 apps/*/Info.plist
 apps/*/Widget-Info.plist
 apps/*/*.entitlements
+.DS_Store
+apps/BurnsKit/.swiftpm/

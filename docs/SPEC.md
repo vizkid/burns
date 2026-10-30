@@ -1,6 +1,6 @@
 # Burns
 
-Owner: Viz · Last updated: 2026-10-29 · Status: draft, not ratified
+Owner: Viz · Last updated: 2026-10-30 · Status: draft, not ratified
 
 ## Problem and solution
 
@@ -59,7 +59,7 @@ StandBy shows only small widgets, scaled up, so five rings share one row of a sm
 At night StandBy tints widgets red, so the chart must read without its colours: the actual line is solid, the steady line thin and the projection heavy.
 To verify on a device: ring tap targets at StandBy scale, tap latency, and that a tap does not wake the full app.
 
-The menu bar icon is the SF Symbol `flame` (Viz, 2026-10-29). It takes the pace colour of the account Enter would pick.
+The menu bar icon is Burns' flame (see "Icons"). It takes the pace colour of the account Enter would pick.
 Proposal: when the window opens, the ring selected is the account Enter would pick, so the chart answers "how long will my next session's account last". A click selects another ring until the window closes.
 
 #### Reading history (Viz, 2026-10-29; built the same day)
@@ -100,7 +100,7 @@ Viz wants the widgets built before the OTel cutover. This pulls the usage half o
 
 | Piece | Scope |
 |---|---|
-| Burns for Mac | Menu bar app with a `flame` icon. Its window shows the ring row and the selected account's burndown, with refresh, settings and a More menu (Quit) in its top right. A settings window, a grouped form as in System Settings, holds the host list. |
+| Burns for Mac | Menu bar app with a flame icon. Its window shows the ring row and the selected account's burndown, with refresh, settings and a More menu (Quit) in its top right. A settings window, a grouped form as in System Settings, holds the host list. |
 | Mac widget | Small and medium, the same layout as the window |
 | Burns for iOS | One screen with the same view, and a settings screen with the host list. No launch. |
 | iPhone widget | Small for StandBy, medium for the Home Screen. Ring taps select an account through an App Intent. |
@@ -134,6 +134,27 @@ Decisions made while building (2026-10-29, open to Viz's change):
 | iPhone | `scripts/build-apps.sh ios [device]` builds and installs on a connected, unlocked iPhone. |
 | Host list from a script | `open -a Burns --args --hosts a.tailnet.ts.net,b.tailnet.ts.net` on the Mac. macOS keeps an app group's preferences from other processes, so a script cannot write them. |
 | Looking without a device | `BURNS_RENDER_DIR=<dir> swift test --filter RenderTests` renders the window and both widget sizes, light and dark, for every ring, from saved `<host>-usage.json` and `<host>-usage-readings.json` answers. |
+
+#### Icons (Viz, 2026-10-30; built the same day)
+
+One flame names Burns everywhere: a full-colour 3D flame in the app icons, and its flat outline in the menu bar.
+
+| Surface | Source | Detail |
+|---|---|---|
+| App icon, Mac and iOS | `apps/Shared/AppIcon.icon` | An Icon Composer icon. Its flame layer, `Assets/Flame.png`, is Viz's ChatGPT-made 3D flame, with stray background specks removed. Under it, `Assets/FlameShadow.png` is a soft shadow: the flame blurred, at half opacity, shifted down. The flame spans about two thirds of the icon's width, as Rex's mark does. The backing is the icon's fill, a subtle diagonal gradient: pale pink to pale cyan in light mode, deep plum to near-black teal in dark. The tinted icon hides the flame and its shadow and shows `Assets/FlameTinted.png` instead: the flame in greyscale with its contrast raised, drawn with the plus-lighter blend mode. Both apps set `ASSETCATALOG_COMPILER_APPICON_NAME` to `AppIcon`. |
+| Widgets | Their app's icon | The widget gallery shows the containing app's icon. |
+| Menu bar | `Flame` in BurnsKit's `Glyphs.xcassets`, through `BurnsFlame` | The same flame's outline, traced as a flat vector, one colour, as a template image. Amber or red keep the tint when Enter's pick is over pace. |
+
+| Decision | Reason |
+|---|---|
+| An Icon Composer `.icon`, not the ICNS made with the artwork | iOS takes no ICNS. On macOS 27 the ICNS's own squircle and backing are one bitmap, so the system can make no true dark, tinted or clear icon from it. With the gradient as the fill and the flame as a layer, the system draws every appearance. |
+| The gradient is the fill, not an image layer | An image layer stays light in dark mode and turns into a solid slab when tinted. |
+| The shadow is its own image layer, not Icon Composer's group shadow | The group shadow draws only under glass layers, and glass frosts the 3D flame's edges. |
+| A tinted-only greyscale flame | The tinted icon is drawn from brightness. The flame's colours share one brightness, so they collapse to a muddy purple, and the shadow adds haze. `icon.json` sets `hidden-specializations` and `blend-mode-specializations` for the `tinted` appearance only, so the light and dark icons are unchanged. |
+| One 1024 px source, no hand-made sizes | Xcode builds every size from the `.icon`: on macOS, 16 to 512 pt at 1x and 2x, and on iOS, 1024 px for iPhone and iPad plus the 120 px and 152 px home-screen files, each in light, dark and tinted. Both deployment targets are 26, so no older catalog is needed. |
+| Our own traced flame in the menu bar, not the SF Symbol `flame.fill` | Apple's terms keep SF Symbols out of app icons, and the menu bar shows the same mark as the icon. Inspired by Streamline's "Matches Fire" icon; no Streamline path is used. |
+
+To look without building: `ictool apps/Shared/AppIcon.icon --export-image --output-file icon.png --platform iOS --rendition Default --width 1024 --height 1024 --scale 1`. `ictool` ships inside Xcode's Icon Composer. Renditions include `Dark`, `TintedDark` and `ClearLight`.
 
 #### Tailnet listener
 

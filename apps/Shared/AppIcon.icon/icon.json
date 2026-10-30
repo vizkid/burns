@@ -1,0 +1,121 @@
+{
+  "fill-specializations": [
+    {
+      "value": {
+        "linear-gradient": [
+          "srgb:0.98400,0.94200,0.99200,1.00000",
+          "srgb:0.89800,0.97600,0.99800,1.00000"
+        ],
+        "orientation": {
+          "start": {
+            "x": 0.85,
+            "y": 0.0
+          },
+          "stop": {
+            "x": 0.15,
+            "y": 1.0
+          }
+        }
+      }
+    },
+    {
+      "appearance": "dark",
+      "value": {
+        "linear-gradient": [
+          "srgb:0.11000,0.07000,0.14000,1.00000",
+          "srgb:0.03000,0.06000,0.08000,1.00000"
+        ],
+        "orientation": {
+          "start": {
+            "x": 0.85,
+            "y": 0.0
+          },
+          "stop": {
+            "x": 0.15,
+            "y": 1.0
+          }
+        }
+      }
+    }
+  ],
+  "groups": [
+    {
+      "layers": [
+        {
+          "image-name": "FlameTinted.png",
+          "name": "Flame (tinted)",
+          "glass": false,
+          "hidden-specializations": [
+            {
+              "value": true
+            },
+            {
+              "appearance": "tinted",
+              "value": false
+            }
+          ],
+          "position": {
+            "scale": 0.68,
+            "translation-in-points": [
+              0,
+              0
+            ]
+          },
+          "blend-mode-specializations": [
+            {
+              "appearance": "tinted",
+              "value": "plus-lighter"
+            }
+          ]
+        },
+        {
+          "image-name": "Flame.png",
+          "name": "Flame",
+          "glass": false,
+          "position": {
+            "scale": 0.68,
+            "translation-in-points": [
+              0,
+              0
+            ]
+          },
+          "hidden-specializations": [
+            {
+              "appearance": "tinted",
+              "value": true
+            }
+          ]
+        },
+        {
+          "image-name": "FlameShadow.png",
+          "name": "Flame shadow",
+          "glass": false,
+          "position": {
+            "scale": 0.68,
+            "translation-in-points": [
+              0,
+              0
+            ]
+          },
+          "hidden-specializations": [
+            {
+              "appearance": "tinted",
+              "value": true
+            }
+          ]
+        }
+      ],
+      "shadow": {
+        "kind": "none",
+        "opacity": 0
+      },
+      "translucency": {
+        "enabled": false,
+        "value": 0
+      }
+    }
+  ],
+  "supported-platforms": {
+    "squares": "shared"
+  }
+}
