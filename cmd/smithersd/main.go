@@ -15,6 +15,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -28,9 +29,27 @@ import (
 )
 
 func main() {
-	if err := run(); err != nil {
+	err := run()
+	if errors.Is(err, errRestart) {
+		err = restart()
+	}
+	if err != nil {
 		log.Fatal(err)
 	}
+}
+
+// errRestart ends run after PUT /accounts wrote a new accounts file.
+var errRestart = errors.New("accounts changed: restarting")
+
+// restart replaces this process with the same binary and arguments, so it loads the
+// new accounts file. It launches no other program.
+func restart() error {
+	exe, err := os.Executable()
+	if err != nil {
+		return err
+	}
+	log.Printf("accounts changed: restarting")
+	return syscall.Exec(exe, os.Args, os.Environ())
 }
 
 func run() error {
@@ -71,7 +90,11 @@ func run() error {
 	}
 	go loop(ctx, &collect.Collector{Store: st, Config: cfg, Now: time.Now}, st)
 
-	server := &api.Server{Store: st, Config: cfg, Host: *host, Now: time.Now}
+	// A PUT /accounts write stops the server; run then returns errRestart once every
+	// handler and the store have finished.
+	var restarting atomic.Bool
+	server := &api.Server{Store: st, Config: cfg, ConfigPath: *cfgPath, Host: *host, Now: time.Now,
+		Restart: func() { restarting.Store(true); stop() }}
 	if *rexPath != "" {
 		cli := rex.CLI{Path: *rexPath}
 		server.Rex = cli
@@ -81,7 +104,7 @@ func run() error {
 		log.Printf("WARN rex not found: bindings stay unverified and open")
 	}
 	if *tailscalePath != "" {
-		go serveTailnet(ctx, *tailscalePath, server.ReadHandler())
+		go serveTailnet(ctx, *tailscalePath, server.RemoteHandler())
 	} else {
 		log.Printf("WARN tailscale not found: no tailnet listener")
 	}
@@ -95,7 +118,9 @@ func run() error {
 		MaxHeaderBytes:    8 << 10,
 		ErrorLog:          log.New(io.Discard, "", 0),
 	}
+	shutDown := make(chan struct{})
 	go func() {
+		defer close(shutDown)
 		<-ctx.Done()
 		shutdown, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
@@ -104,6 +129,10 @@ func run() error {
 	log.Printf("smithersd %s listening on %s, %d accounts", usage.Version, *addr, len(cfg.Accounts))
 	if err := srv.ListenAndServe(); !errors.Is(err, http.ErrServerClosed) {
 		return err
+	}
+	<-shutDown
+	if restarting.Load() {
+		return errRestart
 	}
 	return nil
 }

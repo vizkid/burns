@@ -156,7 +156,7 @@ One flame names Burns everywhere: a full-colour 3D flame in the app icons, and i
 
 To look without building: `ictool apps/Shared/AppIcon.icon --export-image --output-file icon.png --platform iOS --rendition Default --width 1024 --height 1024 --scale 1`. `ictool` ships inside Xcode's Icon Composer. Renditions include `Dark`, `TintedDark` and `ClearLight`.
 
-#### Accounts in the apps (agreed, not built, Viz, 2026-10-31)
+#### Accounts in the apps (agreed, Viz, 2026-10-31; `smithersd` part built)
 
 Today the apps only read accounts, and only a file edit on each host changes them. But an account is also what Burns launches (phase 3), so the apps must manage it anyway. This design keeps one account list in iCloud, edited in either app, and the apps copy it to every host's `accounts.json`.
 
@@ -171,7 +171,7 @@ Today the apps only read accounts, and only a file edit on each host changes the
 | The central list wins, but never silently. An app remembers the hash it last wrote to each host. If the host's file changed since, by hand or by an agent, the app shows the difference and offers to import it into the central list or overwrite it. | Hand edits and the README setup prompt stay useful, and nothing is lost unseen. |
 | On first use, the app imports every host's accounts into the central list, matched by provider and name. If two hosts give one account different homes, the app asks which to keep. | Existing hosts already have files. |
 | `PUT` carries `If-Match` with the `ETag` that `GET` returned, a hash of the file. A mismatch answers 412: the app reads again and applies the rule above. | Another device, or a hand edit, may have changed the file between the read and the write. |
-| An account whose home is missing on a host is "not set up" there. `PUT` accepts it, and `GET /usage` lists it with that state and no windows. `smithersd` checks for missing homes every minute and starts collecting for one once it appears, without a restart. | Accounts exist everywhere, so a missing home is expected, not an error. No usage there is unknown, never zero. A launch creates the home while `smithersd` runs. |
+| An account whose home is missing on a host is "not set up" there. `PUT` accepts it, and `GET /usage` lists it with `set_up: false` and no limits. Each scan already skips a missing home, so collecting starts once the home appears, without a restart. | Accounts exist everywhere, so a missing home is expected, not an error. No usage there is unknown, never zero. A launch creates the home while `smithersd` runs. |
 | Launching an account on a host where it is not set up sets it up first: Burns creates the home, mode 0700, links its skills, and starts the CLI there. The CLI's own first-run login runs in that session. Settings shows, for each account, the hosts where it is set up. | Viz, 2026-10-31: set up the home on launch. The first launch on a host is when the home is needed, and the login then happens in the terminal Viz is already looking at. |
 | `PUT` validates as startup does. A failure answers 422 with the reason, and the file is unchanged. The write is atomic: a temporary file in the same folder, then a rename. Mode 0600. | A bad list never reaches the collector, and a crash mid-write leaves the old file whole. |
 | After a write, `smithersd` replaces itself with the same binary and arguments (`exec`). | The collector and the API take the accounts at startup. Re-reading in place would need every part to reload. `exec` launches no other program. |
@@ -205,7 +205,7 @@ Burns manages homes, logins and skills only when Viz asks it to, and works with 
 | Rule | Detail |
 |---|---|
 | Address | The first tailnet IPv4 address from `tailscale ip -4`, port 9766. If Tailscale is down at start, `smithersd` retries every 30 seconds. |
-| Routes | `GET /usage`, `/usage/readings`, `/usage/history` and `/usage/sessions` only. Every other route answers 404 there. Agreed, not built: `GET /accounts` and `PUT /accounts` too, behind the same caller check, so either app can propagate the account list (see "Accounts in the apps"). |
+| Routes | `GET /usage`, `/usage/readings`, `/usage/history`, `/usage/sessions`, and `GET` and `PUT /accounts`, so either app can propagate the account list (see "Accounts in the apps"). Every other route answers 404 there. |
 | Caller check | `tailscale whois --json` on the caller's address. The caller's login must equal the login that owns this host's node. A tagged node, another user, or a failed lookup answers 403. |
 | Cache | A lookup is kept 5 minutes per caller address. |
 | Transport | Plain HTTP inside the tailnet, which WireGuard encrypts. The iOS app allows plain HTTP only for `ts.net` names. |
@@ -559,7 +559,7 @@ Model catalogs port from Penfold's `internal/models` with their tests.
 ## Wire protocol
 
 `smithersd` listens on `127.0.0.1:9766`. Since the cutover (2026-10-29), Claude sends its telemetry here, not to Penfold on `9765`.
-`smithersd` also serves the `GET` routes on the host's tailnet address, port 9766, and checks each caller there (see "Tailnet listener"). Every route stays on loopback.
+`smithersd` also serves the `GET` routes and `/accounts` on the host's tailnet address, port 9766, and checks each caller there (see "Tailnet listener"). Every route stays on loopback.
 
 | Route | Caller | Answer |
 |---|---|---|
@@ -567,11 +567,13 @@ Model catalogs port from Penfold's `internal/models` with their tests.
 | `POST /v1/metrics` | Claude Code OTLP exporter | Accepted and dropped |
 | `POST /statusline` | `smithers statusline` | Stores Claude windows for the account that owns `transcript_path`. Limit 8 KiB. |
 | `POST /bind` | `smithers hook session-start` | Checks and stores a binding: `provider`, `session`, `rex_block` (required), `rex_session`, `source`, `pids` |
-| `GET /usage` | Apps | Every configured account in settings order, with its limits. A window whose reset passed shows `percent: null` and `state: "unknown"`. |
+| `GET /usage` | Apps | Every configured account in settings order, with its limits. A window whose reset passed shows `percent: null` and `state: "unknown"`. `set_up` is false when the account's home is missing on this host, and its limits are then empty. |
 | `GET /usage/readings` | Apps | Every quota reading of the live windows, oldest first. See "Reading history". |
 | `GET /usage/history` | Apps | One-minute token buckets per account for the last 20 minutes |
 | `GET /usage/sessions?since=24h` | Apps | Totals per agent session, and per block and session |
 | `GET /usage/sessions?provider=&session=` | Apps | Totals per turn of one session |
+| `GET /accounts` | Apps | The accounts file as it is on disk, with `ETag`, a quoted SHA-256 of its bytes |
+| `PUT /accounts` | Apps | Replaces the accounts file. Needs `If-Match` with the current `ETag` (428 without, 412 when it changed). A body that would not load answers 422 with the reason. Limit 64 KiB. Writes atomically, mode 0600, answers the new `ETag`, then `smithersd` restarts. |
 
 Totals carry `cost_micros` for requests with a known cost, `null` when none has one, and `unknown_cost` for the count without one.
 

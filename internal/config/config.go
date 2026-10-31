@@ -56,14 +56,24 @@ func Load(path, userHome string) (Config, error) {
 	if len(data) > maxFile {
 		return Config{}, fmt.Errorf("%s: larger than %d bytes", path, maxFile)
 	}
+	c, err := Parse(data, userHome)
+	if err != nil {
+		return Config{}, fmt.Errorf("%s: %w", path, err)
+	}
+	return c, nil
+}
+
+// Parse decodes and validates an accounts file's contents, as Load does. A home
+// need not exist: an account applies to every host, set up there or not.
+func Parse(data []byte, userHome string) (Config, error) {
 	dec := json.NewDecoder(bytes.NewReader(data))
 	dec.DisallowUnknownFields()
 	var c Config
 	if err := dec.Decode(&c); err != nil {
-		return Config{}, fmt.Errorf("%s: %w", path, err)
+		return Config{}, err
 	}
 	if dec.More() {
-		return Config{}, fmt.Errorf("%s: more than one JSON document", path)
+		return Config{}, errors.New("more than one JSON document")
 	}
 	c.userHome = userHome
 	return c, c.validate()
@@ -116,6 +126,9 @@ func (c Config) checkHomes(a Account, claimed map[string]bool) string {
 	}
 	return ""
 }
+
+// UserHome is the directory relative homes resolve against.
+func (c Config) UserHome() string { return c.userHome }
 
 // HomeDir is the account's absolute agent home.
 func (c Config) HomeDir(a Account) string { return c.abs(a.Home) }

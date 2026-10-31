@@ -33,7 +33,8 @@ func server(t *testing.T) (*httptest.Server, *Server) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { st.Close() })
-	s := &Server{Store: st, Config: cfg, Host: "host-1", Now: func() time.Time { return now }}
+	s := &Server{Store: st, Config: cfg, Host: "host-1", Now: func() time.Time { return now },
+		HomeExists: func(string) bool { return true }}
 	ts := httptest.NewServer(s.Handler())
 	t.Cleanup(ts.Close)
 	return ts, s

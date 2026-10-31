@@ -7,6 +7,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/vizkid/burns/internal/config"
@@ -30,6 +31,13 @@ type Server struct {
 	Host   string
 	Now    func() time.Time
 	Rex    Rex // nil keeps every claim unverified
+	// ConfigPath is the accounts file that GET and PUT /accounts read and replace.
+	ConfigPath string
+	// Restart is called after a PUT /accounts write, so smithersd takes the new accounts.
+	Restart func()
+	// HomeExists reports whether a home is on this host; nil checks the disk.
+	HomeExists func(dir string) bool
+	accountsMu sync.Mutex
 }
 
 // Handler returns the route table.
@@ -43,9 +51,10 @@ func (s *Server) Handler() http.Handler {
 	return mux
 }
 
-// ReadHandler returns the read routes alone, for the tailnet listener: nothing
-// reachable from another device writes usage or binds a session.
-func (s *Server) ReadHandler() http.Handler {
+// RemoteHandler returns the routes for the tailnet listener: the reads and the
+// account list, which either app copies to every host. Nothing reachable from
+// another device writes usage or binds a session.
+func (s *Server) RemoteHandler() http.Handler {
 	mux := http.NewServeMux()
 	s.reads(mux)
 	return mux
@@ -56,6 +65,8 @@ func (s *Server) reads(mux *http.ServeMux) {
 	mux.HandleFunc("GET /usage/readings", s.readings)
 	mux.HandleFunc("GET /usage/history", s.history)
 	mux.HandleFunc("GET /usage/sessions", s.sessions)
+	mux.HandleFunc("GET /accounts", s.getAccounts)
+	mux.HandleFunc("PUT /accounts", s.putAccounts)
 }
 
 // readBody reads at most limit bytes. It answers 413 and returns false when the body is larger.
