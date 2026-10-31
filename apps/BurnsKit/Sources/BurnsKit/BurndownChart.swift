@@ -96,13 +96,14 @@ public struct BurndownChart: View {
                 }
             }
             // The quota the projection says would be left, faintly: the future part of the area. Drawn
-            // first and started a little early, under the actual area, so the two leave no seam.
+            // first and started a little early, under the actual area, so the two leave no seam. Both
+            // are unstacked: where they overlap, stacking would draw the actual area at their sum.
             ForEach(Array(projectionArea.enumerated()), id: \.offset) { _, p in
-                AreaMark(x: .value("x", p.x), y: .value("left", p.left), series: .value("area", "projection"))
+                AreaMark(x: .value("x", p.x), y: .value("left", p.left), series: .value("area", "projection"), stacking: .unstacked)
                     .foregroundStyle(Color.secondary.opacity(0.12))
             }
             ForEach(Array(actual.enumerated()), id: \.offset) { _, p in
-                AreaMark(x: .value("x", p.x), y: .value("left", p.left), series: .value("area", "actual"))
+                AreaMark(x: .value("x", p.x), y: .value("left", p.left), series: .value("area", "actual"), stacking: .unstacked)
                     .foregroundStyle(LinearGradient(colors: [tone.opacity(0.45), tone.opacity(0.1)], startPoint: .top, endPoint: .bottom))
                     .interpolationMethod(.monotone)
             }

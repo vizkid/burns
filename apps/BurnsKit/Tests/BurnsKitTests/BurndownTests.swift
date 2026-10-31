@@ -48,6 +48,15 @@ struct BurndownTests {
         #expect(line.actual.last?.left == 92)
     }
 
+    /// Readings record changes, so a quiet spell has none. When the current percent was observed
+    /// after the last change, the line holds flat to that observation: otherwise the area stops at
+    /// the last change and leaves a gap before the projection (Viz, 2026-10-31).
+    @Test func lineHoldsToTheLatestObservation() throws {
+        let u = usage([10080: Window(percent: 30, resetsAt: weekReset, observedAt: now - h)])
+        let line = try #require(Burndown.build(account: u, readings: [reading(10080, 30, resets: weekReset, hoursAgo: 30)], now: now).line)
+        #expect(line.actual == [Point(x: 0, left: 100), Point(x: x(30), left: 70), Point(x: x(1), left: 70)])
+    }
+
     /// No readings yet: a straight line from the start to the current reading, held to its observation.
     @Test func noReadingsDrawsAStraightLine() throws {
         let u = usage([10080: Window(percent: 40, resetsAt: weekReset, observedAt: now - 2 * h)])
@@ -63,6 +72,18 @@ struct BurndownTests {
         #expect(line.projection.first == Point(x: x(0), left: 60))
         #expect(end.x == 1 && abs(end.left - 30) < 0.01)
         #expect(line.verdict == .onPace)
+    }
+
+    /// Codex reports only when a turn runs, so the newest observation can be hours old. The
+    /// projection starts where the line ends, at that observation, so no gap opens between them;
+    /// its end is still the pace at now (Viz, 2026-10-31).
+    @Test func projectionStartsAtTheLastObservation() throws {
+        let u = usage([10080: Window(percent: 40, resetsAt: weekReset, observedAt: now - 19 * h)])
+        let line = try #require(Burndown.build(account: u, readings: [], now: now).line)
+        let end = try #require(line.projection.last)
+        #expect(line.projection.first == line.actual.last)
+        #expect(line.projection.first == Point(x: x(19), left: 60))
+        #expect(end.x == 1 && abs(end.left - 30) < 0.01)
     }
 
     /// Over pace, the projection stops where it reaches 0% left.

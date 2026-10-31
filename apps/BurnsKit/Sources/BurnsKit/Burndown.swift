@@ -79,14 +79,17 @@ public struct Burndown: Equatable, Sendable {
             high = r.percent
         }
         // The line ends at the current percent, the one the headline states, even when that
-        // reading's time is no later than the last reading drawn.
-        if let lastPoint = actual.last, used > high || actual.count == 1 {
-            actual.append(Point(x: max(x(w.observedAt), lastPoint.x), left: 100 - used))
+        // reading's time is no later than the last reading drawn. Readings record changes only, so
+        // an unchanged percent observed later holds the line flat to that observation.
+        if let lastPoint = actual.last, used > high || actual.count == 1 || x(w.observedAt) > lastPoint.x {
+            actual.append(Point(x: max(x(w.observedAt), lastPoint.x), left: 100 - max(used, high)))
         }
         let pace = SpendPace(usedPercent: used, resetsAt: w.resetsAt, length: length, now: now)
         var projection: [Point] = []
         if let pace, pace.verdict != nil {
-            let from = Point(x: x(now), left: 100 - used)
+            // From where the line ends, the last observation, which can be hours before now: Codex
+            // reports only when a turn runs. Starting at now would leave a gap between the two.
+            let from = actual.last ?? Point(x: x(now), left: 100 - used)
             if let out = pace.runsOutAt {
                 projection = [from, Point(x: x(out), left: 0)]
             } else if used < 100 {
