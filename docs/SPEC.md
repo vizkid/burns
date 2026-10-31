@@ -156,6 +156,45 @@ One flame names Burns everywhere: a full-colour 3D flame in the app icons, and i
 
 To look without building: `ictool apps/Shared/AppIcon.icon --export-image --output-file icon.png --platform iOS --rendition Default --width 1024 --height 1024 --scale 1`. `ictool` ships inside Xcode's Icon Composer. Renditions include `Dark`, `TintedDark` and `ClearLight`.
 
+#### Accounts in the apps (proposal, 2026-10-30)
+
+Today the apps only read accounts, and only a file edit on each host changes them. But an account is also what Burns launches (phase 3), so the apps must manage it anyway. This proposal lets both apps edit each host's `accounts.json`, the registry of what runs there, and keeps the settings every device shares in iCloud.
+
+> **Core insight: what exists on a host lives on that host; what Viz prefers lives in iCloud.** An account is registered per host and read for usage and launch alike; its colour, order and launch defaults are shared settings.
+
+| Decision | Reason |
+|---|---|
+| `accounts.json` holds what belongs to its host: each provider's CLI there, and the accounts registered there with their homes and kinds. | A home and a CLI exist on one machine, so each host alone decides them, and hosts cannot conflict. `smithersd` reads nothing else. |
+| Shared settings live in iCloud's key-value store (`NSUbiquitousKeyValueStore`), one key per account name plus one for the order: the name's colour, its launch overrides (model, effort, permission mode, and Azure's credential as a cop reference, never the value), the order, and each provider's default model and effort. | Only the apps read them: the Mac app builds the launch command and runs `rex -S <host>` itself. Both apps run under Viz's Apple ID, so iCloud syncs them, and no host must stay awake. One key per name means two devices editing different names never collide; the same name edited twice ends as the later edit. |
+| Each app copies the shared settings into its app group for its widgets. Both apps carry the iCloud key-value entitlement with one store identifier under the team. | Widgets read the app group, as they do the host cache. |
+| Burns builds the launch command from the provider's CLI and the account's home (`CLAUDE_CONFIG_DIR`, `CODEX_HOME`), not from a stored command line. | Viz, 2026-10-29: Burns replaces the dotfiles launchers. A stored command line would make an editable file a way to run any program. Values become arguments, never shell code. |
+| `PUT` replaces the whole file. It carries `If-Match` with the `ETag` that `GET` returned, a hash of the file. A mismatch answers 412: the app reads again, reapplies its edit, and retries. It asks only when the same entry changed underneath. | A hand edit on the host, or another device, is never overwritten unseen. |
+| `PUT` validates as startup does, and also needs each home to exist on that host. A failure answers 422 with the reason, and the file is unchanged. | An account whose home is missing would collect nothing, without saying why. |
+| The write is atomic: a temporary file in the same folder, then a rename. Mode 0600. | A crash mid-write leaves the old file whole. |
+| After a write, `smithersd` replaces itself with the same binary and arguments (`exec`). | The collector and the API take the accounts at startup. Re-reading in place would need every part to reload. `exec` launches no other program. |
+| A name's shared settings hold `colour`, one swatch. | One colour per account name, as in Penfold: Claude `viz` and Codex `viz` share it. |
+| Swatches are fixed pairs, one value for dark backgrounds and a darker one for light: purple, teal, blue, green, pink, grey. No yellow, amber or red. | Penfold's light values were hand-tuned; a free colour picker looks wrong in one mode. Yellow, amber and red are the pace colours. |
+| A name with no colour takes the next unused swatch in file order. | Every ring gets a colour without setup. |
+| Ring glyphs draw in the account's colour, full strength when selected and at 55% when not. Azure draws a one-colour grey mark, and its full-colour mark only when selected. | Viz, 2026-10-30, and as Penfold's rings did. |
+| Settings gains an Accounts section beside Hosts. Each name lists its providers and the hosts that serve them. Editing a registration picks its host. Colour, order and defaults are shared settings. | A name can live on several hosts. Its registrations are per host; its settings are shared. |
+| Ring order is the shared order. A name missing from it goes after, in the first host's file order. | One rule when a host registers a name the order does not list yet. |
+
+Proposed screens: Accounts lists names in ring order, each with its swatch and providers. A name opens a page with the swatch row, then each provider entry with its host, home, extra homes, kind, and launch overrides. Add Account asks for host, provider, name, home and kind. Providers lists each host's providers with their CLI and default model and effort.
+
+##### Homes, logins and skills (proposal, 2026-10-30)
+
+Burns manages homes, logins and skills only when Viz asks it to, and works with the homes and logins that already exist. The Mac app does this work on each host through `rex` and `smithers` subcommands. `smithersd` stays read-only.
+
+| Decision | Reason |
+|---|---|
+| Add Account adopts an existing home as it is, or offers a new one, `~/.claude-<name>` or `~/.codex-<name>` on the chosen host. | Nothing moves. On macOS, Claude Code files its login in the Keychain under the home's path, so a moved home loses its login. |
+| A new home logs in with the CLI's own login, run in that home on that host: `claude /login`, or `codex login --device-auth`. Each host logs in once per account. | Both CLIs replace refresh tokens as they use them, so a login copied to a second host can log the first one out. Burns never copies login files. |
+| Optional for Claude: `claude setup-token` makes one long-lived token, kept in cop and passed at launch with `cop run --env CLAUDE_CODE_OAUTH_TOKEN`. The per-host login stays as the fallback. | cop already replicates its keys to every host. Reports of these tokens failing with 401 mean they cannot be the only login. |
+| Skills come from source folders, set per host in order, for example a shared folder, then a Codex-only one. The first source that has a skill name wins for that provider. | Viz's skills live in dotfiles, and some have a Codex version. |
+| Burns links each skill into each home that opts in, one symlink per skill. It never replaces a real folder, or a link that points outside the sources. It reports those as conflicts. | Other tools install their own skills in the same folder (cop, roar, the CLIs' own synced and system skills). Burns owns only links into its sources, and removes those when a skill leaves its source. |
+| Burns relinks every opted-in home on a host when its sources change, a home is added, or Viz asks. Skill contents reach other hosts through the source folder itself, such as a Git checkout, not through Burns. | Links are per host, so Burns keeps each host's links in step. Copying files between hosts would make two copies of each skill. |
+| Antigravity is a later provider, through Gemini API keys only: the key in cop, passed at launch. | Antigravity has no documented per-account home or usage readout, and Burns reads only documented output and the CLIs' own files. |
+
 #### Tailnet listener
 
 | Rule | Detail |
