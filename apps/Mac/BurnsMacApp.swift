@@ -7,6 +7,7 @@ import SwiftUI
 @main
 struct BurnsMacApp: App {
     @StateObject private var store = UsageStore()
+    @NSApplicationDelegateAdaptor(BurnsDelegate.self) private var delegate
 
     /// `open -a Burns --args --hosts a.ts.net,b.ts.net` replaces the host list: macOS keeps the
     /// app group's preferences from other processes, so a script cannot write them directly.
@@ -22,7 +23,7 @@ struct BurnsMacApp: App {
             MenuWindow(store: store)
         } label: {
             Image(nsImage: FlameIcon.image(store.model.pickVerdict))
-                .task { await store.poll() }
+                .task { LaunchWindow.store = store; await store.poll() }
         }
         .menuBarExtraStyle(.window)
         Settings {
@@ -58,11 +59,13 @@ struct MenuWindow: View {
 
 extension MenuWindow {
     /// Actions in the top right, as in Apple's menu bar extras, never along the bottom edge: refresh,
-    /// settings and Quit.
+    /// settings and Quit, after New Agent.
     var header: some View {
         HStack(spacing: 12) {
             Text("Usage").font(.headline)
             Spacer()
+            Button { LaunchWindow.show() } label: { Image(systemName: "plus") }
+                .help("New Agent").accessibilityLabel("New Agent")
             Button { Task { await store.refresh() } } label: { Image(systemName: "arrow.clockwise") }
                 .help("Refresh").accessibilityLabel("Refresh")
             Button { NSApp.activate(); openSettings() } label: { Image(systemName: "gearshape") }

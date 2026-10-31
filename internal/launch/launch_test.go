@@ -67,7 +67,7 @@ func TestCodexStaysOnItsDaemon(t *testing.T) {
 	if p.Program != "codex" || !reflect.DeepEqual(p.Args, []string{"-m", "m1"}) || p.Env["CODEX_HOME"] != user+"/.codex-alpha" {
 		t.Fatalf("plan = %+v", p)
 	}
-	if !reflect.DeepEqual(p.Daemon, []string{"app-server", "daemon", "start"}) || p.Channels != nil {
+	if !reflect.DeepEqual(p.Daemon, []string{"codex", "app-server", "daemon", "start"}) || p.Channels != nil {
 		t.Fatalf("plan = %+v", p)
 	}
 }
@@ -79,6 +79,10 @@ func TestCredentialGoesThroughCop(t *testing.T) {
 	want := []string{"run", "--account", "team.example", "--ref", "op://v/i/f", "--env", "API_KEY", "--", "codex", "-m", "m1"}
 	if p.Program != "cop" || !reflect.DeepEqual(p.Args, want) {
 		t.Fatalf("plan = %+v", p)
+	}
+	daemon := []string{"cop", "run", "--account", "team.example", "--ref", "op://v/i/f", "--env", "API_KEY", "--", "codex", "app-server", "daemon", "start"}
+	if !reflect.DeepEqual(p.Daemon, daemon) {
+		t.Fatalf("daemon = %v", p.Daemon)
 	}
 }
 

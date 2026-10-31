@@ -15,6 +15,10 @@ struct HostSettings: View {
                     HStack {
                         Label(host, systemImage: "server.rack")
                         Spacer()
+                        if let name = reported(host) {
+                            TextField("Display name", text: display(name), prompt: Text(name))
+                                .labelsHidden().frame(maxWidth: 110).multilineTextAlignment(.trailing)
+                        }
                         if let sync = store.accountSync.first(where: { $0.host == host }) {
                             if case .review(let onHost) = sync.state {
                                 Button(sync.state.words) { review = HeldHost(host: host, accounts: onHost) }.font(.caption)
@@ -56,6 +60,15 @@ struct HostSettings: View {
             }
             .frame(minWidth: 420, minHeight: 340)
         }
+    }
+
+    /// The name the host's smithersd reports.
+    private func reported(_ host: String) -> String? {
+        store.statuses.first { $0.address == host }?.snapshot?.usage.host
+    }
+
+    private func display(_ name: String) -> Binding<String> {
+        Binding(get: { store.hostNames[name] ?? "" }, set: { store.hostNames[name] = $0.isEmpty ? nil : $0 })
     }
 
     private func add() {

@@ -21,11 +21,11 @@ struct PickTests {
         #expect(Pick.choose(accounts, now: now).account == AccountID(provider: "claude", name: "alpha"))
     }
 
-    /// Rule 3: an unknown window, or no windows at all, does not compete.
-    @Test func unknownAccountsDoNotCompete() {
+    /// Rule 3: no live window does not compete, but a lapsed window does not block a live one.
+    @Test func onlyLiveWindowsCount() {
         let accounts = [account("claude", "alpha", [300: nil, 10080: 1]), account("claude", "beta", [:]),
-                        account("codex", "beta", [10080: 90])]
-        #expect(Pick.choose(accounts, now: now).account == AccountID(provider: "codex", name: "beta"))
+                        account("codex", "beta", [10080: 90]), account("codex", "gamma", [10080: nil])]
+        #expect(Pick.choose(accounts, now: now).account == AccountID(provider: "claude", name: "alpha"))
     }
 
     /// Rule 5: every quota account known to be exhausted chooses Azure.

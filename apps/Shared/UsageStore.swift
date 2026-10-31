@@ -11,6 +11,8 @@ enum AppGroup {
     static let lastFetchKey = "burns.lastFetch"
     /// The central list, copied here because widgets cannot read iCloud's store.
     static let accountsKey = "burns.centralAccounts"
+    /// Each host's optional display name, keyed by the name its smithersd reports.
+    static let hostNamesKey = "burns.hostNames"
     static var accounts: [CentralAccount] {
         defaults.data(forKey: accountsKey).flatMap { try? JSONDecoder().decode(AccountsFile.self, from: $0) }?.accounts ?? []
     }
@@ -25,6 +27,11 @@ final class UsageStore: ObservableObject {
     @Published private(set) var accountSync: [AccountSync.HostSync] = []
     @Published var hosts: [String] {
         didSet { HostList(defaults: AppGroup.defaults).hosts = hosts; Task { await refresh() } }
+    }
+
+    /// Names to show for hosts. Commands keep the Rex label.
+    @Published var hostNames: [String: String] = AppGroup.defaults.dictionary(forKey: AppGroup.hostNamesKey) as? [String: String] ?? [:] {
+        didSet { AppGroup.defaults.set(hostNames, forKey: AppGroup.hostNamesKey) }
     }
 
     private let cache = HostCache(defaults: AppGroup.defaults)

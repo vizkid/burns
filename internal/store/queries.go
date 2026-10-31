@@ -87,3 +87,24 @@ func (s *Store) History(from, to time.Time) ([]Bucket, error) {
 	}
 	return out, rows.Err()
 }
+
+// SeenModels returns each account's model ids, newest first, keyed by
+// provider and account.
+func (s *Store) SeenModels() (map[[2]string][]string, error) {
+	rows, err := s.rdb.Query(`SELECT provider, account, model FROM request WHERE model != ''
+		GROUP BY provider, account, model ORDER BY max(at) DESC`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[[2]string][]string{}
+	for rows.Next() {
+		var provider, account, model string
+		if err := rows.Scan(&provider, &account, &model); err != nil {
+			return nil, err
+		}
+		key := [2]string{provider, account}
+		out[key] = append(out[key], model)
+	}
+	return out, rows.Err()
+}

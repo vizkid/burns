@@ -23,9 +23,12 @@ public enum Pick: Equatable, Sendable {
         var best: (AccountID, Double)?
         var allExhausted = !quota.isEmpty
         for a in quota {
-            // Rule 3: an account with no windows, or an unknown one, does not compete.
-            guard !a.windows.isEmpty, a.windows.values.allSatisfy({ $0.isLive(at: now) }) else { allExhausted = false; continue }
-            let used = a.windows.values.compactMap(\.percent).max() ?? 0
+            // Rule 3: an account with no live window does not compete. A window whose reset passed
+            // with no newer reading does not block it, or an idle account could never win.
+            let live = a.liveWindows(at: now)
+            guard !live.isEmpty else { allExhausted = false; continue }
+            if live.count < a.windows.count { allExhausted = false }
+            let used = live.values.compactMap(\.percent).max() ?? 0
             if used < 100 { allExhausted = false }
             let left = max(0, 100 - used)
             if left > 0, best == nil || left > best!.1 { best = (a.id, left) }

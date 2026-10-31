@@ -103,11 +103,12 @@ type Input struct {
 
 // Plan is one launch: the program replaces this process.
 type Plan struct {
+	Provider string
 	Program  string
 	Args     []string
 	Env      map[string]string
 	Channels []string // Claude's channels, for the consent dialog
-	Daemon   []string // CLI arguments to run first; empty means none
+	Daemon   []string // command to run first, program included; empty means none
 }
 
 // Build turns an input into a plan. It reads and runs nothing.
@@ -122,9 +123,14 @@ func Build(in Input) Plan {
 	} else {
 		p = codex(in, l)
 	}
+	p.Provider = in.Account.Provider
 	p.Env["BURNS_ACCOUNT"] = in.Account.Name
 	if c := l.Credential; c != nil {
-		p.Args = append([]string{"run", "--account", c.Account, "--ref", c.Ref, "--env", c.Env, "--", p.Program}, p.Args...)
+		cop := []string{"run", "--account", c.Account, "--ref", c.Ref, "--env", c.Env, "--"}
+		p.Args = append(append(cop[:len(cop):len(cop)], p.Program), p.Args...)
+		if len(p.Daemon) > 0 {
+			p.Daemon = append(append([]string{"cop"}, cop...), p.Daemon...)
+		}
 		p.Program = "cop"
 	}
 	return p
@@ -166,7 +172,7 @@ func codex(in Input, l config.Launch) Plan {
 		Program: "codex",
 		Env:     map[string]string{"CODEX_HOME": in.Home},
 		Args:    pairs("-m", l.Model),
-		Daemon:  []string{"app-server", "daemon", "start"},
+		Daemon:  []string{"codex", "app-server", "daemon", "start"},
 	}
 }
 

@@ -61,6 +61,9 @@ targets:
         CFBundleDisplayName: Burns
         LSUIElement: true
         BurnsAppGroup: $(BURNS_MAC_GROUP)
+        CFBundleURLTypes:
+          - CFBundleURLName: Burns launch
+            CFBundleURLSchemes: [burns]
         <<: *ats
     entitlements:
       path: Mac/BurnsMac.entitlements

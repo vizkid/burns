@@ -14,7 +14,7 @@ struct SettingsRenderTests {
         let dir = URL(fileURLWithPath: ProcessInfo.processInfo.environment["BURNS_RENDER_DIR"]!)
         let name = try FileManager.default.contentsOfDirectory(atPath: dir.path).first { $0.hasSuffix("-accounts.json") }
         let accounts = try JSONDecoder().decode(AccountsFile.self, from: Data(contentsOf: dir.appendingPathComponent(name ?? ""))).accounts
-        let setUp = Dictionary(uniqueKeysWithValues: accounts.map { ($0.id, ["stiletto", "baroni", "colonelk"]) })
+        let setUp = Dictionary(uniqueKeysWithValues: accounts.map { ($0.id, ["host-1", "host-2", "host-3"]) })
         let list = Binding.constant(accounts)
         let first = accounts[0].name
         var changed = accounts

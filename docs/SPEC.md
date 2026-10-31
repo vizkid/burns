@@ -544,7 +544,7 @@ A host has an optional display name, set in Settings, for example ColonelK. With
 
 Proposal: the first word comes from the default rule's winning pair. An untouched model follows the billing account's default. Antigravity and Devin are not launchable yet: Burns has no account or usage reading for them.
 
-Model lists stay current from each CLI, not from a list in Burns (proposal, 2026-10-31; tested on one host). Nothing here needs a Burns release for a new model, except a new Claude family.
+Model lists stay current from each CLI, not from a list in Burns (Viz, 2026-10-31; Codex and Claude built). A new model needs no Burns release, except a new Claude family.
 
 | Agent | Source | Note |
 |---|---|---|
@@ -563,7 +563,7 @@ Quota differs for each provider and account pair, so Enter ranks pairs, not prov
 
 1. List every quota account: each Claude and Codex account except Azure.
 2. For each one, quota left is 100 minus the highest percent used across its live windows.
-3. An account with an unknown window does not compete.
+3. An account with no live window does not compete. A window whose reset passed with no newer reading is left out of the sum, so an idle account can still win (Viz, 2026-10-31). It still shows as unknown, never zero.
 4. The account with the most quota left wins. A tie goes to the earlier account in the settings order.
 5. If no account has quota left, and every quota account is known to be exhausted, choose Azure.
 6. If no account has quota left, but some are unknown, choose the default account from settings. The modal says usage is unknown.
@@ -597,7 +597,9 @@ The Unicode marks are only for a terminal fallback, if one is built.
 
 ## Launch
 
-Built 2026-10-31, tested live with real Claude on one host: `smithers launch --provider P --account NAME [--model M] [--effort E] [--permission-mode P]`. The app starts it as the command of a new Rex tab, so it runs inside the tab and knows its block. It reads the accounts file and `tools.d`, creates a missing home (mode 0700), sets the environment, starts Codex's daemon, leaves a detached watcher for Claude's channels dialog, and replaces itself with the CLI (`exec`), so no wrapper stays in the pane. Telemetry variables move here from the dotfiles `claude` function. The watcher runs on the host, so a sleeping Mac does not stop it. It keeps waiting while the folder-trust dialog shows, because the channels dialog may follow it. Answers go to `~/.local/state/burns/launch.log`. A failure holds the tab open with the reason. A Claude home at the default `~/.claude` gets no `CLAUDE_CONFIG_DIR`, because its Keychain login is filed without that path. Accounts take `launch` in the file: `model`, `effort`, `permission_mode` and `credential` (cop `account`, `ref`, `env`). Codex accounts refuse effort and permission mode. Several channel servers pass as one flag with separate values, last on the command line; untested with more than one. Not built: applying `mcp` and `hooks` declarations, skill links, and the app side below.
+Built 2026-10-31, tested live with real Claude on one host: `smithers launch --provider P --account NAME [--model M] [--effort E] [--permission-mode P]`. The app starts it as the command of a new Rex tab, so it runs inside the tab and knows its block. It reads the accounts file and `tools.d`, creates a missing home (mode 0700), sets the environment, starts Codex's daemon, leaves a detached watcher for Claude's channels dialog, and replaces itself with the CLI (`exec`), so no wrapper stays in the pane. Telemetry variables move here from the dotfiles `claude` function. The watcher runs on the host, so a sleeping Mac does not stop it. It keeps waiting while the folder-trust dialog shows, because the channels dialog may follow it. Answers go to `~/.local/state/burns/launch.log`. A failure holds the tab open with the reason. A Claude home at the default `~/.claude` gets no `CLAUDE_CONFIG_DIR`, because its Keychain login is filed without that path. Accounts take `launch` in the file: `model`, `effort`, `permission_mode` and `credential` (cop `account`, `ref`, `env`). Codex accounts refuse effort and permission mode. Several channel servers pass as one flag with separate values, last on the command line; untested with more than one. Not built: applying `mcp` and `hooks` declarations and skill links.
+
+Built 2026-10-31 for Mac: the panel opens from the menu window's plus button or `burns://new`. It reads each host's `GET /models`, and each Rex session's folder through `rex block call ... pwd`, then starts `smithers launch` with `rex window new`, or `rex new` on a host with no session for that project. A new tab's label is the account emoji alone. The panel reports only whether Rex took the command. Not built: the Rex action, showing the new session, and Confirmed or Failed reporting.
 
 1. The Rex action finds the server that owns `ctx.session_id` by checking `session.list` on the local server and each server in `rex.servers()`. It then runs `open "burns://new?host=<host>&session=<session>"` on Stiletto.
 2. The modal collects the choice.
@@ -625,6 +627,7 @@ Model catalogs port from Penfold's `internal/models` with their tests.
 | `GET /usage/history` | Apps | One-minute token buckets per account for the last 20 minutes |
 | `GET /usage/sessions?since=24h` | Apps | Totals per agent session, and per block and session |
 | `GET /usage/sessions?provider=&session=` | Apps | Totals per turn of one session |
+| `GET /models` | Apps | What each account can run on this host: `default_id`, `default`, `default_effort` and `models`. See "Steps". Reads the CLIs' files and runs nothing. |
 | `GET /accounts` | Apps | The accounts file as it is on disk, with `ETag`, a quoted SHA-256 of its bytes |
 | `PUT /accounts` | Apps | Replaces the accounts file. Needs `If-Match` with the current `ETag` (428 without, 412 when it changed). A body that would not load answers 422 with the reason. Limit 64 KiB. Writes atomically, mode 0600, answers the new `ETag`, then `smithersd` restarts. |
 

@@ -23,6 +23,9 @@ import (
 // when a daemon runs.
 const daemonTimeout = 20 * time.Second
 
+// shellTimeout bounds asking the interactive shell for its PATH.
+const shellTimeout = 10 * time.Second
+
 // replace becomes the CLI. It is a variable so tests stop short of it.
 var replace = syscall.Exec
 
@@ -104,16 +107,20 @@ func override(a *config.Account, model, effort, permission string) error {
 
 func startPlan(plan launch.Plan, errOut io.Writer, block string) error {
 	env := plan.Environ(os.Environ())
+	// The CLI may sit where only the interactive shell looks, even under cop.
+	if _, full, err := find(plan.Provider, env); err == nil {
+		env = full
+	}
 	if len(plan.Daemon) > 0 {
 		ctx, cancel := context.WithTimeout(context.Background(), daemonTimeout)
 		defer cancel()
-		cmd := exec.CommandContext(ctx, plan.Program, plan.Daemon...)
+		cmd := exec.CommandContext(ctx, resolved(plan.Daemon[0], env), plan.Daemon[1:]...)
 		cmd.Env = env
 		if out, err := cmd.CombinedOutput(); err != nil {
 			fmt.Fprintf(errOut, "burns: codex daemon: %v: %s\n", err, strings.TrimSpace(string(out)))
 		}
 	}
-	path, err := exec.LookPath(plan.Program)
+	path, env, err := find(plan.Program, env)
 	if err != nil {
 		return err
 	}
@@ -123,6 +130,62 @@ func startPlan(plan launch.Plan, errOut io.Writer, block string) error {
 		}
 	}
 	return replace(path, append([]string{plan.Program}, plan.Args...), env)
+}
+
+// find locates a program. Rex runs commands without the interactive shell, where
+// version managers add their folders, so a miss asks that shell for its PATH.
+func find(program string, env []string) (string, []string, error) {
+	if path, err := lookIn(program, pathOf(env)); err == nil {
+		return path, env, nil
+	}
+	shell := valueOf(env, "SHELL")
+	if shell == "" {
+		shell = "/bin/sh"
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), shellTimeout)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, shell, "-ic", `printf '\n%s' "$PATH"`)
+	cmd.Env = env
+	out, err := cmd.Output()
+	if err != nil {
+		return "", env, fmt.Errorf("%s not found: %w", program, err)
+	}
+	lines := strings.Split(string(out), "\n")
+	full := lines[len(lines)-1]
+	path, err := lookIn(program, full)
+	if err != nil {
+		return "", env, err
+	}
+	return path, append(env, "PATH="+full), nil
+}
+
+func lookIn(program, list string) (string, error) {
+	for _, dir := range filepath.SplitList(list) {
+		path := filepath.Join(dir, program)
+		if info, err := os.Stat(path); err == nil && !info.IsDir() && info.Mode()&0o111 != 0 {
+			return path, nil
+		}
+	}
+	return "", fmt.Errorf("%s not found on PATH", program)
+}
+
+func pathOf(env []string) string { return valueOf(env, "PATH") }
+
+// valueOf reads the last value of a variable, the one a process sees last.
+func valueOf(env []string, name string) string {
+	for i := len(env) - 1; i >= 0; i-- {
+		if v, ok := strings.CutPrefix(env[i], name+"="); ok {
+			return v
+		}
+	}
+	return ""
+}
+
+func resolved(program string, env []string) string {
+	if path, err := lookIn(program, pathOf(env)); err == nil {
+		return path
+	}
+	return program
 }
 
 // startWatch leaves a detached watcher behind, since this process is about to
