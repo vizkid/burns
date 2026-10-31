@@ -18,7 +18,9 @@ mkdir -p ~/.config/burns
 cp docs/accounts.example.json ~/.config/burns/accounts.json
 ```
 
-Edit `~/.config/burns/accounts.json` to list your accounts and their agent homes. Then install:
+Edit `~/.config/burns/accounts.json` to list your accounts and their agent homes.
+To have an agent write it for you, paste the [setup prompt](#setup-prompt) into Claude Code or Codex on that host.
+Then install:
 
 ```sh
 make install
@@ -33,6 +35,30 @@ On Linux, it runs `smithersd` as a systemd user service.
 To send usage from your agents, follow the [agent setup](docs/SPEC.md#installing).
 
 `smithersd` also answers the read routes on its Tailscale address, port 9766, to devices of the Tailscale user who owns the host.
+
+### Setup prompt
+
+Run this in the Burns checkout on each host. The agent asks before it writes anything.
+
+```text
+Write ~/.config/burns/accounts.json for Burns on this host. Follow docs/accounts.example.json and
+the rules in internal/config/config.go.
+
+1. Find the agent homes. Look for ~/.claude*, ~/.codex*, and any CLAUDE_CONFIG_DIR or CODEX_HOME
+   set in my shell startup files, aliases, and scripts. List each home you find.
+2. Never open or print credential files such as auth.json or .credentials.json.
+3. For each Codex home, read config.toml. If its model provider is Azure, the kind is "azure".
+   Every other home is "subscription".
+4. Ask me which homes are signed in to the same account. Those share one entry: the main home in
+   "home" and the others in "extra_homes". The CLI's default home (~/.claude, ~/.codex) is often
+   one of these.
+5. Propose a name for each account: lowercase letters, digits, and hyphens, starting with a
+   letter, at most 32 characters. Ask me to confirm or change the names.
+6. Show me the whole file. Write it only after I agree, with mode 0600. Write homes relative to
+   my home directory.
+7. Run make install, then ~/.local/bin/smithers usage. If smithersd rejects the file, fix the
+   entry it names and run both again.
+```
 
 ## Apps and widgets
 
