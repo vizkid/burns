@@ -42,7 +42,11 @@ public struct LaunchHost: Equatable, Sendable {
     public var shown: String
     public var path: String
     public var session: String?
-    public init(rex: String, shown: String, path: String, session: String?) { self.rex = rex; self.shown = shown; self.path = path; self.session = session }
+    /// What each account runs on this host: a default is a fact of the host's home.
+    public var entries: [AccountID: ModelEntry]
+    public init(rex: String, shown: String, path: String, session: String?, entries: [AccountID: ModelEntry] = [:]) {
+        self.rex = rex; self.shown = shown; self.path = path; self.session = session; self.entries = entries
+    }
 }
 
 public struct LaunchProject: Equatable, Sendable {
@@ -127,15 +131,17 @@ public struct LaunchSentence: Equatable, Sendable {
     var provider: String { Self.agents[agent].0 }
     var billing: [LaunchAccount] { accounts.filter { $0.id.provider == provider } }
     var current: LaunchAccount? { billing.indices.contains(account) ? billing[account] : nil }
-    var catalog: [CatalogModel] { current?.entry?.models ?? [] }
+    /// The chosen host's answer, or the account's from any host.
+    var entry: ModelEntry? { current.flatMap { place?.entries[$0.id] ?? $0.entry } }
+    var catalog: [CatalogModel] { entry?.models ?? [] }
     var defaultModel: CatalogModel? {
-        guard let e = current?.entry else { return nil }
+        guard let e = entry else { return nil }
         return catalog.first { $0.id == e.defaultId } ?? catalog.first { $0.display == e.default }
     }
     var shownModel: CatalogModel? { model ?? defaultModel }
     /// Efforts Burns can set: Codex's stay the home's, so its models list none.
     var efforts: [String] { shownModel?.efforts ?? [] }
-    var shownEffort: String { effort ?? current?.entry?.defaultEffort ?? "" }
+    var shownEffort: String { effort ?? entry?.defaultEffort ?? "" }
     var place: LaunchHost? { projects.indices.contains(project) && projects[project].hosts.indices.contains(host) ? projects[project].hosts[host] : nil }
 
     public var words: [Word] { efforts.isEmpty ? [.agent, .model, .account, .project, .host] : [.agent, .model, .effort, .account, .project, .host] }
@@ -146,7 +152,7 @@ public struct LaunchSentence: Equatable, Sendable {
         switch w {
         case .agent: return Self.agents[agent].1
         case .model:
-            let name = shownModel?.display ?? current?.entry?.default ?? "Own default"
+            let name = shownModel?.display ?? entry?.default ?? "Own default"
             let fixed = efforts.isEmpty ? shownEffort : ""
             return fixed.isEmpty ? (name.isEmpty ? "Own default" : name) : "\(name) \(fixed)"
         case .effort: return shownEffort.isEmpty ? "default" : shownEffort
@@ -162,7 +168,7 @@ public struct LaunchSentence: Equatable, Sendable {
         case .agent: all = Self.agents.map { a in
             Option(title: a.1, note: accounts.first { $0.id.provider == a.0 }.map { "\($0.id.name) \($0.left)" } ?? "not in Burns yet") }
         case .model: all = catalog.map { Option(title: $0.display, note: $0 == defaultModel ? "Default" : "") }
-        case .effort: all = efforts.map { Option(title: $0, note: $0 == current?.entry?.defaultEffort ? "Default" : "") }
+        case .effort: all = efforts.map { Option(title: $0, note: $0 == entry?.defaultEffort ? "Default" : "") }
         case .account: all = billing.map { Option(mark: $0.emoji, title: $0.id.name, note: $0.left) }
         case .project: all = projects.map { Option(title: $0.name, note: $0.path) }
         case .host: all = projects.indices.contains(project) ? projects[project].hosts.map {
@@ -191,7 +197,7 @@ public struct LaunchSentence: Equatable, Sendable {
             model = catalog.first { $0.display == title }
             if model == defaultModel { model = nil }
             if let e = effort, !efforts.contains(e) { effort = nil }
-        case .effort: effort = title == current?.entry?.defaultEffort ? nil : title
+        case .effort: effort = title == entry?.defaultEffort ? nil : title
         case .account:
             if let i = billing.firstIndex(where: { $0.id.name == title }) {
                 account = i
@@ -200,7 +206,10 @@ public struct LaunchSentence: Equatable, Sendable {
         case .project:
             if let i = projects.firstIndex(where: { $0.name == title }) { project = i; host = 0 }
         case .host:
-            if projects.indices.contains(project), let i = projects[project].hosts.firstIndex(where: { $0.shown == title }) { host = i }
+            if projects.indices.contains(project), let i = projects[project].hosts.firstIndex(where: { $0.shown == title }) {
+                host = i
+                if let m = model, !catalog.contains(m) { model = nil }
+            }
         }
     }
 

@@ -53,6 +53,14 @@ func TestClaudeResolvesTheAliasToTheVersionSeen(t *testing.T) {
 	}
 }
 
+func TestClaudeReadsAContextSuffix(t *testing.T) {
+	home := t.TempDir()
+	write(t, home, "settings.json", `{"model":"opus[1m]"}`)
+	if e := Claude(home, "alpha", []string{"claude-opus-5-5"}); e.Default != "Opus 5.5" || e.DefaultID != "opus[1m]" {
+		t.Fatalf("%+v", e)
+	}
+}
+
 // With nothing set, no flag is passed, and the last model seen is only shown.
 func TestClaudeWithNoSettingShowsWhatItLastRan(t *testing.T) {
 	e := Claude(t.TempDir(), "alpha", []string{"claude-sonnet-5-5"})

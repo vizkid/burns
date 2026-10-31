@@ -81,11 +81,12 @@ func Claude(home, account string, seen []string) Entry {
 	}
 	e.DefaultEffort = s.EffortLevel
 	e.DefaultID = s.Model
+	family, _, _ := strings.Cut(s.Model, "[") // opus[1m] names a context size
 	switch {
-	case s.Model != "" && latest[s.Model] != "":
-		e.Default = display(latest[s.Model])
-	case s.Model != "":
-		e.Default = display(s.Model)
+	case latest[family] != "":
+		e.Default = display(latest[family])
+	case family != "":
+		e.Default = display(family)
 	case len(seen) > 0:
 		e.Default = display(seen[0])
 	}

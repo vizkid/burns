@@ -57,6 +57,19 @@ struct LaunchTests {
         #expect(s.request?.model == "m2")
     }
 
+    /// A default is a fact of the host's home, so the model word follows the host.
+    @Test func theModelFollowsTheHost() {
+        var s = sentence()
+        let id = AccountID(provider: "codex", name: "beta")
+        let hosts = [LaunchHost(rex: "", shown: "One", path: "/p", session: "x", entries: [id: entry("codex", "beta", "m1", "low", nil)]),
+                     LaunchHost(rex: "Two", shown: "Two", path: "/p", session: "x", entries: [id: entry("codex", "beta", "m2", "high", nil)])]
+        s = LaunchSentence(accounts: s.accounts, projects: [LaunchProject(name: "x", path: "dev/x", hosts: hosts)])
+        #expect(s.text(.model) == "M1 low")
+        s.focus(.host)
+        s.pick("Two")
+        #expect(s.text(.model) == "M2 high" && s.request?.model == nil)
+    }
+
     @Test func aHostWithNoSessionStartsOne() {
         var s = sentence()
         s.focus(.host)

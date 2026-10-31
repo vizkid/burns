@@ -61,7 +61,7 @@ enum LaunchData {
     private struct Pwd: Decodable { let pwd: String }
 
     /// One host's folders. Rex reports a pane's folder as a file URL.
-    private static func folders(rex: String, shown: String) async -> [(host: LaunchHost, relative: String)] {
+    private static func folders(rex: String, shown: String, entries: [AccountID: ModelEntry]) async -> [(host: LaunchHost, relative: String)] {
         let server = rex.isEmpty ? [] : ["-S", rex]
         guard let sessions = await Rex.json(Sessions.self, server + ["session", "ls", "--json"]) else { return [] }
         var out: [(host: LaunchHost, relative: String)] = []
@@ -72,7 +72,7 @@ enum LaunchData {
             let parts = path.split(separator: "/").map(String.init)
             // /Users/<name>/... and /home/<name>/... are the same place on each host.
             guard parts.count > 2, parts[0] == "Users" || parts[0] == "home" else { continue }
-            out.append((LaunchHost(rex: rex, shown: shown, path: path, session: s.label), parts[2...].joined(separator: "/")))
+            out.append((LaunchHost(rex: rex, shown: shown, path: path, session: s.label, entries: entries), parts[2...].joined(separator: "/")))
         }
         return out
     }
@@ -94,10 +94,13 @@ enum LaunchData {
         for status in store.statuses {
             guard let host = status.snapshot?.usage.host else { continue }
             let rex = rexHosts.first { $0.lowercased() == host.lowercased() } ?? ""
-            found += await folders(rex: rex, shown: names[host] ?? host)
-            for e in await models(status.address) where entries[AccountID(provider: e.provider, name: e.account)] == nil {
-                entries[AccountID(provider: e.provider, name: e.account)] = e
+            var here: [AccountID: ModelEntry] = [:]
+            for e in await models(status.address) {
+                let id = AccountID(provider: e.provider, name: e.account)
+                here[id] = e
+                if entries[id] == nil { entries[id] = e }
             }
+            found += await folders(rex: rex, shown: names[host] ?? host, entries: here)
         }
         var projects = LaunchProject.group(found)
         // A host with no session on a project can start one, when it has any session to show it runs Rex.
@@ -106,7 +109,7 @@ enum LaunchData {
             for h in all where !projects[i].hosts.contains(where: { $0.rex == h.rex }) {
                 let parts = h.path.split(separator: "/").map(String.init)
                 let path = "/" + parts.prefix(2).joined(separator: "/") + "/" + projects[i].path
-                projects[i].hosts.append(LaunchHost(rex: h.rex, shown: h.shown, path: path, session: nil))
+                projects[i].hosts.append(LaunchHost(rex: h.rex, shown: h.shown, path: path, session: nil, entries: h.entries))
             }
         }
         return LaunchSentence(accounts: store.launchAccounts(entries), projects: projects)
