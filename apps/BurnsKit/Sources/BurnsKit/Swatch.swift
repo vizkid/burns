@@ -9,7 +9,9 @@ import AppKit
 /// backgrounds and a darker one for light. Purple and teal are Penfold's hand-tuned pairs. There is
 /// no yellow, amber or red: those are the pace colours.
 public enum Swatch: String, CaseIterable, Codable, Sendable {
-    case purple, teal, blue, green, pink, grey
+    /// List order is the order names take them. Teal, the one with no matching circle emoji, comes
+    /// late, so most people's accounts get an emoji that matches their colour.
+    case purple, blue, green, pink, teal, grey
 
     public var dark: UInt32 {
         switch self {

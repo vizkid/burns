@@ -43,12 +43,15 @@ struct HomeView: View {
             // The large title shares the gear's row, which leaves more height for the burndown.
             .toolbarTitleDisplayMode(.inlineLarge)
             .toolbar {
-                Button { showsSettings = true } label: { Image(systemName: "gear") }.accessibilityLabel("Hosts")
+                Button { showsSettings = true } label: { Image(systemName: "gear") }.accessibilityLabel("Settings")
             }
             .sheet(isPresented: $showsSettings) {
                 NavigationStack {
-                    HostSettings(store: store)
-                        .navigationTitle("Hosts")
+                    Form {
+                        NavigationLink("Hosts") { HostSettings(store: store).navigationTitle("Hosts") }
+                        NavigationLink("Accounts") { AccountSettings(store: store) }
+                    }
+                        .navigationTitle("Settings")
                         .toolbar { Button("Done") { showsSettings = false } }
                 }
             }

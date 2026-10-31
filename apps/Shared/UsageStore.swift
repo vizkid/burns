@@ -9,6 +9,11 @@ enum AppGroup {
     static var defaults: UserDefaults { UserDefaults(suiteName: id) ?? .standard }
     /// When any process last fetched every host, so a widget tap reuses a fresh cache.
     static let lastFetchKey = "burns.lastFetch"
+    /// The central list, copied here because widgets cannot read iCloud's store.
+    static let accountsKey = "burns.centralAccounts"
+    static var accounts: [CentralAccount] {
+        defaults.data(forKey: accountsKey).flatMap { try? JSONDecoder().decode(AccountsFile.self, from: $0) }?.accounts ?? []
+    }
 }
 
 /// Reads the hosts, keeps the cache, and builds what the views draw.
@@ -25,12 +30,64 @@ final class UsageStore: ObservableObject {
     private let cache = HostCache(defaults: AppGroup.defaults)
     private let selection = Selection(defaults: AppGroup.defaults)
     private let accounts = CentralStore(values: NSUbiquitousKeyValueStore.default)
+    private let launched = Date()
+    /// How long a new device waits for iCloud before it imports from the hosts.
+    private static let iCloudWait: TimeInterval = 60
+    /// The central list, kept in step with iCloud.
+    @Published private(set) var central: [CentralAccount] = AppGroup.accounts
 
     init() {
         hosts = HostList(defaults: AppGroup.defaults).hosts
         model = UsageModel(snapshots: [], selected: nil)
         rebuild()
         NSUbiquitousKeyValueStore.default.synchronize()
+        NotificationCenter.default.addObserver(forName: NSUbiquitousKeyValueStore.didChangeExternallyNotification,
+                                               object: NSUbiquitousKeyValueStore.default, queue: .main) { [weak self] _ in
+            Task { @MainActor in self?.syncAccounts() ; await self?.pushAccounts() }
+        }
+    }
+
+    /// Hosts where each account's home exists.
+    var setUp: [AccountID: [String]] {
+        var out: [AccountID: [String]] = [:]
+        for s in statuses {
+            guard let usage = s.snapshot?.usage else { continue }
+            for a in usage.accounts where a.setUp != false {
+                out[AccountID(provider: a.provider, name: a.account), default: []].append(usage.host)
+            }
+        }
+        return out
+    }
+
+    /// Saves an edit and copies it to the hosts.
+    func edit(_ list: [CentralAccount]) {
+        accounts.save(list)
+        syncAccounts()
+        Task { await pushAccounts() }
+    }
+
+    /// Takes a held host's accounts into the central list.
+    func useHost(_ host: String, _ onHost: [CentralAccount]) {
+        edit(AccountSync.importing([onHost, central]).accounts)
+    }
+
+    /// Overwrites a held host: marks its current file as the last written one, so the next pass writes it.
+    func overwrite(_ host: String) async {
+        guard let file = try? await HostAccounts().get(host) else { return }
+        accounts.setWritten(file.etag, host: host)
+        await pushAccounts()
+    }
+
+    private func syncAccounts() {
+        central = accounts.load() ?? central
+        AppGroup.defaults.set(AccountsFile(accounts: central).encoded(), forKey: AppGroup.accountsKey)
+        rebuild()
+    }
+
+    private func pushAccounts() async {
+        accountSync = await AccountSync.run(hosts: hosts, store: accounts, client: HostAccounts(),
+                                            mayImport: Date().timeIntervalSince(launched) > Self.iCloudWait)
+        syncAccounts()
     }
 
     func refresh() async {
@@ -43,7 +100,7 @@ final class UsageStore: ObservableObject {
             lastContent = content
             WidgetCenter.shared.reloadAllTimelines()
         }
-        accountSync = await AccountSync.run(hosts: hosts, store: accounts, client: HostAccounts())
+        await pushAccounts()
     }
 
     private var lastContent = ""
@@ -57,7 +114,7 @@ final class UsageStore: ObservableObject {
     /// Rebuilds from the cache: also how the time arcs and expiry move between fetches.
     func rebuild() {
         let snaps = hosts.compactMap { cache.load()[$0] }
-        model = UsageModel(snapshots: snaps, selected: selection.account)
+        model = UsageModel(snapshots: snaps, selected: selection.account, accounts: central)
         if statuses.isEmpty { statuses = hosts.map { HostStatus(address: $0, snapshot: cache.load()[$0], error: nil) } }
     }
 }

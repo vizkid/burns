@@ -15,6 +15,8 @@ const usageText = `usage:
   smithers statusline [--url URL] [-- COMMAND ARGS...]
   smithers hook session-start --provider claude|codex [--url URL]
   smithers usage [--since 24h] [--url URL]
+  smithers launch --provider claude|codex --account NAME [--model M] [--effort E] [--permission-mode P]
+  smithers answer-channels --block BLOCK --servers a,b
   smithers version`
 
 func run(args []string, in io.Reader, out, errOut io.Writer, getenv func(string) string) int {
@@ -31,6 +33,10 @@ func run(args []string, in io.Reader, out, errOut io.Writer, getenv func(string)
 		}
 	case "usage":
 		return printUsage(args[1:], out, errOut)
+	case "launch":
+		return launchAgent(args[1:], in, errOut, getenv)
+	case "answer-channels":
+		return answerChannels(args[1:], errOut)
 	case "version":
 		fmt.Fprintln(out, version())
 		return 0

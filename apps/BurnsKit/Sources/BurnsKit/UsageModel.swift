@@ -55,10 +55,11 @@ public struct UsageModel: Equatable, Sendable {
     /// The oldest snapshot time among the hosts, so a view can say how old its data may be.
     public var oldestFetch: Date?
 
-    public init(snapshots: [HostSnapshot], selected stored: AccountID?, now: Date = Date(), calendar: Calendar = .current) {
+    public init(snapshots: [HostSnapshot], selected stored: AccountID?, accounts central: [CentralAccount] = [], now: Date = Date(), calendar: Calendar = .current) {
         let accounts = Merge.accounts(snapshots.map(\.usage), now: now)
         let ordered = RingOrder.ordered(accounts)
-        let swatches = Swatch.assign(ordered.map(\.id.name))
+        var swatches = Swatch.assign(ordered.map(\.id.name))
+        for group in AccountGroup.build(central) { swatches[group.name] = group.swatch }
         rings = ordered.map { a in
             let live = a.liveWindows(at: now)
             let five = live.filter { $0.key <= 600 }.max { $0.key < $1.key }?.value

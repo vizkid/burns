@@ -97,3 +97,24 @@ func TestExampleLoads(t *testing.T) {
 		t.Fatalf("example: %v", err)
 	}
 }
+
+func TestLaunchOverrides(t *testing.T) {
+	cases := []struct {
+		name, body, wantErr string
+	}{
+		{"claude", `"provider":"claude","launch":{"model":"m-1","effort":"high","permission_mode":"auto"}`, ""},
+		{"flag", `"provider":"claude","launch":{"model":"--evil"}`, "launch settings"},
+		{"codex effort", `"provider":"codex","launch":{"effort":"high"}`, "no effort"},
+		{"credential", `"provider":"codex","launch":{"credential":{"account":"a.example","ref":"op://v/i/f","env":"KEY"}}`, ""},
+		{"bad ref", `"provider":"codex","launch":{"credential":{"account":"a.example","ref":"plain","env":"KEY"}}`, "credential"},
+	}
+	for _, c := range cases {
+		_, err := Parse([]byte(`{"accounts":[{"name":"alpha","home":".h","kind":"subscription",`+c.body+`}]}`), "/home/op")
+		if c.wantErr == "" && err != nil {
+			t.Errorf("%s: %v", c.name, err)
+		}
+		if c.wantErr != "" && (err == nil || !strings.Contains(err.Error(), c.wantErr)) {
+			t.Errorf("%s: got %v", c.name, err)
+		}
+	}
+}

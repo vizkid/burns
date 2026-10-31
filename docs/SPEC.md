@@ -156,7 +156,7 @@ One flame names Burns everywhere: a full-colour 3D flame in the app icons, and i
 
 To look without building: `ictool apps/Shared/AppIcon.icon --export-image --output-file icon.png --platform iOS --rendition Default --width 1024 --height 1024 --scale 1`. `ictool` ships inside Xcode's Icon Composer. Renditions include `Dark`, `TintedDark` and `ClearLight`.
 
-#### Accounts in the apps (agreed, Viz, 2026-10-31; `smithersd` part, glyph colours and account sync built; Settings screens not built)
+#### Accounts in the apps (agreed, Viz, 2026-10-31; `smithersd` part, glyph colours, account sync and Settings built; Providers screen not built)
 
 Today the apps only read accounts, and only a file edit on each host changes them. But an account is also what Burns launches (phase 3), so the apps must manage it anyway. This design keeps one account list in iCloud, edited in either app, and the apps copy it to every host's `accounts.json`.
 
@@ -178,13 +178,15 @@ Today the apps only read accounts, and only a file edit on each host changes the
 | Each app copies the central list into its app group for its widgets. Both apps carry the iCloud key-value entitlement with one store identifier under the team. | Widgets read the app group, as they do the host cache. |
 | Burns builds the launch command from the provider's CLI on that host and the account's home (`CLAUDE_CONFIG_DIR`, `CODEX_HOME`), not from a stored command line. | Viz, 2026-10-29: Burns replaces the dotfiles launchers. A stored command line would make an editable list a way to run any program. Values become arguments, never shell code. |
 | An account name's `colour` is one swatch, shared by its providers. | One colour per account name, as in Penfold: Claude `viz` and Codex `viz` share it. |
-| Swatches are fixed pairs, one value for dark backgrounds and a darker one for light: purple, teal, blue, green, pink, grey. No yellow, amber or red. | Penfold's light values were hand-tuned; a free colour picker looks wrong in one mode. Yellow, amber and red are the pace colours. |
+| Swatches are fixed pairs, one value for dark backgrounds and a darker one for light, taken in this order: purple, blue, green, pink, teal, grey. No yellow, amber or red. | Penfold's light values were hand-tuned; a free colour picker looks wrong in one mode. Yellow, amber and red are the pace colours. |
 | A name with no colour takes the next unused swatch in list order. | Every ring gets a colour without setup. |
 | Ring glyphs draw in the account's colour, full strength when selected and at 55% when not. Azure draws its mark in greyscale, keeping its light and dark parts, and in full colour only when selected. | Viz, 2026-10-30, and as Penfold's rings did. Viz, 2026-10-31: greyscale as Rex draws it, not a flat grey silhouette. |
 | Ring order is the central order. | One list, one order. |
-| Built 2026-10-31: the iCloud list, first-use import and propagation. A host's file is written only when it is what was last written or holds only accounts the list has. Any other difference is held, and Settings says so next to the host. The last written hash is shared in iCloud, so one device's write is not a hand edit on another. An empty list never writes. Not built: the review screen, which needs step 4. Rings do not yet read `colour`, `emoji` or the central order. Not verified: that the list crosses devices through iCloud. A new device that has not yet downloaded the list imports from the hosts and can overwrite a newer list. | Writing live configuration must lose nothing unseen. Editing needs Settings, so the crossing is tested there. |
+| Built 2026-10-31: the iCloud list, first-use import and propagation. A host's file is written only when it is what was last written or holds only accounts the list has. Any other difference is held, and Settings says so next to the host. The last written hash is shared in iCloud, so one device's write is not a hand edit on another. An empty list never writes. Rings read `colour`. They do not read the central order yet. Not verified: that the list crosses devices through iCloud. A new device waits 60 seconds for iCloud before it imports from the hosts. | Writing live configuration must lose nothing unseen. Editing needs Settings, so the crossing is tested there. |
 | `colour` and `emoji` are fields in the accounts file, and `smithersd` validates them: a swatch name, and at most 16 runes with no control characters. | Every host must accept what an app sends. A host on an older `smithersd` refuses these fields with 422, and Settings shows that. |
 | Later, if needed: an optional `hosts` list per account limits it to those hosts. Not built. | Viz, 2026-10-31: does not need it now. |
+
+Settings on the Mac are toolbar tabs, and the Accounts tab follows Mail: the list beside the selected account, with no navigation inside the window. iPhone settings use one navigation stack.
 
 Screens: Accounts lists names in ring order, each with its swatch and providers. A name opens a page with the swatch row, then each provider entry with its home, extra homes, kind, launch overrides, and the hosts where it is set up so far. Add Account asks for provider, name, home and kind. Providers lists each host's CLIs and each provider's default model and effort.
 
@@ -202,7 +204,7 @@ Burns manages homes, logins and skills only when Viz asks it to, and works with 
 | Burns relinks every opted-in home on a host when its sources change, a home is added, or Viz asks. Skill contents reach other hosts through the source folder itself, such as a Git checkout, not through Burns. | Links are per host, so Burns keeps each host's links in step. Copying files between hosts would make two copies of each skill. |
 | Antigravity is a later provider, through Gemini API keys only: the key in cop, passed at launch. | Antigravity has no documented per-account home or usage readout, and Burns reads only documented output and the CLIs' own files. |
 
-##### Tool wiring (proposal, 2026-10-31)
+##### Tool wiring (agreed, not built, Viz, 2026-10-31)
 
 Tools such as roar, smithers, rex and cop each need something in every account's home: a Claude channel flag, an MCP server, a hook. Burns applies what each tool declares, so a new tool is wired the same way without a change to Burns.
 
@@ -218,9 +220,10 @@ Tools such as roar, smithers, rex and cop each need something in every account's
 | Burns answers Claude's development-channels dialog for the sessions it launches. After launch it watches the new pane through Rex for up to 60 seconds. When the dialog lists exactly the servers Burns put in the flag, Burns selects "I am using this for local development". A dialog that lists anything else is left for the operator, and Burns reports it. Each answer is logged with the pane and the servers. Detection reads the screen with `rex capture -s <session> -b <block> --trim`: the dialog starts "WARNING: Loading development channels" and has a "Channels: server:a ..." line, with `❯` on "1. I am using this for local development". Burns sends Enter, never Esc, which cancels. Success shows in `roar panes` as path `channel` for that pane. Untested: the Channels line with several servers. | Viz, 2026-10-31: a session launched overnight must not wait on the dialog. On a Pro or Max account a custom channel needs the development flag, and the docs offer no setting that skips its dialog. Matching the exact server list keeps the answer to the channels Burns itself asked for. Roar, 2026-10-31: Claude reports no program status until the dialog is answered, and roar's server has not started, so only the screen shows it. |
 | Burns never writes Codex's `trusted_hash`. It reports hooks that still need `/hooks` approval in Settings and in the launched session. | Approval is once per home, not per launch, and an unapproved hook does not stop the session. |
 | A Codex launch first runs `CODEX_HOME=<home> codex app-server daemon start`, which does nothing if a daemon runs. It never passes `-c`, `-p`, `--no-daemon` or `--remote`. `-m <model>` and an initial prompt are allowed. | Roar, 2026-10-31, verified on Codex CLI 0.165.0: any `-c` override, even `-c model_reasoning_effort=medium`, runs the TUI in-process, off the home's app-server daemon, so roar cannot deliver natively. `roar panes [host]` shows `codex_native` for a pane on the daemon. |
-| Codex effort and other overrides live in the home's `config.toml`, written by Burns from the account's launch defaults. Burns offers no per-launch effort override for Codex. | `-c` is ruled out above. Roar, 2026-10-31, verified on Codex CLI 0.165.0: `-p` also runs the TUI in-process ("--profile requires embedded mode"). A daemon-backed pane binds the first time its agent runs a roar command; until then delivery is typed and `roar panes` shows `unbound_codex`. |
+| Burns launches Codex with no effort setting and never edits a home's `config.toml`. Each home keeps the effort its operator set. Panes launched outside Burns stay as their operator launched them. | Viz, 2026-10-31: Burns cannot force users to change their configuration. `-c` is ruled out above. Roar, 2026-10-31, verified on Codex CLI 0.165.0: `-p` also runs the TUI in-process ("--profile requires embedded mode"). A daemon-backed pane binds the first time its agent runs a roar command; until then delivery is typed and `roar panes` shows `unbound_codex`. |
 | At launch Burns labels the Rex tab with one colour emoji for the account and no name (`rex window rename`). It does not wrap or rename the CLI. The emoji comes from the account name's `emoji`. | Viz, 2026-10-31, tested live: the sidebar row shows the tab label beside the glyph of the foreground program, so `claude` and `codex` keep their icons and roar's and Rex's agent detection is untouched. A colour emoji shows in colour there, and the label held after real Claude and Codex started. Rex has no other colour per session, tab or pane: its icon colours are built into the app per program, and a block label does not show. |
-| An account name's `emoji` is one emoji, shared by its providers and central like `colour`. Settings offers the system emoji picker. With none chosen, the emoji follows the swatch: purple 💜, teal 🩵, blue 💙, green 💚, pink 🩷, grey 🩶. An emoji may repeat across accounts. | Viz, 2026-10-31: pick any emoji per account. Hearts are the default because they are the one emoji shape with all six swatches, so an account works with no setup. |
+| An account name's `emoji` is one emoji, shared by its providers and central like `colour`. Settings offers a button that opens a searchable grid, the same on Mac and iPhone, with the circles first. It reads Swift's Unicode data, so Burns keeps no list and adds no dependency. It offers single emoji only: no flags or skin tones. With none chosen, the emoji follows the swatch: purple 🟣, blue 🔵, green 🟢, pink 🔴, teal 🟠, grey ⚪. An emoji may repeat across accounts. | Viz, 2026-10-31: pick any emoji per account, and circles by default. Circles have no teal, so teal is the fifth swatch: the first four accounts match, and six accounts still get six emoji. |
+| Defaults assume nothing about one operator's setup. With no launch override, an account uses its CLI's own default model, effort and permission mode. Burns adds no tool, skill or folder that a tool or the operator did not declare. | Viz, 2026-10-31: one operator's accounts are one possibility. |
 | Burns does not answer Claude's folder-trust dialog. It reports the pane as waiting, and the session waits until the operator accepts. | Viz, 2026-10-31: a launch outside a trusted folder needs Viz's explicit acceptance, so waiting is correct. Seen live, 2026-10-31, in an untrusted folder with no channel flag: `❯` starts on "No, exit", so Enter ends the session. Untested: the order of this dialog and the channels dialog. |
 | Burns does not offer a choice of Rex icon. Rex picks a row's icon by the foreground program's exact name, with no API, so a choice would need a wrapper with that program's name, and a wrapper stops roar delivery. | Tested live, 2026-10-31, on real Claude and Codex under a wrapper named `azure`: `roar panes` shows no agent and `refuse:wrong_program` for both, even with Claude's channel connected. A wrapper that stays the process group leader does keep its name and icon. A symlink resolves to its target, and a copied system binary is killed. |
 | Burns shows the active panes for each account, from the bindings `smithersd` already stores, and each row names the host, folder and tab. Selecting a row focuses that pane. Untested: whether `rex focus` moves the Rex app, not only the calling client. | Viz, 2026-10-31: with no colour per account, Burns must answer which panes run on which account. |
@@ -528,9 +531,27 @@ The top of the modal shows the host and session, filled in from where the modal 
 
 ### Steps
 
-1. Provider: Claude or Codex, shown as large marks with readable labels.
-2. Account: viz or nfx. Azure appears only under Codex, with its own mark.
-3. Model and effort.
+The launch reads as a sentence, in this order (Viz, 2026-10-31):
+
+1. Agent: Codex, Claude, Antigravity or Devin.
+2. Model: "Default" never shows. Burns resolves it to the actual model, version and effort the account's home would run, and marks that row Default.
+3. Effort: its own word, shown only when Burns can set it at launch. Codex has none: the model word shows the home's effort, fixed.
+4. Billing account: the accounts of that agent, with quota left.
+5. Project: a folder.
+6. Host: where to run it, listing the hosts that have that project.
+
+A host has an optional display name, set in Settings, for example ColonelK. With none set, Burns shows the Rex label unchanged and never guesses capitals. The display name is for showing only: commands keep the Rex label (Viz, 2026-10-31).
+
+Proposal: the first word comes from the default rule's winning pair. An untouched model follows the billing account's default. Antigravity and Devin are not launchable yet: Burns has no account or usage reading for them.
+
+Model lists stay current from each CLI, not from a list in Burns (proposal, 2026-10-31; tested on one host). Nothing here needs a Burns release for a new model, except a new Claude family.
+
+| Agent | Source | Note |
+|---|---|---|
+| Codex | The home's `models_cache.json`, which Codex refreshes, plus `config.toml` | Per home, so accounts can differ. Hidden models are left out. A custom provider such as Azure lists only the deployments its `config.toml` names. Effort stays the home's: `-c` is ruled out. |
+| Claude | The documented `--model` aliases (`fable`, `opus`, `sonnet`, `haiku`), which the CLI points at the latest version, plus the home's `additionalModelOptionsCache` | Claude has no list command. The version shown is the latest seen in that account's requests. Typing a full model id is allowed. Effort changes with the left and right arrows. |
+| Antigravity | `agy models` | Not launchable yet. |
+| Devin | `devin models list` | Not launchable yet. |
 
 Each provider has a default model and effort. An account can override them.
 Azure needs its own, because its models are deployment names, such as `gpt-6-astra`.
@@ -558,9 +579,11 @@ The modal shows why it picked that account, for example "Codex nfx: 62% left" or
 
 | Key | Action |
 |---|---|
-| Enter | Accept the selection shown and launch |
+| Return | Confirm the selection and move to the next part of the sentence. On the last part, launch. (Viz, 2026-10-31) |
+| Cmd+Return | Launch what is selected now, from any part of the sentence. (Viz, 2026-10-31) |
 | 1, 2, 3 | Choose an option on the current step |
-| Tab and Shift+Tab | Move between steps |
+| Tab and Shift+Tab | Move to the next or previous word, wrapping at the ends |
+| Right and Left arrows | Move to the next or previous word, stopping at the ends |
 | H | Choose the host |
 | S | Choose the session |
 | Esc | Step back, or close at the first step |
@@ -573,6 +596,8 @@ The Mac app uses Penfold's SVG marks for Claude, Codex, and Azure.
 The Unicode marks are only for a terminal fallback, if one is built.
 
 ## Launch
+
+Built 2026-10-31, tested live with real Claude on one host: `smithers launch --provider P --account NAME [--model M] [--effort E] [--permission-mode P]`. The app starts it as the command of a new Rex tab, so it runs inside the tab and knows its block. It reads the accounts file and `tools.d`, creates a missing home (mode 0700), sets the environment, starts Codex's daemon, leaves a detached watcher for Claude's channels dialog, and replaces itself with the CLI (`exec`), so no wrapper stays in the pane. Telemetry variables move here from the dotfiles `claude` function. The watcher runs on the host, so a sleeping Mac does not stop it. It keeps waiting while the folder-trust dialog shows, because the channels dialog may follow it. Answers go to `~/.local/state/burns/launch.log`. A failure holds the tab open with the reason. A Claude home at the default `~/.claude` gets no `CLAUDE_CONFIG_DIR`, because its Keychain login is filed without that path. Accounts take `launch` in the file: `model`, `effort`, `permission_mode` and `credential` (cop `account`, `ref`, `env`). Codex accounts refuse effort and permission mode. Several channel servers pass as one flag with separate values, last on the command line; untested with more than one. Not built: applying `mcp` and `hooks` declarations, skill links, and the app side below.
 
 1. The Rex action finds the server that owns `ctx.session_id` by checking `session.list` on the local server and each server in `rex.servers()`. It then runs `open "burns://new?host=<host>&session=<session>"` on Stiletto.
 2. The modal collects the choice.
@@ -607,12 +632,14 @@ Totals carry `cost_micros` for requests with a known cost, `null` when none has 
 
 ### The `smithers` helper
 
-Agents call `smithers`. It never fails the agent. It waits at most 100 ms (statusline) or 500 ms (hook) for `smithersd`, so install it in the background: the statusline script runs it with `&`, and hooks are registered with `async: true`.
+Agents call `smithers`. Its agent-side commands never fail the agent. It waits at most 100 ms (statusline) or 500 ms (hook) for `smithersd`, so install it in the background: the statusline script runs it with `&`, and hooks are registered with `async: true`.
 
 | Command | Job |
 |---|---|
 | `smithers statusline [-- COMMAND ARGS]` | Posts stdin to `smithersd` with a 100 ms timeout, runs the wrapped statusline command with the same stdin, and prints its output |
 | `smithers hook session-start --provider claude\|codex` | Posts the hook's `session_id` and `source` with `REX_BLOCK` and `REX_SESSION`. Does nothing outside Rex. Prints nothing and exits 0, because Claude adds SessionStart output to the conversation. |
+| `smithers launch --provider P --account NAME` | Runs in a new Rex tab and becomes the CLI. See "Launch". |
+| `smithers answer-channels --block B --servers a,b` | The detached watcher `smithers launch` leaves behind. |
 | `smithers usage [--since 24h]` | Prints, for each configured account, its quota windows and its requests, tokens and cost over `--since`. Reads `GET /usage` and `GET /usage/sessions`. Unknown quota prints `unknown`; requests with no cost print as an unknown count, never as $0. Exits 1 if `smithersd` does not answer. |
 
 Both run beside Penfold's forwarder and hooks. Adding them does not wait for the cutover.

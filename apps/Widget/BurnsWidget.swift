@@ -62,7 +62,7 @@ struct UsageProvider: TimelineProvider {
         let defaults = AppGroup.defaults
         let cache = HostCache(defaults: defaults).load()
         let snaps = HostList(defaults: defaults).hosts.compactMap { cache[$0] }
-        return UsageModel(snapshots: snaps, selected: Selection(defaults: defaults).account, now: date)
+        return UsageModel(snapshots: snaps, selected: Selection(defaults: defaults).account, accounts: AppGroup.accounts, now: date)
     }
 }
 

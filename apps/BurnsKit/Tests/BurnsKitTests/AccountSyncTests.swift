@@ -123,6 +123,14 @@ struct AccountSyncRunTests {
         #expect(second.map(\.state) == [.inStep, .written])
     }
 
+    /// A new device waits for iCloud rather than replacing a list it has not downloaded.
+    @Test func noImportBeforeICloudHasHadTime() async {
+        let hosts = FakeHosts(), store = CentralStore(values: FakeValues())
+        hosts.files = ["a": file(alpha)]
+        _ = await AccountSync.run(hosts: ["a"], store: store, client: hosts, mayImport: false)
+        #expect(store.load() == nil)
+    }
+
     @Test func aHandEditIsHeldForReview() async {
         let hosts = FakeHosts(), store = CentralStore(values: FakeValues())
         hosts.files = ["a": file(alpha)]

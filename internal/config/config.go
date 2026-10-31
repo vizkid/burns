@@ -33,6 +33,12 @@ var swatches = map[string]bool{"": true, "purple": true, "teal": true, "blue": t
 
 var namePattern = regexp.MustCompile(`^[a-z][a-z0-9-]{0,31}$`)
 
+// settingPattern bounds a launch setting: it becomes an argument, so it must
+// not read as a flag.
+var settingPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._:-]{0,63}$`)
+
+var envPattern = regexp.MustCompile(`^[A-Z_][A-Z0-9_]{0,63}$`)
+
 // Account is one provider and account name with its agent home.
 // Home is absolute, or relative to the user's home directory. ExtraHomes are
 // other homes signed in to the same account, such as the CLI's default home:
@@ -45,6 +51,24 @@ type Account struct {
 	Kind       string   `json:"kind"`
 	Colour     string   `json:"colour,omitempty"`
 	Emoji      string   `json:"emoji,omitempty"`
+	Launch     *Launch  `json:"launch,omitempty"`
+}
+
+// Launch is an account's launch overrides. An empty field leaves the CLI's own
+// default in place.
+type Launch struct {
+	Model          string      `json:"model,omitempty"`
+	Effort         string      `json:"effort,omitempty"`
+	PermissionMode string      `json:"permission_mode,omitempty"`
+	Credential     *Credential `json:"credential,omitempty"`
+}
+
+// Credential names a secret cop passes to the CLI at launch. It holds a
+// reference, never the value.
+type Credential struct {
+	Account string `json:"account"`
+	Ref     string `json:"ref"`
+	Env     string `json:"env"`
 }
 
 // Config is the accounts file. Order is the settings order used for ties.
@@ -112,7 +136,9 @@ func (c Config) validate() error {
 		case seen[a.Provider+"/"+a.Name]:
 			problem = "duplicate account"
 		default:
-			problem = c.checkHomes(a, homes)
+			if problem = CheckLaunch(a); problem == "" {
+				problem = c.checkHomes(a, homes)
+			}
 		}
 		if problem != "" {
 			return fmt.Errorf("account %d (%s %s): %s", i+1, a.Provider, a.Name, problem)
@@ -123,6 +149,28 @@ func (c Config) validate() error {
 		return errors.New("accounts is required")
 	}
 	return nil
+}
+
+// CheckLaunch reports an override Burns could not pass. Codex takes neither
+// effort nor permission mode: any -c override takes it off its daemon.
+func CheckLaunch(a Account) string {
+	l := a.Launch
+	if l == nil {
+		return ""
+	}
+	for _, v := range []string{l.Model, l.Effort, l.PermissionMode} {
+		if v != "" && !settingPattern.MatchString(v) {
+			return "launch settings must be letters, digits, dots, colons and hyphens"
+		}
+	}
+	if a.Provider == "codex" && (l.Effort != "" || l.PermissionMode != "") {
+		return "codex accounts take no effort or permission mode"
+	}
+	if c := l.Credential; c != nil &&
+		(!settingPattern.MatchString(c.Account) || !strings.HasPrefix(c.Ref, "op://") || !envPattern.MatchString(c.Env)) {
+		return "credential needs a cop account, an op:// reference and a variable name"
+	}
+	return ""
 }
 
 // checkHomes reports an empty extra home, or a home already claimed: a home's

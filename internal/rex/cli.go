@@ -45,6 +45,28 @@ func (c CLI) Foreground(ctx context.Context, block string) (int, error) {
 	return p.Foreground.Pid, nil
 }
 
+// Capture returns the block's screen and scrollback as text.
+func (c CLI) Capture(ctx context.Context, block string) (string, error) {
+	var stderr bytes.Buffer
+	cmd := exec.CommandContext(ctx, c.Path, "capture", "-b", block, "--trim")
+	cmd.Env, cmd.Stderr = serverEnv(), &stderr
+	out, err := cmd.Output()
+	if err != nil {
+		return "", fmt.Errorf("rex capture %s: %w: %s", block, err, strings.TrimSpace(stderr.String()))
+	}
+	return string(out), nil
+}
+
+// Enter presses Enter in the block.
+func (c CLI) Enter(ctx context.Context, block string) error {
+	cmd := exec.CommandContext(ctx, c.Path, "send", "-b", block, "\r")
+	cmd.Env = serverEnv()
+	if out, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("rex send %s: %w: %s", block, err, strings.TrimSpace(string(out)))
+	}
+	return nil
+}
+
 // Watch runs one `rex events --all --json` stream and calls fn for each event
 // that matters to bindings. It returns when the stream ends or ctx is done.
 func Watch(ctx context.Context, path string, fn func(Event)) error {

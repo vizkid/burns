@@ -13,6 +13,8 @@ public struct WireAccount: Codable, Equatable, Sendable {
     public var account: String
     public var kind: String
     public var limits: [WireLimit]
+    /// Whether the account's home is on this host. Missing from an older `smithersd`.
+    public var setUp: Bool?
 }
 
 public struct WireLimit: Codable, Equatable, Sendable {

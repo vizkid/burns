@@ -5,11 +5,11 @@ import Testing
 /// a name with no colour takes the next unused swatch in list order.
 struct SwatchTests {
     @Test func namesTakeTheNextUnusedSwatchInOrder() {
-        #expect(Swatch.assign(["alpha", "beta"]) == ["alpha": .purple, "beta": .teal])
+        #expect(Swatch.assign(["alpha", "beta"]) == ["alpha": .purple, "beta": .blue])
     }
 
     @Test func aNameSharesOneSwatchAcrossProviders() {
-        #expect(Swatch.assign(["alpha", "alpha", "beta"]) == ["alpha": .purple, "beta": .teal])
+        #expect(Swatch.assign(["alpha", "alpha", "beta"]) == ["alpha": .purple, "beta": .blue])
     }
 
     /// More names than swatches start the list again: a repeat, not a missing colour.

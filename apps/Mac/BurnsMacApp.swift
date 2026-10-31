@@ -26,7 +26,11 @@ struct BurnsMacApp: App {
         }
         .menuBarExtraStyle(.window)
         Settings {
-            HostSettings(store: store).frame(width: 460).frame(minHeight: 280)
+            TabView {
+                HostSettings(store: store).tabItem { Label("Hosts", systemImage: "server.rack") }
+                AccountSettings(store: store).tabItem { Label("Accounts", systemImage: "person.2") }
+            }
+            .frame(width: 640, height: 480)
         }
     }
 }

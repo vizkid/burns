@@ -58,11 +58,14 @@ public enum AccountSync {
     }
 
     /// One pass over the hosts. A host that cannot be reached catches up on a later pass.
-    public static func run(hosts: [String], store: CentralStore, client: some AccountHosts) async -> [HostSync] {
+    /// `mayImport` is false until iCloud has had time to deliver: a new device must not take the
+    /// hosts' accounts over a list it has not downloaded yet.
+    public static func run(hosts: [String], store: CentralStore, client: some AccountHosts, mayImport: Bool = true) async -> [HostSync] {
         var read: [String: Result<(accounts: [CentralAccount], etag: String), Failure>] = [:]
         for host in hosts { read[host] = await fetch(host, client) }
         var central = store.load()
         if central == nil {
+            guard mayImport else { return hosts.map { HostSync(host: $0, state: .unreachable) } }
             let answered = hosts.compactMap { host in (try? read[host]?.get())?.accounts }
             guard !answered.isEmpty else { return hosts.map { HostSync(host: $0, state: failure(read[$0])) } }
             let list = importing(answered).accounts
