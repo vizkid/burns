@@ -198,3 +198,24 @@ func TestUsageMarksAnAccountWithoutItsHomeNotSetUp(t *testing.T) {
 		t.Fatalf("azure = %+v", azure)
 	}
 }
+
+// Colour and emoji are account fields: a list with them loads, so an app can
+// send them, and a colour outside the swatches is refused.
+func TestPutAccountsTakesColourAndEmoji(t *testing.T) {
+	ts, _, _ := accountsServer(t)
+	_, etag := getAccounts(t, ts.URL)
+	good := `{"accounts":[{"provider":"claude","name":"alpha","home":".claude-alpha","kind":"subscription","colour":"teal","emoji":"🩵"}]}`
+	r, b := putAccounts(t, ts.URL, etag, good)
+	if r.StatusCode != http.StatusOK {
+		t.Fatalf("PUT = %d %s", r.StatusCode, b)
+	}
+	_, etag = getAccounts(t, ts.URL)
+	bad := strings.Replace(good, "teal", "#ff0000", 1)
+	if r, b := putAccounts(t, ts.URL, etag, bad); r.StatusCode != http.StatusUnprocessableEntity {
+		t.Fatalf("PUT = %d %s", r.StatusCode, b)
+	}
+	long := strings.Replace(good, "🩵", strings.Repeat("🩵", 20), 1)
+	if r, b := putAccounts(t, ts.URL, etag, long); r.StatusCode != http.StatusUnprocessableEntity {
+		t.Fatalf("PUT = %d %s", r.StatusCode, b)
+	}
+}

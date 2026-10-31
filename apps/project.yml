@@ -66,6 +66,7 @@ targets:
       path: Mac/BurnsMac.entitlements
       properties:
         com.apple.security.application-groups: ["${BURNS_TEAM}.${BURNS_ID_DOMAIN}.Burns"]
+        com.apple.developer.ubiquity-kvstore-identifier: "${BURNS_TEAM}.${BURNS_ID_DOMAIN}.Burns"
 
   BurnsMacWidget:
     type: app-extension
@@ -117,6 +118,7 @@ targets:
       path: iOS/Burns.entitlements
       properties:
         com.apple.security.application-groups: ["group.${BURNS_ID_DOMAIN}.Burns"]
+        com.apple.developer.ubiquity-kvstore-identifier: "${BURNS_TEAM}.${BURNS_ID_DOMAIN}.Burns"
 
   BurnsWidget:
     type: app-extension

@@ -11,6 +11,8 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 )
 
 // Account kinds.
@@ -21,6 +23,13 @@ const (
 
 // maxFile bounds the accounts file.
 const maxFile = 1 << 20
+
+// maxEmoji bounds an account's emoji in runes: one emoji can join several.
+const maxEmoji = 16
+
+// swatches are the colours an account may name. An empty colour takes the next
+// unused one in the apps.
+var swatches = map[string]bool{"": true, "purple": true, "teal": true, "blue": true, "green": true, "pink": true, "grey": true}
 
 var namePattern = regexp.MustCompile(`^[a-z][a-z0-9-]{0,31}$`)
 
@@ -34,6 +43,8 @@ type Account struct {
 	Home       string   `json:"home"`
 	ExtraHomes []string `json:"extra_homes,omitempty"`
 	Kind       string   `json:"kind"`
+	Colour     string   `json:"colour,omitempty"`
+	Emoji      string   `json:"emoji,omitempty"`
 }
 
 // Config is the accounts file. Order is the settings order used for ties.
@@ -94,6 +105,10 @@ func (c Config) validate() error {
 			problem = "kind must be subscription or azure"
 		case a.Kind == Azure && a.Provider != "codex":
 			problem = "azure accounts exist only for codex"
+		case !swatches[a.Colour]:
+			problem = "colour must be purple, teal, blue, green, pink or grey"
+		case utf8.RuneCountInString(a.Emoji) > maxEmoji || strings.ContainsFunc(a.Emoji, unicode.IsControl):
+			problem = "emoji must be one emoji"
 		case seen[a.Provider+"/"+a.Name]:
 			problem = "duplicate account"
 		default:

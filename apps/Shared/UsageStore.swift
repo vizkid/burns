@@ -16,17 +16,21 @@ enum AppGroup {
 final class UsageStore: ObservableObject {
     @Published private(set) var model: UsageModel
     @Published private(set) var statuses: [HostStatus] = []
+    /// What the last pass did about each host's accounts file.
+    @Published private(set) var accountSync: [AccountSync.HostSync] = []
     @Published var hosts: [String] {
         didSet { HostList(defaults: AppGroup.defaults).hosts = hosts; Task { await refresh() } }
     }
 
     private let cache = HostCache(defaults: AppGroup.defaults)
     private let selection = Selection(defaults: AppGroup.defaults)
+    private let accounts = CentralStore(values: NSUbiquitousKeyValueStore.default)
 
     init() {
         hosts = HostList(defaults: AppGroup.defaults).hosts
         model = UsageModel(snapshots: [], selected: nil)
         rebuild()
+        NSUbiquitousKeyValueStore.default.synchronize()
     }
 
     func refresh() async {
@@ -39,6 +43,7 @@ final class UsageStore: ObservableObject {
             lastContent = content
             WidgetCenter.shared.reloadAllTimelines()
         }
+        accountSync = await AccountSync.run(hosts: hosts, store: accounts, client: HostAccounts())
     }
 
     private var lastContent = ""

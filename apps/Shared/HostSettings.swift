@@ -14,6 +14,9 @@ struct HostSettings: View {
                     HStack {
                         Label(host, systemImage: "server.rack")
                         Spacer()
+                        if let sync = store.accountSync.first(where: { $0.host == host }) {
+                            Text(sync.state.words).font(.caption).foregroundStyle(.secondary)
+                        }
                         Button(role: .destructive) { store.hosts.removeAll { $0 == host } } label: { Image(systemName: "minus.circle") }
                             .buttonStyle(.borderless)
                             .help("Remove \(host)")
