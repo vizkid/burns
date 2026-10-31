@@ -54,7 +54,7 @@ struct MenuWindow: View {
 
 extension MenuWindow {
     /// Actions in the top right, as in Apple's menu bar extras, never along the bottom edge: refresh,
-    /// settings, and Quit in the More menu.
+    /// settings and Quit.
     var header: some View {
         HStack(spacing: 12) {
             Text("Usage").font(.headline)
@@ -63,11 +63,9 @@ extension MenuWindow {
                 .help("Refresh").accessibilityLabel("Refresh")
             Button { NSApp.activate(); openSettings() } label: { Image(systemName: "gearshape") }
                 .help("Settings").accessibilityLabel("Settings")
-            Menu {
-                Button("Quit Burns") { NSApp.terminate(nil) }.keyboardShortcut("q")
-            } label: { Image(systemName: "ellipsis.circle") }
-                .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
-                .help("More").accessibilityLabel("More")
+            Button { NSApp.terminate(nil) } label: { Image(systemName: "power") }
+                .keyboardShortcut("q")
+                .help("Quit Burns").accessibilityLabel("Quit Burns")
         }
         .buttonStyle(.borderless)
         .imageScale(.large)

@@ -100,7 +100,7 @@ Viz wants the widgets built before the OTel cutover. This pulls the usage half o
 
 | Piece | Scope |
 |---|---|
-| Burns for Mac | Menu bar app with a flame icon. Its window shows the ring row and the selected account's burndown, with refresh, settings and a More menu (Quit) in its top right. A settings window, a grouped form as in System Settings, holds the host list. |
+| Burns for Mac | Menu bar app with a flame icon. Its window shows the ring row and the selected account's burndown, with refresh, settings and Quit buttons in its top right. A settings window, a grouped form as in System Settings, holds the host list. |
 | Mac widget | Small and medium, the same layout as the window |
 | Burns for iOS | One screen with the same view, and a settings screen with the host list. No launch. The large title shares the settings button's row (`inlineLarge`). The usage view grows to fill the screen above the host list, at least 320 pt tall; below that the screen scrolls (`ScreenFit`, Viz, 2026-10-30). |
 | iPhone widget | Small for StandBy, medium for the Home Screen. Ring taps select an account through an App Intent. |
@@ -156,7 +156,7 @@ One flame names Burns everywhere: a full-colour 3D flame in the app icons, and i
 
 To look without building: `ictool apps/Shared/AppIcon.icon --export-image --output-file icon.png --platform iOS --rendition Default --width 1024 --height 1024 --scale 1`. `ictool` ships inside Xcode's Icon Composer. Renditions include `Dark`, `TintedDark` and `ClearLight`.
 
-#### Accounts in the apps (agreed, Viz, 2026-10-31; `smithersd` part built)
+#### Accounts in the apps (agreed, Viz, 2026-10-31; `smithersd` part and glyph colours built)
 
 Today the apps only read accounts, and only a file edit on each host changes them. But an account is also what Burns launches (phase 3), so the apps must manage it anyway. This design keeps one account list in iCloud, edited in either app, and the apps copy it to every host's `accounts.json`.
 
@@ -180,7 +180,7 @@ Today the apps only read accounts, and only a file edit on each host changes the
 | An account name's `colour` is one swatch, shared by its providers. | One colour per account name, as in Penfold: Claude `viz` and Codex `viz` share it. |
 | Swatches are fixed pairs, one value for dark backgrounds and a darker one for light: purple, teal, blue, green, pink, grey. No yellow, amber or red. | Penfold's light values were hand-tuned; a free colour picker looks wrong in one mode. Yellow, amber and red are the pace colours. |
 | A name with no colour takes the next unused swatch in list order. | Every ring gets a colour without setup. |
-| Ring glyphs draw in the account's colour, full strength when selected and at 55% when not. Azure draws a one-colour grey mark, and its full-colour mark only when selected. | Viz, 2026-10-30, and as Penfold's rings did. |
+| Ring glyphs draw in the account's colour, full strength when selected and at 55% when not. Azure draws its mark in greyscale, keeping its light and dark parts, and in full colour only when selected. | Viz, 2026-10-30, and as Penfold's rings did. Viz, 2026-10-31: greyscale as Rex draws it, not a flat grey silhouette. |
 | Ring order is the central order. | One list, one order. |
 | Later, if needed: an optional `hosts` list per account limits it to those hosts. Not built. | Viz, 2026-10-31: does not need it now. |
 
@@ -199,6 +199,32 @@ Burns manages homes, logins and skills only when Viz asks it to, and works with 
 | Burns links each skill into each home that opts in, one symlink per skill. It never replaces a real folder, or a link that points outside the sources. It reports those as conflicts. | Other tools install their own skills in the same folder (cop, roar, the CLIs' own synced and system skills). Burns owns only links into its sources, and removes those when a skill leaves its source. |
 | Burns relinks every opted-in home on a host when its sources change, a home is added, or Viz asks. Skill contents reach other hosts through the source folder itself, such as a Git checkout, not through Burns. | Links are per host, so Burns keeps each host's links in step. Copying files between hosts would make two copies of each skill. |
 | Antigravity is a later provider, through Gemini API keys only: the key in cop, passed at launch. | Antigravity has no documented per-account home or usage readout, and Burns reads only documented output and the CLIs' own files. |
+
+##### Tool wiring (proposal, 2026-10-31)
+
+Tools such as roar, smithers, rex and cop each need something in every account's home: a Claude channel flag, an MCP server, a hook. Burns applies what each tool declares, so a new tool is wired the same way without a change to Burns.
+
+> **Core insight: a tool declares what an account needs; Burns applies it at home setup and checks it at launch.** Burns never edits a tool's own entries. It answers only the one consent dialog it caused, and only for the channels it asked for.
+
+| Decision | Reason |
+|---|---|
+| Each tool's setup on a host writes `~/.config/burns/tools.d/<tool>.json`: per provider, `channel_servers`, `mcp` (name, command, arguments) and `hooks` (event, command, timeout). Commands are absolute paths on that host. | A file is inspectable and needs no program run at launch. The tool's own setup knows its path on that host. |
+| Burns applies the declarations when it sets up a home, and checks them at each launch on that host, adding only what is missing. | Idempotent: a new tool reaches existing homes at their next launch. |
+| MCP servers register through the CLI's own command, at user scope, in that home: `claude mcp add`, `codex mcp add`. | Burns does not hand-edit the CLIs' configuration files. |
+| Hooks are appended to the home's hook list. Burns never reorders or rewrites existing entries. | Codex trusts a hook by its position and hash, so a reorder untrusts it. Other tools' hooks stay as they are. |
+| Claude channel servers from every tool merge into one `--dangerously-load-development-channels=server:a server:b` flag at launch. | Claude takes one flag for several servers. |
+| Burns answers Claude's development-channels dialog for the sessions it launches. After launch it watches the new pane through Rex for up to 60 seconds. When the dialog lists exactly the servers Burns put in the flag, Burns selects "I am using this for local development". A dialog that lists anything else is left for the operator, and Burns reports it. Each answer is logged with the pane and the servers. Detection reads the screen with `rex capture -s <session> -b <block> --trim`: the dialog starts "WARNING: Loading development channels" and has a "Channels: server:a ..." line, with `❯` on "1. I am using this for local development". Burns sends Enter, never Esc, which cancels. Success shows in `roar panes` as path `channel` for that pane. Untested: the Channels line with several servers. | Viz, 2026-10-31: a session launched overnight must not wait on the dialog. On a Pro or Max account a custom channel needs the development flag, and the docs offer no setting that skips its dialog. Matching the exact server list keeps the answer to the channels Burns itself asked for. Roar, 2026-10-31: Claude reports no program status until the dialog is answered, and roar's server has not started, so only the screen shows it. |
+| Burns never writes Codex's `trusted_hash`. It reports hooks that still need `/hooks` approval in Settings and in the launched session. | Approval is once per home, not per launch, and an unapproved hook does not stop the session. |
+| A Codex launch first runs `CODEX_HOME=<home> codex app-server daemon start`, which does nothing if a daemon runs. It never passes `-c`, `--no-daemon` or `--remote`. `-m <model>` and an initial prompt are allowed. | Roar, 2026-10-31, verified on Codex CLI 0.165.0: any `-c` override, even `-c model_reasoning_effort=medium`, runs the TUI in-process, off the home's app-server daemon, so roar cannot deliver natively. `roar panes [host]` shows `codex_native` for a pane on the daemon. |
+| Codex effort and other overrides live in the home's `config.toml`, written by Burns from the account's launch defaults. A per-launch override that differs from the account default uses `-p <profile>` only if a test shows it keeps the daemon; otherwise Burns offers no per-launch override for Codex. | `-c` is ruled out above. Whether `-p` also leaves the daemon is untested. |
+| At launch Burns labels the Rex tab with one colour emoji for the account and no name (`rex window rename`). It does not wrap or rename the CLI. The emoji comes from the account name's `emoji`. | Viz, 2026-10-31, tested live: the sidebar row shows the tab label beside the glyph of the foreground program, so `claude` and `codex` keep their icons and roar's and Rex's agent detection is untouched. A colour emoji shows in colour there, and the label held after real Claude and Codex started. Rex has no other colour per session, tab or pane: its icon colours are built into the app per program, and a block label does not show. |
+| An account name's `emoji` is one emoji, shared by its providers and central like `colour`. Settings offers the system emoji picker. With none chosen, the emoji follows the swatch: purple 💜, teal 🩵, blue 💙, green 💚, pink 🩷, grey 🩶. An emoji may repeat across accounts. | Viz, 2026-10-31: pick any emoji per account. Hearts are the default because they are the one emoji shape with all six swatches, so an account works with no setup. |
+| Burns does not answer Claude's folder-trust dialog. It reports the pane as waiting, and the session waits until the operator accepts. | Viz, 2026-10-31: a launch outside a trusted folder needs Viz's explicit acceptance, so waiting is correct. Seen live, 2026-10-31, in an untrusted folder with no channel flag: `❯` starts on "No, exit", so Enter ends the session. Untested: the order of this dialog and the channels dialog. |
+| Burns does not offer a choice of Rex icon. Rex picks a row's icon by the foreground program's exact name, with no API, so a choice would need a wrapper with that program's name, and a wrapper stops roar delivery. | Tested live, 2026-10-31, on real Claude and Codex under a wrapper named `azure`: `roar panes` shows no agent and `refuse:wrong_program` for both, even with Claude's channel connected. A wrapper that stays the process group leader does keep its name and icon. A symlink resolves to its target, and a copied system binary is killed. |
+| Burns shows the active panes for each account, from the bindings `smithersd` already stores, and each row names the host, folder and tab. Selecting a row focuses that pane. Untested: whether `rex focus` moves the Rex app, not only the calling client. | Viz, 2026-10-31: with no colour per account, Burns must answer which panes run on which account. |
+| At launch Burns sets `BURNS_ACCOUNT=<name>`, and a Claude statusline can print the name. Burns does not edit the statusline command, so each operator adds this to their own script. Untested: that the statusline command inherits the variable. | Claude's statusline is a command, so it can print anything. Sessions not launched by Burns show no name, not a wrong one. |
+| Codex's status line does not show the account. | Codex 0.165.0 takes a fixed list of items in `[tui].status_line`, with no custom text and no account item. Only the Rex tab emoji shows the account for Codex. |
+| The dotfiles launchers keep wiring until Burns launch is built and verified, then retire. | Viz, 2026-10-29: Burns replaces the launchers after phase 3 ships. |
 
 #### Tailnet listener
 

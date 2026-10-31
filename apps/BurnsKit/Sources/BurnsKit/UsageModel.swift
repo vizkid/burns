@@ -44,6 +44,8 @@ public struct UsageModel: Equatable, Sendable {
         public var tile: SpendTileModel
         /// Azure: Microsoft credits, no quota windows. It draws its mark without rings.
         public var credits: Bool
+        /// The account name's colour, on its glyph.
+        public var swatch: Swatch
     }
 
     public var rings: [Ring]
@@ -56,6 +58,7 @@ public struct UsageModel: Equatable, Sendable {
     public init(snapshots: [HostSnapshot], selected stored: AccountID?, now: Date = Date(), calendar: Calendar = .current) {
         let accounts = Merge.accounts(snapshots.map(\.usage), now: now)
         let ordered = RingOrder.ordered(accounts)
+        let swatches = Swatch.assign(ordered.map(\.id.name))
         rings = ordered.map { a in
             let live = a.liveWindows(at: now)
             let five = live.filter { $0.key <= 600 }.max { $0.key < $1.key }?.value
@@ -63,7 +66,7 @@ public struct UsageModel: Equatable, Sendable {
             let tile = SpendTileModel(account: a.id.label, fiveHourPercent: five?.percent, fiveHourResetsAt: five?.resetsAt,
                                       sevenDayPercent: seven?.percent, sevenDayResetsAt: seven?.resetsAt,
                                       onCredits: false, now: now, calendar: calendar)
-            return Ring(id: a.id, tile: tile, credits: !a.isQuota)
+            return Ring(id: a.id, tile: tile, credits: !a.isQuota, swatch: swatches[a.id.name] ?? .grey)
         }
         pick = Pick.choose(accounts, now: now)
         let ids = rings.map(\.id)
