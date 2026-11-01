@@ -29,6 +29,20 @@ final class UsageStore: ObservableObject {
         didSet { HostList(defaults: AppGroup.defaults).hosts = hosts; Task { await refresh() } }
     }
 
+    /// Each host's icon, keyed by the name its smithersd reports. The Mac reads them from Rex and
+    /// shares them through iCloud, because a phone cannot ask Rex.
+    @Published private(set) var hostIcons: [String: String] = NSUbiquitousKeyValueStore.default.dictionary(forKey: UsageStore.hostIconsKey) as? [String: String] ?? [:]
+    private static let hostIconsKey = "burns.hostIcons"
+
+    /// Adds to what iCloud holds: each device knows only some hosts, and a host with no snapshot
+    /// yet must keep its icon.
+    func addHostIcons(_ icons: [String: String]) {
+        let merged = hostIcons.merging(icons) { _, new in new }
+        guard merged != hostIcons else { return }
+        hostIcons = merged
+        NSUbiquitousKeyValueStore.default.set(merged, forKey: Self.hostIconsKey)
+    }
+
     /// Names to show for hosts. Commands keep the Rex label.
     @Published var hostNames: [String: String] = AppGroup.defaults.dictionary(forKey: AppGroup.hostNamesKey) as? [String: String] ?? [:] {
         didSet { AppGroup.defaults.set(hostNames, forKey: AppGroup.hostNamesKey) }
@@ -87,11 +101,15 @@ final class UsageStore: ObservableObject {
 
     private func syncAccounts() {
         central = accounts.load() ?? central
+        hostIcons = NSUbiquitousKeyValueStore.default.dictionary(forKey: Self.hostIconsKey) as? [String: String] ?? hostIcons
         AppGroup.defaults.set(AccountsFile(accounts: central).encoded(), forKey: AppGroup.accountsKey)
         rebuild()
     }
 
     private func pushAccounts() async {
+        guard !pushing else { return }
+        pushing = true
+        defer { pushing = false }
         accountSync = await AccountSync.run(hosts: hosts, store: accounts, client: HostAccounts(),
                                             mayImport: Date().timeIntervalSince(launched) > Self.iCloudWait)
         syncAccounts()
@@ -107,10 +125,12 @@ final class UsageStore: ObservableObject {
             lastContent = content
             WidgetCenter.shared.reloadAllTimelines()
         }
-        await pushAccounts()
+        // Not awaited: a pull to refresh ends when the usage is in, not when the hosts' files are.
+        Task { await pushAccounts() }
     }
 
     private var lastContent = ""
+    private var pushing = false
 
     func select(_ id: AccountID) {
         selection.account = id

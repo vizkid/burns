@@ -103,21 +103,52 @@ struct AccountSettings: View {
     }
 }
 
-/// Each host's freshness, under the chart: a host that did not answer shows its cached time.
-struct HostStatusList: View {
+/// Every host on one line: its Rex icon, its name, and the age of its answer. A failed host swaps
+/// the icon for a warning and the age for the reason, so colour never says it alone.
+struct HostStatusLine: View {
     let statuses: [HostStatus]
-    var body: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            ForEach(statuses, id: \.address) { s in
-                HStack(spacing: 4) {
-                    Circle().fill(s.error == nil ? Color.green : Color.orange).frame(width: 6, height: 6)
-                    Text(s.address.split(separator: ".").first.map(String.init) ?? s.address)
-                    Spacer()
-                    Text(s.error.map { "\($0) · data \(ageText(s.snapshot?.fetchedAt))" } ?? ageText(s.snapshot?.fetchedAt))
-                        .foregroundStyle(.secondary)
-                }
-                .font(.caption)
+    let names: [String: String]
+    let icons: [String: String]
+
+    private func name(_ s: HostStatus) -> String {
+        let host = PaneReader.name(s)
+        return names[host] ?? host
+    }
+
+    private func icon(_ s: HostStatus) -> String {
+        s.snapshot.flatMap { icons[$0.usage.host] } ?? HostIcon.fallback
+    }
+
+    private func item(_ s: HostStatus, showsAge: Bool) -> some View {
+        HStack(spacing: 4) {
+            Image(systemName: s.error == nil ? icon(s) : "exclamationmark.triangle.fill")
+                .foregroundStyle(s.error == nil ? Color.secondary : Color.orange)
+            Text(name(s)).lineLimit(1)
+            if let error = s.error {
+                // Always the age: a phone has no tooltip, and cached readings must show their time.
+                Text("\(error) · data \(ageText(s.snapshot?.fetchedAt))").foregroundStyle(.secondary).lineLimit(1)
+            } else if showsAge {
+                Text(ageText(s.snapshot?.fetchedAt)).foregroundStyle(.secondary).lineLimit(1)
             }
         }
+        .fixedSize()
+        .help("Read \(ageText(s.snapshot?.fetchedAt))")
+    }
+
+    private func line(showsAge: Bool) -> some View {
+        HStack(spacing: 12) {
+            ForEach(statuses, id: \.address) { item($0, showsAge: showsAge) }
+        }
+    }
+
+    var body: some View {
+        // More hosts than fit keep their names and lose their ages first.
+        ViewThatFits(in: .horizontal) {
+            line(showsAge: true)
+            line(showsAge: false)
+            ScrollView(.horizontal, showsIndicators: false) { line(showsAge: false) }
+        }
+        .font(.caption)
     }
 }
+

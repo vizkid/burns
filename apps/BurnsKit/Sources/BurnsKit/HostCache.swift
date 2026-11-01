@@ -62,13 +62,18 @@ public final class HostCache: @unchecked Sendable {
                 return HostStatus(address: host, snapshot: snap, error: nil)
             case .failure(let error)?:
                 kept[host] = cached[host]
-                return HostStatus(address: host, snapshot: cached[host], error: Self.describe(error))
+                return HostStatus(address: host, snapshot: cached[host], error: Self.wasCancelled(error) ? nil : Self.describe(error))
             case nil:
                 return HostStatus(address: host, snapshot: cached[host], error: "not fetched")
             }
         }
         save(kept)
         return status
+    }
+
+    /// A cancelled read says nothing about the host.
+    static func wasCancelled(_ error: Error) -> Bool {
+        error is CancellationError || (error as? URLError)?.code == .cancelled
     }
 
     static func describe(_ error: Error) -> String {
@@ -94,15 +99,27 @@ public struct HostFetcher: Sendable {
     public init() {}
 
     public func fetch(_ address: String) async throws -> HostSnapshot {
-        let config = URLSessionConfiguration.ephemeral
-        config.timeoutIntervalForRequest = Self.timeout
-        config.timeoutIntervalForResource = Self.timeout * 2
-        config.waitsForConnectivity = false
-        let session = URLSession(configuration: config)
+        let session = Self.session()
         defer { session.finishTasksAndInvalidate() }
         async let usage = get(session, address, "/usage", as: UsageAnswer.self)
         async let readings = get(session, address, "/usage/readings", as: ReadingsAnswer.self)
         return HostSnapshot(address: address, fetchedAt: Date(), usage: try await usage, readings: try await readings.readings)
+    }
+
+    /// Read when the window opens, not on the poll: the rings need quota every minute, and panes only
+    /// while someone is looking.
+    public func panes(_ address: String) async throws -> PanesAnswer {
+        let session = Self.session()
+        defer { session.finishTasksAndInvalidate() }
+        return try await get(session, address, "/usage/panes", as: PanesAnswer.self)
+    }
+
+    private static func session() -> URLSession {
+        let config = URLSessionConfiguration.ephemeral
+        config.timeoutIntervalForRequest = timeout
+        config.timeoutIntervalForResource = timeout * 2
+        config.waitsForConnectivity = false
+        return URLSession(configuration: config)
     }
 
     func get<T: Decodable>(_ session: URLSession, _ address: String, _ path: String, as: T.Type) async throws -> T {

@@ -10,3 +10,4 @@ apps/*/Widget-Info.plist
 apps/*/*.entitlements
 .DS_Store
 apps/BurnsKit/.swiftpm/
+_docs/

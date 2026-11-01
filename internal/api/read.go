@@ -1,10 +1,13 @@
 package api
 
 import (
+	"context"
+	"log"
 	"net/http"
 	"strconv"
 	"time"
 
+	"github.com/vizkid/burns/internal/rex"
 	"github.com/vizkid/burns/internal/store"
 )
 
@@ -120,6 +123,44 @@ func (s *Server) sessions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"host": s.Host, "sessions": orEmpty(sessions), "blocks": orEmpty(blocks)})
+}
+
+// PaneLister reports the panes that exist now.
+type PaneLister interface {
+	Panes(ctx context.Context) (map[string]rex.Pane, error)
+}
+
+type livePane struct {
+	store.Pane
+	Session string `json:"session"`
+	Label   string `json:"label"`
+}
+
+// panes answers the tokens of each pane, per model. Rex decides what is live
+// because an open binding can outlive its pane. With no answer from Rex, checked
+// is false and the rows are unconfirmed, so a client says the host is unknown.
+func (s *Server) panes(w http.ResponseWriter, r *http.Request) {
+	rows, err := s.Store.Panes()
+	if err != nil {
+		fail(w, "read panes", err)
+		return
+	}
+	var live map[string]rex.Pane
+	if s.Panes != nil {
+		if live, err = s.Panes.Panes(r.Context()); err != nil {
+			log.Printf("list panes: %v", err)
+			live = nil
+		}
+	}
+	panes := make([]livePane, 0, len(rows))
+	for _, p := range rows {
+		if live == nil {
+			panes = append(panes, livePane{Pane: p})
+		} else if pane, ok := live[p.Block]; ok {
+			panes = append(panes, livePane{Pane: p, Session: pane.Session, Label: pane.Label})
+		}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"host": s.Host, "checked": live != nil, "panes": panes})
 }
 
 func orEmpty[T any](v []T) []T {

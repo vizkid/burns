@@ -97,7 +97,9 @@ func run() error {
 		Restart: func() { restarting.Store(true); stop() }}
 	if *rexPath != "" {
 		cli := rex.CLI{Path: *rexPath}
-		server.Rex = cli
+		panes := &rex.PaneCache{List: cli.Panes, Now: time.Now, MaxAge: 2 * time.Minute}
+		server.Rex, server.Panes = cli, panes
+		go panes.Run(ctx, 15*time.Second, 10*time.Second)
 		go (&bindings.Tracker{Store: st, Rex: cli, Host: *host, Now: time.Now}).Run(ctx, *rexPath)
 		log.Printf("checking bindings with %s", *rexPath)
 	} else {

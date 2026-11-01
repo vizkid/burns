@@ -24,6 +24,14 @@ struct HostCacheTests {
         #expect(cache.load()["one.example.ts.net"] == fresh)
     }
 
+    @Test func aCancelledReadIsNotAFailedHost() async throws {
+        let cache = HostCache(defaults: defaults())
+        let old = try Fixture.snapshot("two.example.ts.net", usage: Fixture.usage(host: "two", alpha5: 10, alpha7: 20, beta7: nil), fetched: now - 3 * h)
+        cache.save(["two.example.ts.net": old])
+        let status = await cache.refresh(hosts: ["two.example.ts.net"]) { _ in throw URLError(.cancelled) }
+        #expect(status == [HostStatus(address: "two.example.ts.net", snapshot: old, error: nil)])
+    }
+
     @Test func aHostThatFailsKeepsItsLastAnswer() async throws {
         let cache = HostCache(defaults: defaults())
         let old = try Fixture.snapshot("two.example.ts.net", usage: Fixture.usage(host: "two", alpha5: 10, alpha7: 20, beta7: nil), fetched: now - 3 * h)

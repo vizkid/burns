@@ -44,7 +44,7 @@ A burndown plots quota left from the window's start to its reset. It charts the 
 | Headline | For the charted window: percent left, the pace verdict ("over pace"), and time to reset. "Budget spent" when it reached 0%. |
 | Bars behind the chart | A time grid: hours for the five-hour window, days for the week. Elapsed slots are shaded. |
 
-Each ring draws two arcs: the share of quota used in the pace colour, on top, and the share of the window elapsed in a neutral blue-grey behind it.
+Each ring draws two arcs: the share of quota used in the pace colour, and the share of the window elapsed in a neutral blue-grey. Under pace the elapsed arc sits behind usage and shows past it. Over pace the elapsed arc draws on top of usage, one pace colour down: orange on red, yellow on amber. The usage colour left showing is how far ahead the window is (Viz, 2026-11-01: usage on top hid the pace, and a blue-grey arc did not contrast with red).
 The pace colour is yellow on or under pace, amber when 100% is projected with a quarter of the window or less left, and red when it is projected earlier or already reached. The chart's lines use the same colour.
 The pace colour sits on usage, as on Penfold's Mac bars, not on the time arc as in Penfold's rings (Viz, 2026-10-29). An amber time arc over a yellow usage arc of nearly the same length hid the yellow and read as a second shade of it.
 Rings carry no pace tick (Viz, 2026-10-01, in Penfold). Tiles list each account's Claude then its Codex, in settings order.
@@ -236,11 +236,33 @@ Tools such as roar, smithers, rex and cop each need something in every account's
 | Rule | Detail |
 |---|---|
 | Address | The first tailnet IPv4 address from `tailscale ip -4`, port 9766. If Tailscale is down at start, `smithersd` retries every 30 seconds. |
-| Routes | `GET /usage`, `/usage/readings`, `/usage/history`, `/usage/sessions`, and `GET` and `PUT /accounts`, so either app can propagate the account list (see "Accounts in the apps"). Every other route answers 404 there. |
+| Routes | `GET /usage`, `/usage/readings`, `/usage/history`, `/usage/sessions`, `/usage/panes`, and `GET` and `PUT /accounts`, so either app can propagate the account list (see "Accounts in the apps"). Every other route answers 404 there. |
 | Caller check | `tailscale whois --json` on the caller's address. The caller's login must equal the login that owns this host's node. A tagged node, another user, or a failed lookup answers 403. |
 | Cache | A lookup is kept 5 minutes per caller address. |
 | Transport | Plain HTTP inside the tailnet, which WireGuard encrypts. The iOS app allows plain HTTP only for `ts.net` names. |
 | Flag | `--tailscale` names the CLI. The install passes the path it finds, as it does for `rex`. Empty disables the listener. |
+
+### Live pane shares (Viz, 2026-11-01; built the same day)
+
+The Mac menu bar window and the iPhone app show, under the burndown, how the selected account's work divides across its live panes. Viz reviewed live mockups and chose this over a list of every session grouped by account, provider, model and version.
+
+| Decision | Why |
+|---|---|
+| Live panes only, for the selected ring. | Viz, 2026-11-01. A week of sessions is about 250 rows on one host. |
+| A segmented bar in the account's colour, stepped by rank, over one line per pane. Each line has the shade, the host's icon, the pane's name, its main model and version, and its percent. There is no token table. | Viz, 2026-11-01. A donut was mocked and not chosen; lopsided shares and close values read better on a bar. Separate hues failed the colour-blind check on the dark surface. The lines name every pane, so shade alone never identifies one. The sixth pane on draws grey. |
+| A share uses input, cache writes and output, and leaves out cached input. | A long session rereads its context on every request. With cached input, one Claude pane read 62%; without it, 41% and second. This is a proxy: tokens do not show what a pane cost in quota. |
+| A pane appears once with its whole share, subagents included, and shows the model with the most tokens in its own thread, then its count of subagents, such as `Fable 5.1 +7 agents`. Hovering the line shows what the subagents used per model. | Listed under each model, a pane's share split and its true share appeared nowhere. Viz, 2026-11-01: a Fable pane read Haiku 5.5, because 7 subagents made 433 Haiku requests and 7.5M tokens against its 1.4M on Fable. |
+| Tokens count from when the pane took the session. | A resumed session's earlier work belongs to its earlier pane. |
+| Rex decides what is live, and `smithersd` asks it, so neither app needs the `rex` CLI. A row counts only if its block is in Rex's list now. `checked` says the list is usable. `smithersd` lists panes every 15 seconds and keeps the list in memory, so a read costs no Rex calls: one listing took about 0.4 s. A list older than 2 minutes counts as no answer. | An open binding can outlive its pane: 3 of 9 on one host on 2026-11-01. Why those bindings stayed open is not known. |
+| A host whose `smithersd` or Rex did not answer is named under the bar, and shares leave it out. | Rule 9: unknown is never zero. A partial Rex list counts as no answer, because it would call live panes dead. Rows with `checked` false or missing count as unread. |
+| A host's icon is the one picked in Rex, from any Rex entry for that host: its label or its tailnet name. Rex stores none for its own machine, so that shows a laptop if the Mac has a battery and a desktop if not. Any other host with no pick shows a desktop. | Rex keeps a pick on the one entry it was made on. Viz, 2026-11-01: a pick made in Rex's settings landed on a host's tailnet-name entry, not its label. |
+| Both apps reload through one path: usage and panes together, each host shown as it answers. The Mac reads when the window opens and on Refresh. The iPhone reads on launch, on return, and on a pull. Neither reads panes on the 60-second poll. | Only an open screen draws them. The reload runs in its own task: SwiftUI cancels the task of a pull to refresh, and a cancelled read looked like every host failing. A cancelled read says nothing about a host, so it does not mark one as failed. |
+| A session nested in a pane, such as `claude -p` run by the agent's shell tool, counts as one of that pane's subagents. | Its bindings share a foreground process and both stay open. The oldest open binding in a block is the pane's own session. |
+| The window ends with one line of hosts: each host's icon, name and answer age. A failed host shows a warning symbol, the reason and the age of its data. With too many hosts for the line, ages go first. | Viz, 2026-11-01: one line under the shares, using the same icons. |
+
+Hovering a segment or a line marks both, and dims the other segments. The list does not select or focus a pane. The widgets do not show shares.
+
+On iPhone a tap replaces hovering, and also shows what a pane's subagents used. A phone cannot ask Rex for host icons, so the Mac stores them in iCloud under `burns.hostIcons`. A phone with no such value shows the default desktop.
 
 ## Boundaries
 
@@ -627,6 +649,7 @@ Model catalogs port from Penfold's `internal/models` with their tests.
 | `GET /usage/history` | Apps | One-minute token buckets per account for the last 20 minutes |
 | `GET /usage/sessions?since=24h` | Apps | Totals per agent session, and per block and session |
 | `GET /usage/sessions?provider=&session=` | Apps | Totals per turn of one session |
+| `GET /usage/panes` | Apps | Each open pane's tokens per account and model, largest first: `provider`, `account`, `block`, `model`, `tokens`, `main_tokens`, `agents`, `session`, `label`, `last`, and `checked` for the whole answer. Answers from memory. See "Live pane shares". |
 | `GET /models` | Apps | What each account can run on this host: `default_id`, `default`, `default_effort` and `models`. See "Steps". Reads the CLIs' files and runs nothing. |
 | `GET /accounts` | Apps | The accounts file as it is on disk, with `ETag`, a quoted SHA-256 of its bytes |
 | `PUT /accounts` | Apps | Replaces the accounts file. Needs `If-Match` with the current `ETag` (428 without, 412 when it changed). A body that would not load answers 422 with the reason. Limit 64 KiB. Writes atomically, mode 0600, answers the new `ETag`, then `smithersd` restarts. |

@@ -30,7 +30,8 @@ type Server struct {
 	Config config.Config
 	Host   string
 	Now    func() time.Time
-	Rex    Rex // nil keeps every claim unverified
+	Rex    Rex        // nil keeps every claim unverified
+	Panes  PaneLister // nil means no pane can be confirmed live
 	// ConfigPath is the accounts file that GET and PUT /accounts read and replace.
 	ConfigPath string
 	// Restart is called after a PUT /accounts write, so smithersd takes the new accounts.
@@ -65,6 +66,7 @@ func (s *Server) reads(mux *http.ServeMux) {
 	mux.HandleFunc("GET /usage/readings", s.readings)
 	mux.HandleFunc("GET /usage/history", s.history)
 	mux.HandleFunc("GET /usage/sessions", s.sessions)
+	mux.HandleFunc("GET /usage/panes", s.panes)
 	mux.HandleFunc("GET /models", s.models)
 	mux.HandleFunc("GET /accounts", s.getAccounts)
 	mux.HandleFunc("PUT /accounts", s.putAccounts)

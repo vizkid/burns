@@ -14,7 +14,7 @@ func TestRemoteHandlerServesReadsAndAccounts(t *testing.T) {
 	ts := httptest.NewServer(s.RemoteHandler())
 	t.Cleanup(ts.Close)
 
-	for _, path := range []string{"/usage", "/usage/readings", "/usage/history", "/usage/sessions"} {
+	for _, path := range []string{"/usage", "/usage/readings", "/usage/history", "/usage/sessions", "/usage/panes"} {
 		resp, err := http.Get(ts.URL + path)
 		if err != nil {
 			t.Fatal(err)

@@ -38,6 +38,7 @@ struct BurnsMacApp: App {
 
 struct MenuWindow: View {
     @ObservedObject var store: UsageStore
+    @StateObject private var panes = PaneReader()
     @Environment(\.openSettings) private var openSettings
 
     var body: some View {
@@ -49,12 +50,23 @@ struct MenuWindow: View {
             }
             .frame(height: store.model.rings.isEmpty ? 60 : 250)
             Divider()
-            HostStatusList(statuses: store.statuses)
+            LivePanes(store: store, reader: panes)
+            if !store.model.rings.isEmpty { Divider() }
+            HostStatusLine(statuses: store.statuses, names: store.hostNames, icons: store.hostIcons)
         }
         .padding(14)
         .frame(width: 380)
-        .task { LaunchWindow.prepare(); await store.refresh() }
+        .task {
+            LaunchWindow.prepare()
+            await reload()
+        }
+        // The window keeps its view between openings, so `.task` runs once. This is each opening.
+        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { _ in
+            Task { await reload() }
+        }
     }
+
+    private func reload() async { await panes.reload(store, icons: RexIcons.read) }
 }
 
 extension MenuWindow {
@@ -66,7 +78,7 @@ extension MenuWindow {
             Spacer()
             Button { LaunchWindow.show() } label: { Image(systemName: "plus") }
                 .help("New Agent").accessibilityLabel("New Agent")
-            Button { Task { await store.refresh() } } label: { Image(systemName: "arrow.clockwise") }
+            Button { Task { await reload() } } label: { Image(systemName: "arrow.clockwise") }
                 .help("Refresh").accessibilityLabel("Refresh")
             Button { NSApp.activate(); openSettings() } label: { Image(systemName: "gearshape") }
                 .help("Settings").accessibilityLabel("Settings")

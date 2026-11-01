@@ -8,6 +8,8 @@ public struct BurnsPalette: Sendable {
     public var over: Color
     public var critical: Color
     public var track: Color
+    /// The time arc when nothing colours it: opaque, or usage would tint it.
+    public var time: Color
 
     /// Amber and red are fixed sRGB values, not `.orange` and `.red`: the Mac's menu bar window
     /// blends system colours with what is behind it, which turned amber pale yellow and red salmon
@@ -16,7 +18,8 @@ public struct BurnsPalette: Sendable {
         BurnsPalette(used: Color(red: 0.96, green: 0.74, blue: 0.20),
                      spare: increasedContrast ? .secondary : Color(red: 0.616, green: 0.698, blue: 0.769).opacity(0.42),
                      over: Color(red: 1.0, green: 0.55, blue: 0.10), critical: Color(red: 0.93, green: 0.23, blue: 0.20),
-                     track: Color.secondary.opacity(increasedContrast ? 0.45 : 0.25))
+                     track: Color.secondary.opacity(increasedContrast ? 0.45 : 0.25),
+                     time: increasedContrast ? .primary : Color(red: 0.616, green: 0.698, blue: 0.769))
     }
 
     /// The usage arc's and the chart line's colour: yellow on or under pace, amber over it, red when
@@ -53,11 +56,23 @@ public struct ProviderSymbol: View {
     }
 }
 
+extension BurnsPalette {
+    /// The time arc drawn over usage: one step below the usage colour, so the two read apart
+    /// (Viz, 2026-11-01). Orange on red, and yellow on orange, where orange would vanish.
+    public func timeOverUsage(_ verdict: SpendPace.Verdict?) -> Color {
+        switch verdict {
+        case .critical?: return over
+        case .over?: return used
+        case .onPace?, nil: return time
+        }
+    }
+}
+
 /// Two rings with a mark in the middle (ported from Penfold's `SpendRings`): outer five-hour,
-/// inner seven-day, each with a usage arc in the pace colour and a neutral time arc. Usage is
-/// always on top: under pace the time arc shows past it, and over pace the usage colour already
-/// says so. The translucent time arc drawn over usage would tint it. An unknown window draws only
-/// its empty track.
+/// inner seven-day, each with a usage arc in the pace colour and a neutral time arc. Under pace the
+/// time arc shows past usage. Over pace the time arc draws on top in the next pace colour down, so the usage left showing
+/// is how far ahead the window is (Viz, 2026-11-01: usage alone hid the pace). An unknown window
+/// draws only its empty track.
 public struct SpendRings<Mark: View>: View {
     let model: SpendTileModel
     let palette: BurnsPalette
@@ -86,8 +101,15 @@ public struct SpendRings<Mark: View>: View {
             Circle().stroke(palette.track, lineWidth: stroke)
             arc(w.elapsed ?? 0, palette.spare, diameter)
             arc(w.fill, palette.usage(w.verdict), diameter)
+            if let over = Self.timeOnTop(fill: w.fill, elapsed: w.elapsed) { arc(over, palette.timeOverUsage(w.verdict), diameter) }
         }
         .frame(width: diameter, height: diameter)
+    }
+
+    /// The time arc to draw over usage, when usage has passed it.
+    static func timeOnTop(fill: Double, elapsed: Double?) -> Double? {
+        guard let elapsed, elapsed > 0, fill > elapsed else { return nil }
+        return elapsed
     }
 
     private func arc(_ fraction: Double, _ color: Color, _ diameter: CGFloat) -> some View {
