@@ -20,6 +20,43 @@ struct LaunchTests {
         return LaunchSentence(accounts: accounts, projects: [LaunchProject(name: "x", path: "dev/x", hosts: [h1, h2])])
     }
 
+    @Test func aLateReadFillsAnEmptySentence() {
+        var s = LaunchSentence(accounts: sentence().accounts, projects: [])
+        #expect(s.text(.project) == "no project" && s.request == nil)
+        s.adopt(sentence())
+        #expect(s.text(.project) == "x" && s.text(.host) == "One" && s.request != nil)
+    }
+
+    @Test func aLateReadTakesTheAgentOnlyWhenThereWereNoAccounts() {
+        let claudeFirst = LaunchSentence(accounts: Array(sentence().accounts.reversed()), projects: [])
+        var none = LaunchSentence(accounts: [], projects: [])
+        none.adopt(claudeFirst)
+        #expect(none.text(.agent) == "Claude")
+        var codex = sentence()
+        codex.adopt(claudeFirst)
+        #expect(codex.text(.agent) == "Codex")
+    }
+
+    @Test func aLateReadKeepsEveryChoice() {
+        var s = sentence()
+        s.focus(.account); s.pick("alpha")
+        s.focus(.model); s.pick("M1")
+        s.focus(.host); s.pick("Two")
+        var fresh = sentence()
+        fresh = LaunchSentence(accounts: Array(fresh.accounts.reversed()), projects: [LaunchProject(name: "y", path: "dev/y", hosts: [])] + fresh.projects)
+        s.adopt(fresh)
+        #expect(s.word == .host)
+        #expect(s.text(.account) == "🎱 alpha" && s.text(.project) == "x" && s.text(.host) == "Two")
+        #expect(s.request?.model == "m1")
+    }
+
+    @Test func aLateReadDropsAChoiceThatIsGone() {
+        var s = sentence()
+        s.focus(.account); s.pick("alpha")
+        s.adopt(LaunchSentence(accounts: sentence().accounts.filter { $0.id.name != "alpha" }, projects: sentence().projects))
+        #expect(s.text(.account) == "💎 beta")
+    }
+
     @Test func startsFullyFilledFromTheBestAccount() {
         let s = sentence()
         #expect(s.words == [.agent, .model, .account, .project, .host])

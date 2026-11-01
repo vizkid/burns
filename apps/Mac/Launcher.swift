@@ -17,8 +17,9 @@ enum Rex {
         return text.split(separator: "\n").last.map { String($0).trimmingCharacters(in: .whitespaces) }
     }()
 
-    /// Output, or an error's text. Each argument passes as it is, with no shell.
-    static func run(_ args: [String]) async -> Result<Data, RexFailure> {
+    /// Output, or an error's text. Each argument passes as it is, with no shell. A launch has no
+    /// `limit`: stopping `rex` partway could leave a tab that the panel then reports as failed.
+    static func run(_ args: [String], limit: TimeInterval? = nil) async -> Result<Data, RexFailure> {
         guard let path else { return .failure(RexFailure(text: "rex was not found")) }
         return await withCheckedContinuation { done in
             let task = Process()
@@ -32,19 +33,20 @@ enum Rex {
                 let text = String(data: err.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
                 done.resume(returning: t.terminationStatus == 0 ? .success(data) : .failure(RexFailure(text: text)))
             }
-            do { try task.run() } catch { done.resume(returning: .failure(RexFailure(text: "\(error)"))) }
+            do { try task.run() } catch { done.resume(returning: .failure(RexFailure(text: "\(error)"))); return }
+            if let limit { DispatchQueue.global().asyncAfter(deadline: .now() + limit) { if task.isRunning { task.terminate() } } }
         }
     }
 
     static func json<T: Decodable>(_ type: T.Type, _ args: [String]) async -> T? {
-        guard case .success(let data) = await run(args) else { return nil }
+        guard case .success(let data) = await run(args, limit: 5) else { return nil }
         return try? JSONDecoder().decode(type, from: data)
     }
 }
 
 struct RexFailure: Error { let text: String }
 
-/// What the panel needs from Rex and smithersd, read when it opens.
+/// What the panel needs from Rex and smithersd, read behind the open panel.
 enum LaunchData {
     private struct HostList: Decodable {
         struct Row: Decodable { struct Host: Decodable { let label: String }; let host: Host }
@@ -60,47 +62,91 @@ enum LaunchData {
     }
     private struct Pwd: Decodable { let pwd: String }
 
-    /// One host's folders. Rex reports a pane's folder as a file URL.
-    private static func folders(rex: String, shown: String, entries: [AccountID: ModelEntry]) async -> [(host: LaunchHost, relative: String)] {
-        let server = rex.isEmpty ? [] : ["-S", rex]
-        guard let sessions = await Rex.json(Sessions.self, server + ["session", "ls", "--json"]) else { return [] }
-        var out: [(host: LaunchHost, relative: String)] = []
-        for s in sessions.sessions {
-            guard let block = await Rex.json(Blocks.self, server + ["block", "ls", "-s", s.label, "--json"])?.blocks.first,
-                  let pwd = await Rex.json(Pwd.self, server + ["block", "call", "--block", block.block_id, "pwd"]),
-                  let path = URL(string: pwd.pwd)?.path else { continue }
-            let parts = path.split(separator: "/").map(String.init)
-            // /Users/<name>/... and /home/<name>/... are the same place on each host.
-            guard parts.count > 2, parts[0] == "Users" || parts[0] == "home" else { continue }
-            out.append((LaunchHost(rex: rex, shown: shown, path: path, session: s.label, entries: entries), parts[2...].joined(separator: "/")))
-        }
-        return out
+    private struct Folder: Sendable {
+        let session: String
+        let path: String
     }
 
-    private static func models(_ host: String) async -> [ModelEntry] {
+    /// One host's last answers, so a host that stops answering keeps its place in the lists.
+    private struct HostRead: Sendable {
+        var entries: [AccountID: ModelEntry] = [:]
+        var folders: [Folder] = []
+    }
+
+    @MainActor private static var known: [String: HostRead] = [:]
+
+    /// One host's sessions and their folders, or nil when Rex did not answer. Rex reports a pane's
+    /// folder as a file URL.
+    private static func folders(rex: String) async -> [Folder]? {
+        let server = rex.isEmpty ? [] : ["-S", rex]
+        guard let sessions = await Rex.json(Sessions.self, server + ["session", "ls", "--json"])?.sessions else { return nil }
+        return await withTaskGroup(of: (Int, Folder?).self) { group in
+            for (i, s) in sessions.enumerated() {
+                group.addTask {
+                    guard let block = await Rex.json(Blocks.self, server + ["block", "ls", "-s", s.label, "--json"])?.blocks.first,
+                          let pwd = await Rex.json(Pwd.self, server + ["block", "call", "--block", block.block_id, "pwd"]),
+                          let path = URL(string: pwd.pwd)?.path else { return (i, nil) }
+                    return (i, Folder(session: s.label, path: path))
+                }
+            }
+            var out: [(Int, Folder?)] = []
+            for await row in group { out.append(row) }
+            return out.sorted { $0.0 < $1.0 }.compactMap(\.1)
+        }
+    }
+
+    private static func models(_ host: String) async -> [AccountID: ModelEntry] {
+        let config = URLSessionConfiguration.ephemeral
+        config.timeoutIntervalForRequest = 4
         guard let url = URL(string: "http://\(host):\(HostFetcher.port)/models"),
-              let (data, _) = try? await URLSession(configuration: .ephemeral).data(from: url) else { return [] }
+              let (data, _) = try? await URLSession(configuration: config).data(from: url) else { return [:] }
         let decoder = JSONDecoder()
         decoder.keyDecodingStrategy = .convertFromSnakeCase
-        return (try? decoder.decode(ModelsAnswer.self, from: data))?.accounts ?? []
+        let list = (try? decoder.decode(ModelsAnswer.self, from: data))?.accounts ?? []
+        return Dictionary(list.map { (AccountID(provider: $0.provider, name: $0.account), $0) }) { first, _ in first }
+    }
+
+    /// Each host's parts, at the same time, with an empty or nil part where the host did not answer.
+    private static func read(_ hosts: [(address: String, rex: String)]) async -> [(entries: [AccountID: ModelEntry], folders: [Folder]?)] {
+        await withTaskGroup(of: (Int, [AccountID: ModelEntry], [Folder]?).self) { group in
+            for (i, h) in hosts.enumerated() {
+                group.addTask {
+                    async let entries = models(h.address)
+                    async let found = folders(rex: h.rex)
+                    return await (i, entries, found)
+                }
+            }
+            var out: [(Int, [AccountID: ModelEntry], [Folder]?)] = []
+            for await row in group { out.append(row) }
+            return out.sorted { $0.0 < $1.0 }.map { ($0.1, $0.2) }
+        }
     }
 
     @MainActor
     static func sentence(store: UsageStore) async -> LaunchSentence {
         let names = store.hostNames
         let rexHosts = await Rex.json(HostList.self, ["hosts", "list", "--json"])?.hosts.map(\.host.label) ?? []
+        let hosts = store.statuses.compactMap { status in
+            status.snapshot.map { snapshot in
+                let name = snapshot.usage.host
+                return (address: status.address, name: name, rex: rexHosts.first { $0.lowercased() == name.lowercased() } ?? "")
+            }
+        }
+        let answers = await read(hosts.map { (address: $0.address, rex: $0.rex) })
         var found: [(host: LaunchHost, relative: String)] = []
         var entries: [AccountID: ModelEntry] = [:]
-        for status in store.statuses {
-            guard let host = status.snapshot?.usage.host else { continue }
-            let rex = rexHosts.first { $0.lowercased() == host.lowercased() } ?? ""
-            var here: [AccountID: ModelEntry] = [:]
-            for e in await models(status.address) {
-                let id = AccountID(provider: e.provider, name: e.account)
-                here[id] = e
-                if entries[id] == nil { entries[id] = e }
+        for (h, answer) in zip(hosts, answers) {
+            let last = known[h.address]
+            let here = HostRead(entries: answer.entries.isEmpty ? last?.entries ?? [:] : answer.entries, folders: answer.folders ?? last?.folders ?? [])
+            known[h.address] = here
+            entries.merge(here.entries) { first, _ in first }
+            for f in here.folders {
+                let parts = f.path.split(separator: "/").map(String.init)
+                // /Users/<name>/... and /home/<name>/... are the same place on each host.
+                guard parts.count > 2, parts[0] == "Users" || parts[0] == "home" else { continue }
+                let host = LaunchHost(rex: h.rex, shown: names[h.name] ?? h.name, path: f.path, session: f.session, entries: here.entries)
+                found.append((host, parts[2...].joined(separator: "/")))
             }
-            found += await folders(rex: rex, shown: names[host] ?? host, entries: here)
         }
         var projects = LaunchProject.group(found)
         // A host with no session on a project can start one, when it has any session to show it runs Rex.
@@ -145,26 +191,44 @@ private final class KeyPanel: NSPanel {
 @MainActor
 enum LaunchWindow {
     private static var panel: NSPanel?
+    private static var last: LaunchSentence?
+    private static var reading: Task<LaunchSentence, Never>?
     static weak var store: UsageStore?
 
+    /// Opens at once: a read takes seconds, and longer with a host asleep. The panel starts from the
+    /// last read, or from what the store already knows, and takes the new read when it arrives.
     static func show() {
         guard let store, panel == nil else { panel?.makeKeyAndOrderFront(nil); return }
-        Task {
-            let sentence = await LaunchData.sentence(store: store)
-            guard panel == nil else { return }
-            let w = KeyPanel(contentRect: NSRect(x: 0, y: 0, width: 820, height: 400), styleMask: [.borderless, .nonactivatingPanel],
-                             backing: .buffered, defer: false)
-            w.isOpaque = false
-            w.backgroundColor = .clear
-            w.hasShadow = true
-            w.level = .floating
-            w.contentView = NSHostingView(rootView: LaunchPanel(sentence: sentence, launch: start, close: close))
-            w.center()
-            panel = w
-            NSApp.activate()
-            w.makeKeyAndOrderFront(nil)
-        }
+        let sentence = last ?? LaunchSentence(accounts: store.launchAccounts([:]), projects: [])
+        let w = KeyPanel(contentRect: NSRect(x: 0, y: 0, width: 820, height: 400), styleMask: [.borderless, .nonactivatingPanel],
+                         backing: .buffered, defer: false)
+        w.isOpaque = false
+        w.backgroundColor = .clear
+        w.hasShadow = true
+        w.level = .floating
+        w.contentView = NSHostingView(rootView: LaunchPanel(sentence: sentence, refresh: read, launch: start, close: close))
+        w.center()
+        panel = w
+        NSApp.activate()
+        w.makeKeyAndOrderFront(nil)
     }
+
+    /// One read at a time, shared. It is its own task: closing the panel cancels the panel's wait,
+    /// and a cancelled request would look like a host that did not answer.
+    private static func read() async -> LaunchSentence {
+        guard let store else { return last ?? LaunchSentence(accounts: [], projects: []) }
+        let task = reading ?? Task {
+            let sentence = await LaunchData.sentence(store: store)
+            last = sentence
+            reading = nil
+            return sentence
+        }
+        reading = task
+        return await task.value
+    }
+
+    /// Reads ahead of the plus button, so that the panel opens with the lists already filled.
+    static func prepare() { Task { _ = await read() } }
 
     static func close() {
         panel?.orderOut(nil)

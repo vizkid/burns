@@ -5,14 +5,18 @@ import SwiftUI
 public struct LaunchPanel: View {
     @State private var sentence: LaunchSentence
     @State private var note: String
+    @State private var reading = false
     @FocusState private var focused: Bool
+    private let refresh: (() async -> LaunchSentence)?
     private let launch: (LaunchRequest) async -> String?
     private let close: () -> Void
 
-    /// `launch` answers an error to show, or nil when the launch started.
-    public init(sentence: LaunchSentence, note: String = "", launch: @escaping (LaunchRequest) async -> String?, close: @escaping () -> Void) {
+    /// `refresh` reads the hosts after the panel shows. `launch` answers an error to show, or nil
+    /// when the launch started.
+    public init(sentence: LaunchSentence, note: String = "", refresh: (() async -> LaunchSentence)? = nil, launch: @escaping (LaunchRequest) async -> String?, close: @escaping () -> Void) {
         _sentence = State(initialValue: sentence)
         _note = State(initialValue: note)
+        self.refresh = refresh
         self.launch = launch
         self.close = close
     }
@@ -38,7 +42,7 @@ public struct LaunchPanel: View {
                 .scrollIndicators(.never)
                 .onChange(of: sentence.selected) { proxy.scrollTo(sentence.selected) }
             }
-            if !note.isEmpty { Text(note).font(.caption).foregroundStyle(.secondary) }
+            if !shownNote.isEmpty { Text(shownNote).font(.caption).foregroundStyle(.secondary) }
         }
         .padding(20)
         .frame(width: 820, height: 400)
@@ -49,7 +53,16 @@ public struct LaunchPanel: View {
         .focused($focused)
         .onAppear { focused = true }
         .onKeyPress(phases: .down, action: press)
+        .task {
+            guard let refresh else { return }
+            reading = true
+            sentence.adopt(await refresh())
+            reading = false
+        }
     }
+
+    /// With no projects yet, "no project" would read as an answer.
+    private var shownNote: String { note.isEmpty && reading && sentence.projects.isEmpty ? "Reading hosts" : note }
 
     private func press(_ k: KeyPress) -> KeyPress.Result {
         switch k.key {
@@ -80,7 +93,7 @@ public struct LaunchPanel: View {
     }
 
     private func go() {
-        guard let request = sentence.request else { note = sentence.problem ?? ""; return }
+        guard let request = sentence.request else { note = reading ? "" : sentence.problem ?? ""; return }
         Task {
             if let error = await launch(request) { note = error } else { close() }
         }

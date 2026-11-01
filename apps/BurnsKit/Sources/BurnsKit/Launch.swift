@@ -109,8 +109,8 @@ public struct LaunchSentence: Equatable, Sendable {
     public static let agents = [("codex", "Codex"), ("claude", "Claude"), ("antigravity", "Antigravity"), ("devin", "Devin")]
     public static let joins: [Word: String] = [.model: "with", .effort: "at", .account: "billed to", .project: "in", .host: "on"]
 
-    public let accounts: [LaunchAccount]
-    public let projects: [LaunchProject]
+    public private(set) var accounts: [LaunchAccount]
+    public private(set) var projects: [LaunchProject]
     public private(set) var slot = 0
     public private(set) var agent: Int
     public private(set) var account = 0
@@ -126,6 +126,22 @@ public struct LaunchSentence: Equatable, Sendable {
         self.projects = projects
         let first = accounts.first?.id.provider ?? "codex"
         agent = Self.agents.firstIndex { $0.0 == first } ?? 0
+    }
+
+    /// Takes a newer read while the panel is open. Choices are matched by identity, not position:
+    /// a read can reorder the lists, and a launch must not move to another account under the keys.
+    public mutating func adopt(_ fresh: LaunchSentence) {
+        let shown = word, chosen = current?.id, at = place?.rex
+        let folder = projects.indices.contains(project) ? projects[project].path : nil
+        if accounts.isEmpty { agent = fresh.agent }
+        accounts = fresh.accounts
+        projects = fresh.projects
+        account = billing.firstIndex { $0.id == chosen } ?? 0
+        project = projects.firstIndex { $0.path == folder } ?? 0
+        host = projects.indices.contains(project) ? projects[project].hosts.firstIndex { $0.rex == at } ?? 0 : 0
+        if let m = model { model = catalog.first { $0.id == m.id } }
+        if let e = effort, !efforts.contains(e) { effort = nil }
+        slot = words.firstIndex(of: shown) ?? min(slot, words.count - 1)
     }
 
     var provider: String { Self.agents[agent].0 }

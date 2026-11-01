@@ -53,7 +53,7 @@ struct MenuWindow: View {
         }
         .padding(14)
         .frame(width: 380)
-        .task { await store.refresh() }
+        .task { LaunchWindow.prepare(); await store.refresh() }
     }
 }
 
