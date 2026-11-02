@@ -1,6 +1,7 @@
 // Command smithers is the helper agents call: it forwards statusline JSON and
 // SessionStart hooks to the local smithersd. It never fails or slows the agent.
-// `smithers usage` prints the local smithersd's quota and consumption.
+// `smithers usage` prints the local smithersd's quota and consumption, and
+// `smithers panes` its live panes with their compactions.
 package main
 
 import (
@@ -15,6 +16,7 @@ const usageText = `usage:
   smithers statusline [--url URL] [-- COMMAND ARGS...]
   smithers hook session-start --provider claude|codex [--url URL]
   smithers usage [--since 24h] [--url URL]
+  smithers panes [--url URL]
   smithers launch --provider claude|codex --account NAME [--model M] [--effort E] [--permission-mode P]
   smithers answer-channels --block BLOCK --servers a,b
   smithers version`
@@ -33,6 +35,8 @@ func run(args []string, in io.Reader, out, errOut io.Writer, getenv func(string)
 		}
 	case "usage":
 		return printUsage(args[1:], out, errOut)
+	case "panes":
+		return printPanes(args[1:], out, errOut)
 	case "launch":
 		return launchAgent(args[1:], in, errOut, getenv)
 	case "answer-channels":

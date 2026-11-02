@@ -126,3 +126,53 @@ func TestPanesCountsOpenBindingsByModelWithoutCachedInput(t *testing.T) {
 		t.Errorf("second = %+v; want haiku with 5", p)
 	}
 }
+
+// A pane reports its own session's compactions since it took the session, so
+// an agent can ask how often a lane compacted without reading the store. A
+// nested session's compactions are a subagent's, and one before the pane took
+// the session belongs to an earlier pane.
+func TestPanesCountTheirOwnCompactions(t *testing.T) {
+	s := open(t)
+	for i, session := range []string{"outer", "nested"} {
+		b := usage.Binding{Host: "h", Block: "block:live", RexSession: "session:r", Provider: usage.Claude, Session: session, Source: "startup", FgPid: 7, Start: t0.Add(time.Duration(i) * time.Minute)}
+		if err := s.Bind(b); err != nil {
+			t.Fatal(err)
+		}
+	}
+	err := s.AddRequests([]usage.Request{paneReq("main", "outer", "claude-fable-5-1", 50, 0, 0, 0, t0.Add(3*time.Minute)),
+		paneReq("inner", "nested", "claude-haiku-5-5", 5, 0, 0, 0, t0.Add(3*time.Minute))})
+	if err != nil {
+		t.Fatal(err)
+	}
+	comp := func(session string, at time.Time) usage.Compaction {
+		return usage.Compaction{Provider: usage.Claude, Account: "alpha", Session: session, Trigger: "auto", Source: usage.SourceOTel, At: at}
+	}
+	if err := s.AddCompactions([]usage.Compaction{comp("outer", t0.Add(-time.Hour)), comp("outer", t0.Add(10*time.Minute)),
+		comp("outer", t0.Add(20*time.Minute)), comp("nested", t0.Add(30*time.Minute))}); err != nil {
+		t.Fatal(err)
+	}
+	panes, err := s.Panes()
+	if err != nil || len(panes) != 2 {
+		t.Fatalf("panes = %+v, err %v", panes, err)
+	}
+	for _, p := range panes {
+		if p.Compactions != 2 || p.LastCompaction == nil || !p.LastCompaction.Equal(t0.Add(20*time.Minute)) {
+			t.Errorf("%s: compactions %d, last %v; want 2 at %v", p.Model, p.Compactions, p.LastCompaction, t0.Add(20*time.Minute))
+		}
+	}
+}
+
+// A pane that never compacted says so with a zero count and no time.
+func TestPanesWithoutCompactionsHaveNoLastTime(t *testing.T) {
+	s := open(t)
+	if err := s.Bind(usage.Binding{Host: "h", Block: "block:live", RexSession: "session:r", Provider: usage.Claude, Session: "s1", Source: "startup", Start: t0}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.AddRequests([]usage.Request{paneReq("r", "s1", "claude-opus-5-5", 5, 0, 0, 0, t0.Add(time.Minute))}); err != nil {
+		t.Fatal(err)
+	}
+	panes, err := s.Panes()
+	if err != nil || len(panes) != 1 || panes[0].Compactions != 0 || panes[0].LastCompaction != nil {
+		t.Fatalf("panes = %+v, err %v", panes, err)
+	}
+}

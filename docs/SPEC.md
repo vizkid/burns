@@ -448,7 +448,9 @@ Evidence on 2026-10-28:
 The two Claude sources can disagree on context size. One test compaction reported `pre_tokens` 35,988 in OTel and `preTokens` 66,481 in the transcript.
 
 A compaction belongs to the turn it ran in. Its tokens count toward that turn, its session, its block, and its account like any other request.
-Burns shows the compaction count and the compaction share of tokens for each session.
+`GET /usage/sessions` returns each session's compaction count and the compaction share of its tokens. `GET /usage/panes` returns each live pane's count since the pane took its session, and the time of the last one, and `smithers panes` prints them (built 2026-11-02). Neither app shows compactions yet.
+
+Until 2026-11-02 the count was stored and returned only by `/usage/sessions`, keyed by agent session with no pane name, while this section said Burns showed it. Answering how often each lane compacted took a direct query on each host's store.
 
 #### Binding a session to a Rex block
 
@@ -710,7 +712,7 @@ These checks stop web pages, not local programs. Another user on the host can re
 | `GET /usage/history` | Apps | One-minute token buckets per account for the last 20 minutes |
 | `GET /usage/sessions?since=24h` | Apps | Totals per agent session, and per block and session |
 | `GET /usage/sessions?provider=&session=` | Apps | Totals per turn of one session |
-| `GET /usage/panes` | Apps | Each open pane's tokens per account and model, largest first: `provider`, `account`, `block`, `model`, `tokens`, `main_tokens`, `agents`, `session`, `label`, `last`, and `checked` for the whole answer. Answers from memory. See "Live pane shares". |
+| `GET /usage/panes` | Apps | Each open pane's tokens per account and model, largest first: `provider`, `account`, `block`, `model`, `tokens`, `main_tokens`, `agents`, `compactions`, `last_compaction`, `session`, `label`, `last`, and `checked` for the whole answer. `compactions` counts the pane's own session (its oldest open binding) since the pane took it, not a nested session's, and repeats on each model row; `last_compaction` is null with none. Answers from memory. See "Live pane shares". |
 | `GET /models` | Apps | What each account can run on this host: `default_id`, `default`, `default_effort` and `models`. See "Steps". Reads the CLIs' files and runs nothing. |
 | `GET /accounts` | Apps | The accounts file as it is on disk, with `ETag`, a quoted SHA-256 of its bytes |
 | `PUT /accounts` | Apps | Replaces the accounts file. Needs `If-Match` with the current `ETag` (428 without, 412 when it changed). A body that would not load answers 422 with the reason. Limit 64 KiB. Writes atomically, mode 0600, onto a symlink's target, answers the new `ETag`, then `smithersd` restarts. |
@@ -728,6 +730,7 @@ Agents call `smithers`. Its agent-side commands never fail the agent. It waits a
 | `smithers launch --provider P --account NAME` | Runs in a new Rex tab and becomes the CLI. See "Launch". |
 | `smithers answer-channels --block B --servers a,b` | The detached watcher `smithers launch` leaves behind. |
 | `smithers usage [--since 24h]` | Prints, for each configured account, its quota windows and its requests, tokens and cost over `--since`. Reads `GET /usage` and `GET /usage/sessions`. Unknown quota prints `unknown`; requests with no cost print as an unknown count, never as $0. Rows with no account print as `<provider> unattributed`, and an account no longer in the file prints under its name. A `--since` past retention prints the 7-day window it covers. Exits 1 if `smithersd` does not answer. |
+| `smithers panes [--url URL]` | Prints one line per live pane of one `smithersd`: Rex session, label (or block), provider and account, the model its own thread ran most with its subagent count, compactions since the pane took its session, and how long ago the last was. Reads `GET /usage/panes`; `--url` reads another host over the tailnet. A `smithersd` too old to send the count prints `unknown`, never 0. With no answer from Rex it says the panes are unconfirmed. |
 
 Both run beside Penfold's forwarder and hooks. Adding them does not wait for the cutover.
 

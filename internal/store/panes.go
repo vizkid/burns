@@ -19,6 +19,11 @@ type Pane struct {
 	// pane, so it repeats on each model row.
 	Agents int       `json:"agents"`
 	Last   time.Time `json:"last"`
+	// Compactions counts the pane's own session's compactions since the pane
+	// took it, so it repeats on each model row. A nested session's are a
+	// subagent's. LastCompaction is nil when there were none.
+	Compactions    int        `json:"compactions"`
+	LastCompaction *time.Time `json:"last_compaction"`
 }
 
 // openBindings ranks each block's open bindings, oldest first. The oldest is the
@@ -39,6 +44,10 @@ func (s *Store) Panes() ([]Pane, error) {
 	if err != nil {
 		return nil, err
 	}
+	comps, err := s.paneCompactions()
+	if err != nil {
+		return nil, err
+	}
 	rows, err := s.rdb.Query(openBindings + `SELECT r.provider, r.account, o.block, r.model,
 		sum(r.input + r.cache_write + r.output),
 		sum(CASE WHEN o.rank = 1 AND r.agent = '' THEN r.input + r.cache_write + r.output ELSE 0 END), max(r.at)` +
@@ -55,6 +64,9 @@ func (s *Store) Panes() ([]Pane, error) {
 			return nil, err
 		}
 		p.Agents, p.Last = agents[p.Block], fromNanos(last)
+		if c, ok := comps[p.Block]; ok {
+			p.Compactions, p.LastCompaction = c.n, &c.last
+		}
 		out = append(out, p)
 	}
 	return out, rows.Err()
@@ -77,6 +89,35 @@ func (s *Store) paneAgents() (map[string]int, error) {
 			return nil, err
 		}
 		out[block] = n
+	}
+	return out, rows.Err()
+}
+
+type paneCompaction struct {
+	n    int
+	last time.Time
+}
+
+// paneCompactions counts each block's compactions of its own session, the
+// oldest open binding, since the pane took it.
+func (s *Store) paneCompactions() (map[string]paneCompaction, error) {
+	rows, err := s.rdb.Query(openBindings + `SELECT o.block, count(*), max(c.at) FROM o JOIN compaction c
+		ON c.provider = o.provider AND c.session = o.session AND c.at >= o.start
+		WHERE o.rank = 1 GROUP BY o.block`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[string]paneCompaction{}
+	for rows.Next() {
+		var block string
+		var c paneCompaction
+		var last int64
+		if err := rows.Scan(&block, &c.n, &last); err != nil {
+			return nil, err
+		}
+		c.last = fromNanos(last)
+		out[block] = c
 	}
 	return out, rows.Err()
 }
