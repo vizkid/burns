@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"log"
+	"sync"
 	"time"
 
 	"github.com/vizkid/burns/internal/rex"
@@ -17,6 +18,10 @@ const (
 	MinBackoff = time.Second
 	MaxBackoff = 30 * time.Second
 )
+
+// CallTimeout bounds one Rex call during a reconcile, so a stuck Rex server
+// cannot hold it.
+const CallTimeout = 2 * time.Second
 
 // Rex reports a block's foreground pid, 0 when it has none.
 type Rex interface {
@@ -55,7 +60,9 @@ func (t *Tracker) Reconcile(ctx context.Context) error {
 		return err
 	}
 	for _, b := range blocks {
-		pid, err := t.Rex.Foreground(ctx, b)
+		call, cancel := context.WithTimeout(ctx, CallTimeout)
+		pid, err := t.Rex.Foreground(call, b)
+		cancel()
 		switch {
 		case errors.Is(err, rex.ErrNoBlock), err == nil && pid == 0:
 			if err := t.Store.EndBlock(t.Host, b, t.Now()); err != nil {
@@ -66,27 +73,34 @@ func (t *Tracker) Reconcile(ctx context.Context) error {
 	return nil
 }
 
-// Run reconciles, then follows `rex events` at path until ctx is done,
-// reconciling again after each restart. It logs each new failure once.
+// Run follows `rex events` at path until ctx is done, and reconciles once each
+// stream has started: reconciling first would miss a block that closes in
+// between, and a stuck Rex would hold back every event. It logs each new failure once.
 func (t *Tracker) Run(ctx context.Context, path string) {
-	backoff, lastErr := MinBackoff, ""
+	backoff := MinBackoff
+	var logs onceLog
 	for ctx.Err() == nil {
 		started := time.Now()
-		if err := t.Reconcile(ctx); err != nil {
-			logOnce(&lastErr, "reconcile", err)
-		}
-		err := rex.Watch(ctx, path, func(e rex.Event) {
+		var reconcile sync.WaitGroup
+		err := rex.Watch(ctx, path, func() {
+			reconcile.Go(func() {
+				if err := t.Reconcile(ctx); err != nil {
+					logs.print("reconcile", err)
+				}
+			})
+		}, func(e rex.Event) {
 			if err := t.Handle(e); err != nil {
-				logOnce(&lastErr, "binding event", err)
+				logs.print("binding event", err)
 			}
 		})
+		reconcile.Wait()
 		if ctx.Err() != nil {
 			return
 		}
 		if err == nil {
 			err = errors.New("stream ended")
 		}
-		logOnce(&lastErr, "rex events", err)
+		logs.print("rex events", err)
 		if time.Since(started) > MaxBackoff {
 			backoff = MinBackoff // the stream was healthy; restart promptly
 		}
@@ -99,9 +113,17 @@ func (t *Tracker) Run(ctx context.Context, path string) {
 	}
 }
 
-func logOnce(last *string, what string, err error) {
-	if msg := what + ": " + err.Error(); msg != *last {
+// onceLog drops a failure that repeats the last one.
+type onceLog struct {
+	mu   sync.Mutex
+	last string
+}
+
+func (l *onceLog) print(what string, err error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if msg := what + ": " + err.Error(); msg != l.last {
 		log.Printf("WARN %s", msg)
-		*last = msg
+		l.last = msg
 	}
 }

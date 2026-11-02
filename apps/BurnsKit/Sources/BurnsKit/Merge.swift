@@ -15,13 +15,23 @@ public struct Window: Equatable, Sendable {
     public var percent: Double?
     public var resetsAt: Date
     public var observedAt: Date
-    public init(percent: Double?, resetsAt: Date, observedAt: Date) { self.percent = percent; self.resetsAt = resetsAt; self.observedAt = observedAt }
+    /// The pool this window came from. Empty when no limit named it.
+    public var limitId: String
+    public init(percent: Double?, resetsAt: Date, observedAt: Date, limitId: String = "") {
+        self.percent = percent; self.resetsAt = resetsAt; self.observedAt = observedAt; self.limitId = limitId
+    }
 
     /// Rule 2: a window whose reset passed is unknown, never zero.
     public func isLive(at now: Date) -> Bool { percent != nil && resetsAt > now }
+
+    /// Whether a reading belongs to this window: the same pool and, within jitter, the same reset.
+    func holds(_ r: Reading) -> Bool {
+        (limitId.isEmpty || limitId == r.limitId) && abs(resetsAt.timeIntervalSince(r.resetsAt)) <= Merge.resetJitter
+    }
 }
 
-/// One account's merged windows, keyed by length in minutes.
+/// One account's merged windows, keyed by length in minutes. Merging leaves out any window that is
+/// not live, so an absent length is unknown.
 public struct AccountUsage: Equatable, Sendable {
     public var id: AccountID
     public var kind: String
@@ -32,6 +42,12 @@ public struct AccountUsage: Equatable, Sendable {
     public var isQuota: Bool { kind != "azure" }
 
     public func liveWindows(at now: Date) -> [Int: Window] { windows.filter { $0.value.isLive(at: now) } }
+
+    /// 100 minus the highest percent used across the live windows. Nil with none, or for Azure.
+    public func quotaLeft(at now: Date) -> Double? {
+        guard isQuota else { return nil }
+        return liveWindows(at: now).values.compactMap(\.percent).max().map { max(0, 100 - $0) }
+    }
 }
 
 /// docs/SPEC.md, "Merging hosts". Quota belongs to the account, so the newest live reading per
@@ -39,6 +55,8 @@ public struct AccountUsage: Equatable, Sendable {
 public enum Merge {
     /// Two readings of one window whose resets differ by more than this are different windows.
     public static let resetJitter: TimeInterval = 60
+    /// The longest window treated as a five-hour window: Go `quota.FiveHourMax`.
+    public static let fiveHourMax = 600
 
     public static func windows(_ sets: [[Int: Window]], now: Date) -> [Int: Window] {
         var out: [Int: Window] = [:]
@@ -59,7 +77,7 @@ public enum Merge {
 
     /// Every account any host reports, in the order hosts list them, first host first.
     public static func accounts(_ answers: [UsageAnswer], now: Date) -> [AccountUsage] {
-        var order: [AccountID] = [], kinds: [AccountID: String] = [:], sets: [AccountID: [[Int: Window]]] = [:]
+        var order: [AccountID] = [], kinds: [AccountID: String] = [:], pools: [AccountID: [String: [[Int: Window]]]] = [:]
         for answer in answers {
             for a in answer.accounts {
                 let id = AccountID(provider: a.provider, name: a.account)
@@ -68,13 +86,28 @@ public enum Merge {
                     var set: [Int: Window] = [:]
                     for (key, w) in limit.windows {
                         guard let m = Int(key) else { continue }
-                        set[m] = Window(percent: w.percent, resetsAt: w.resetsAt, observedAt: w.observedAt)
+                        set[m] = Window(percent: w.percent, resetsAt: w.resetsAt, observedAt: w.observedAt, limitId: limit.limitId)
                     }
-                    sets[id, default: []].append(set)
+                    pools[id, default: [:]][limit.limitId, default: []].append(set)
                 }
             }
         }
-        return order.map { AccountUsage(id: $0, kind: kinds[$0] ?? "", windows: windows(sets[$0] ?? [], now: now)) }
+        return order.map { id in
+            let merged = (pools[id] ?? [:]).values.map { windows($0, now: now) }
+            return AccountUsage(id: id, kind: kinds[id] ?? "", windows: tightest(merged))
+        }
+    }
+
+    /// One window per length across an account's pools. Each pool merges across hosts on its own,
+    /// because the same length in two pools has two resets. The fullest pool stands for the length:
+    /// the default rule reads the highest percent, and a spent pool must not read as spare.
+    static func tightest(_ pools: [[Int: Window]]) -> [Int: Window] {
+        pools.reduce(into: [:]) { out, pool in
+            out.merge(pool) { a, b in
+                let p = a.percent ?? 0, q = b.percent ?? 0
+                return (p, a.observedAt, a.limitId) >= (q, b.observedAt, b.limitId) ? a : b
+            }
+        }
     }
 
     /// Every host's readings, each once, oldest first, keeping only readings of each account's
@@ -86,7 +119,7 @@ public enum Merge {
         var out: [Reading] = []
         for r in sets.joined() {
             guard let w = current[AccountID(provider: r.provider, name: r.account)]?[r.minutes],
-                  abs(w.resetsAt.timeIntervalSince(r.resetsAt)) <= resetJitter,
+                  w.holds(r),
                   seen.insert(r).inserted else { continue }
             out.append(r)
         }

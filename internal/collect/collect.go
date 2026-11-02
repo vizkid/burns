@@ -78,11 +78,10 @@ func (c *Collector) home(a config.Account, home string) error {
 	if a.Provider == "codex" {
 		root, pattern = filepath.Join(home, "sessions"), "rollout-*.jsonl"
 	}
-	files, err := tail.Find(root, pattern)
-	if errors.Is(err, fs.ErrNotExist) {
-		return nil
+	files, first := tail.Find(root, pattern) // a partial list still counts
+	if errors.Is(first, fs.ErrNotExist) {
+		first = nil // no such home here yet
 	}
-	first := err
 	for _, f := range files {
 		if err := c.file(a, f); err != nil && first == nil {
 			first = fmt.Errorf("%s: %w", f, err)

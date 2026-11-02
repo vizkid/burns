@@ -4,33 +4,28 @@ import IOKit.ps
 
 /// Each host's icon from Rex, which only a Mac can ask. `UsageStore` shares them with the phone.
 enum RexIcons {
-    private struct HostList: Decodable {
-        struct Entry: Decodable {
-            struct Host: Decodable { let label: String; let icon: String? }
-            let host: Host
-        }
-        let hosts: [Entry]
-    }
-
     /// Nil when Rex did not answer: the icons already known stay.
     @MainActor
     static func read(_ statuses: [HostStatus]) async -> [String: String]? {
-        guard let known = await Rex.json(HostList.self, ["hosts", "list", "--json"])?.hosts.map(\.host) else { return nil }
-        let entries = known.map { (label: $0.label, icon: $0.icon) }
-        let here = ProcessInfo.processInfo.hostName.split(separator: ".").first.map { $0.lowercased() } ?? ""
+        guard let rex = await Rex.hosts() else { return nil }
         var icons: [String: String] = [:]
         for name in statuses.compactMap(\.snapshot?.usage.host) {
-            if let picked = PaneShares.icon(host: name, entries: entries) {
+            if let picked = rex.icon(for: name) {
                 icons[name] = picked
-            } else if name.lowercased() == here {
+            } else if RexHosts.short(name) == RexHosts.thisMachine {
                 icons[name] = hasBattery ? "laptopcomputer" : HostIcon.fallback // Rex stores none for its own machine.
             }
         }
         return icons
     }
 
-    private static var hasBattery: Bool {
+    /// An internal battery. A UPS is a power source too, and a desktop on one is no laptop.
+    private static let hasBattery: Bool = {
         let info = IOPSCopyPowerSourcesInfo().takeRetainedValue()
-        return CFArrayGetCount(IOPSCopyPowerSourcesList(info).takeRetainedValue()) > 0
-    }
+        let sources = IOPSCopyPowerSourcesList(info).takeRetainedValue() as [CFTypeRef]
+        return sources.contains { source in
+            let description = IOPSGetPowerSourceDescription(info, source)?.takeUnretainedValue() as? [String: Any]
+            return description?[kIOPSTypeKey] as? String == kIOPSInternalBatteryType
+        }
+    }()
 }

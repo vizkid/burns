@@ -1,5 +1,6 @@
 import BurnsKit
 import Foundation
+import Observation
 import WidgetKit
 
 /// The app group both an app and its widget read: the host list, each host's last answer, and
@@ -20,18 +21,19 @@ enum AppGroup {
 
 /// Reads the hosts, keeps the cache, and builds what the views draw.
 @MainActor
-final class UsageStore: ObservableObject {
-    @Published private(set) var model: UsageModel
-    @Published private(set) var statuses: [HostStatus] = []
+@Observable
+final class UsageStore {
+    private(set) var model: UsageModel
+    private(set) var statuses: [HostStatus] = []
     /// What the last pass did about each host's accounts file.
-    @Published private(set) var accountSync: [AccountSync.HostSync] = []
-    @Published var hosts: [String] {
+    private(set) var accountSync: [AccountSync.HostSync] = []
+    var hosts: [String] {
         didSet { HostList(defaults: AppGroup.defaults).hosts = hosts; Task { await refresh() } }
     }
 
     /// Each host's icon, keyed by the name its smithersd reports. The Mac reads them from Rex and
     /// shares them through iCloud, because a phone cannot ask Rex.
-    @Published private(set) var hostIcons: [String: String] = NSUbiquitousKeyValueStore.default.dictionary(forKey: UsageStore.hostIconsKey) as? [String: String] ?? [:]
+    private(set) var hostIcons: [String: String] = NSUbiquitousKeyValueStore.default.dictionary(forKey: UsageStore.hostIconsKey) as? [String: String] ?? [:]
     private static let hostIconsKey = "burns.hostIcons"
 
     /// Adds to what iCloud holds: each device knows only some hosts, and a host with no snapshot
@@ -44,18 +46,20 @@ final class UsageStore: ObservableObject {
     }
 
     /// Names to show for hosts. Commands keep the Rex label.
-    @Published var hostNames: [String: String] = AppGroup.defaults.dictionary(forKey: AppGroup.hostNamesKey) as? [String: String] ?? [:] {
+    var hostNames: [String: String] = AppGroup.defaults.dictionary(forKey: AppGroup.hostNamesKey) as? [String: String] ?? [:] {
         didSet { AppGroup.defaults.set(hostNames, forKey: AppGroup.hostNamesKey) }
     }
 
-    private let cache = HostCache(defaults: AppGroup.defaults)
-    private let selection = Selection(defaults: AppGroup.defaults)
-    private let accounts = CentralStore(values: NSUbiquitousKeyValueStore.default)
-    private let launched = Date()
-    /// How long a new device waits for iCloud before it imports from the hosts.
+    @ObservationIgnored private let cache = HostCache(defaults: AppGroup.defaults)
+    @ObservationIgnored private let selection = Selection(defaults: AppGroup.defaults)
+    @ObservationIgnored private let accounts = CentralStore(values: NSUbiquitousKeyValueStore.default)
+    /// When iCloud last delivered, or the app started.
+    @ObservationIgnored private var lastDelivery = Date()
+    /// How long iCloud must stay quiet before a device acts on what it has: a new device before it
+    /// imports from the hosts, and any device before it accepts a list that does not match its digest.
     private static let iCloudWait: TimeInterval = 60
     /// The central list, kept in step with iCloud.
-    @Published private(set) var central: [CentralAccount] = AppGroup.accounts
+    private(set) var central: [CentralAccount] = AppGroup.accounts
 
     init() {
         hosts = HostList(defaults: AppGroup.defaults).hosts
@@ -64,7 +68,11 @@ final class UsageStore: ObservableObject {
         NSUbiquitousKeyValueStore.default.synchronize()
         NotificationCenter.default.addObserver(forName: NSUbiquitousKeyValueStore.didChangeExternallyNotification,
                                                object: NSUbiquitousKeyValueStore.default, queue: .main) { [weak self] _ in
-            Task { @MainActor in self?.syncAccounts() ; await self?.pushAccounts() }
+            Task { @MainActor in
+                self?.lastDelivery = Date()
+                self?.syncAccounts()
+                await self?.pushAccounts()
+            }
         }
     }
 
@@ -92,10 +100,9 @@ final class UsageStore: ObservableObject {
         edit(AccountSync.importing([onHost, central]).accounts)
     }
 
-    /// Overwrites a held host: marks its current file as the last written one, so the next pass writes it.
+    /// Overwrites a held host, after the operator chose that in the review.
     func overwrite(_ host: String) async {
-        guard let file = try? await HostAccounts().get(host) else { return }
-        accounts.setWritten(file.etag, host: host)
+        _ = await AccountSync.overwrite(host: host, store: accounts, client: HostAccounts())
         await pushAccounts()
     }
 
@@ -106,13 +113,17 @@ final class UsageStore: ObservableObject {
         rebuild()
     }
 
+    /// One pass at a time. An edit made during a pass gets a pass of its own, not the next refresh.
     private func pushAccounts() async {
-        guard !pushing else { return }
+        guard !pushing else { pushAgain = true; return }
         pushing = true
         defer { pushing = false }
-        accountSync = await AccountSync.run(hosts: hosts, store: accounts, client: HostAccounts(),
-                                            mayImport: Date().timeIntervalSince(launched) > Self.iCloudWait)
-        syncAccounts()
+        repeat {
+            pushAgain = false
+            accountSync = await AccountSync.run(hosts: hosts, store: accounts, client: HostAccounts(),
+                                                settled: Date().timeIntervalSince(lastDelivery) > Self.iCloudWait)
+            syncAccounts()
+        } while pushAgain
     }
 
     func refresh() async {
@@ -129,8 +140,9 @@ final class UsageStore: ObservableObject {
         Task { await pushAccounts() }
     }
 
-    private var lastContent = ""
-    private var pushing = false
+    @ObservationIgnored private var lastContent = ""
+    @ObservationIgnored private var pushing = false
+    @ObservationIgnored private var pushAgain = false
 
     func select(_ id: AccountID) {
         selection.account = id
@@ -140,9 +152,10 @@ final class UsageStore: ObservableObject {
 
     /// Rebuilds from the cache: also how the time arcs and expiry move between fetches.
     func rebuild() {
-        let snaps = hosts.compactMap { cache.load()[$0] }
+        let cached = cache.load()
+        let snaps = hosts.compactMap { cached[$0] }
         model = UsageModel(snapshots: snaps, selected: selection.account, accounts: central)
-        if statuses.isEmpty { statuses = hosts.map { HostStatus(address: $0, snapshot: cache.load()[$0], error: nil) } }
+        if statuses.isEmpty { statuses = hosts.map { HostStatus(address: $0, snapshot: cached[$0], error: nil) } }
     }
 }
 

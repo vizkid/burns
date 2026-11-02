@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"maps"
 	"net/http"
 	"net/url"
 	"slices"
@@ -12,6 +13,8 @@ import (
 	"strings"
 	"text/tabwriter"
 	"time"
+
+	"github.com/vizkid/burns/internal/usage"
 )
 
 // Clock and zone for printed times; tests fix both.
@@ -58,9 +61,14 @@ func printUsage(args []string, out, errOut io.Writer) int {
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
-	if d, err := time.ParseDuration(*since); err != nil || d <= 0 {
+	d, err := time.ParseDuration(*since)
+	if err != nil || d <= 0 {
 		fmt.Fprintln(errOut, "--since must be a positive duration such as 24h")
 		return 2
+	}
+	heading := *since
+	if d > usage.Retention { // smithersd clamps, so the data covers no more
+		heading = span(int(usage.Retention.Minutes()))
 	}
 	var u struct{ Accounts []account }
 	var s struct{ Sessions []total }
@@ -79,20 +87,32 @@ func printUsage(args []string, out, errOut io.Writer) int {
 	for _, a := range u.Accounts {
 		fmt.Fprintf(tw, "%s %s\t%s\n", a.Provider, a.Account, quota(a, t))
 	}
-	fmt.Fprintf(tw, "\nLast %s\tSessions\tRequests\tInput\tCached\tOutput\tCost\n", *since)
+	fmt.Fprintf(tw, "\nLast %s\tSessions\tRequests\tInput\tCached\tOutput\tCost\n", heading)
 	totals := sum(s.Sessions)
 	for _, a := range u.Accounts {
 		name := a.Provider + " " + a.Account
-		g, ok := totals[name]
-		if !ok {
-			fmt.Fprintf(tw, "%s\t\t\t\t\t\tnone seen\n", name) // empty cells keep the columns aligned
+		if g, ok := totals[name]; ok {
+			printTotal(tw, name, g)
+			delete(totals, name)
 			continue
 		}
-		fmt.Fprintf(tw, "%s\t%d\t%d\t%s\t%s\t%s\t%s\n", name, g.sessions, g.Requests,
-			compact(g.Input), compact(g.CachedInput+g.CacheWrite), compact(g.Output), cost(g))
+		fmt.Fprintf(tw, "%s\t\t\t\t\t\tnone seen\n", name) // empty cells keep the columns aligned
+	}
+	// What is left has no configured account. Burns never drops its tokens.
+	for _, name := range slices.Sorted(maps.Keys(totals)) {
+		label := name
+		if strings.HasSuffix(name, " ") {
+			label = name + "unattributed"
+		}
+		printTotal(tw, label, totals[name])
 	}
 	tw.Flush()
 	return 0
+}
+
+func printTotal(tw io.Writer, name string, g *total) {
+	fmt.Fprintf(tw, "%s\t%d\t%d\t%s\t%s\t%s\t%s\n", name, g.sessions, g.Requests,
+		compact(g.Input), compact(g.CachedInput+g.CacheWrite), compact(g.Output), cost(g))
 }
 
 func getJSON(u string, v any) error {

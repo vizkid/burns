@@ -26,29 +26,64 @@ const (
 	dialogHead = "WARNING: Loading development channels"
 	dialogYes  = "I am using this for local development"
 	trustLine  = "trust this folder"
+	cursor     = "❯"
+	// dialogFoot is how many lines may follow a live dialog's cursor: its other
+	// option and its footer. `rex capture` includes scrollback and has no way to
+	// leave it out, so text further up is history, not the live screen.
+	dialogFoot = 4
+	// foreignHold is how many reads in a row must see a Foreign dialog. A capture
+	// can land while the dialog is still painting.
+	foreignHold = 3
 )
 
-// Read classifies a screen against the servers Burns put in the flag. Only the
-// exact list, with the cursor on the consent line, is Burns's to answer.
+// Read classifies a capture against the servers Burns put in the flag. Only the
+// exact list, with the last cursor on the consent line, is Burns's to answer.
+// A later cursor is Claude's live prompt: Enter there would send a half-typed message.
 func Read(screen string, want []string) State {
-	if !strings.Contains(screen, dialogHead) {
-		if strings.Contains(screen, trustLine) {
-			return Trust
+	lines := painted(screen)
+	head := -1
+	for i, line := range lines {
+		if strings.Contains(line, dialogHead) {
+			head = i
+		}
+	}
+	if head < 0 {
+		for _, line := range lines[max(0, len(lines)-dialogFoot-1):] {
+			if strings.Contains(line, trustLine) {
+				return Trust
+			}
 		}
 		return Nothing
 	}
+	dialog := lines[head:]
+	last := -1
+	for i, line := range dialog {
+		if strings.Contains(line, cursor) {
+			last = i
+		}
+	}
+	if last >= 0 && len(dialog)-1-last > dialogFoot {
+		return Nothing // the dialog has scrolled away
+	}
 	sorted := slices.Sorted(slices.Values(want))
-	if slices.Equal(listed(screen), sorted) && onConsent(screen) {
+	if last >= 0 && strings.Contains(dialog[last], dialogYes) && slices.Equal(listed(dialog), sorted) {
 		return Answer
 	}
 	return Foreign
 }
 
+// painted is a capture's lines that show something.
+func painted(screen string) []string {
+	return slices.DeleteFunc(strings.Split(screen, "\n"), func(line string) bool {
+		return strings.Trim(line, " │|") == ""
+	})
+}
+
 // listed reads the "Channels:" line and any lines it wrapped onto.
-func listed(screen string) []string {
+func listed(lines []string) []string {
 	var out []string
 	inList := false
-	for _, line := range strings.Split(screen, "\n") {
+	for _, line := range lines {
 		fields := strings.Fields(strings.Trim(line, " │|"))
 		if len(fields) > 0 && fields[0] == "Channels:" {
 			inList, fields = true, fields[1:]
@@ -65,15 +100,6 @@ func listed(screen string) []string {
 	}
 	slices.Sort(out)
 	return out
-}
-
-func onConsent(screen string) bool {
-	for _, line := range strings.Split(screen, "\n") {
-		if strings.Contains(line, "❯") && strings.Contains(line, dialogYes) {
-			return true
-		}
-	}
-	return false
 }
 
 // Pane is the block a launch watches.
@@ -101,17 +127,24 @@ func Timing() WatchTiming {
 func Watch(ctx context.Context, p Pane, block string, want []string, t WatchTiming) string {
 	start := t.Now()
 	deadline := start.Add(t.Wait)
+	foreign := 0
 	for t.Now().Before(deadline) && t.Now().Before(start.Add(t.Limit)) {
 		screen, err := p.Capture(ctx, block)
 		if err == nil {
-			switch Read(screen, want) {
+			state := Read(screen, want)
+			if state != Foreign {
+				foreign = 0
+			}
+			switch state {
 			case Answer:
 				if err := p.Enter(ctx, block); err != nil {
 					return fmt.Sprintf("%s: channels dialog: %v", block, err)
 				}
 				return fmt.Sprintf("%s: answered channels dialog for %s", block, strings.Join(want, " "))
 			case Foreign:
-				return fmt.Sprintf("%s: channels dialog left for the operator: it does not list exactly %s", block, strings.Join(want, " "))
+				if foreign++; foreign >= foreignHold {
+					return fmt.Sprintf("%s: channels dialog left for the operator: it does not list exactly %s", block, strings.Join(want, " "))
+				}
 			case Trust:
 				deadline = t.Now().Add(t.Wait)
 			}

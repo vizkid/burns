@@ -3,6 +3,7 @@ package bindings
 import (
 	"context"
 	"errors"
+	"os"
 	"path/filepath"
 	"testing"
 	"time"
@@ -73,6 +74,50 @@ func TestHandleEndsBindings(t *testing.T) {
 	}
 	if got := open(t, tr); len(got) != 0 {
 		t.Fatalf("open = %v after session_destroyed; want none", got)
+	}
+}
+
+type stuckRex struct{ deadline chan bool }
+
+func (s stuckRex) Foreground(ctx context.Context, _ string) (int, error) {
+	_, bounded := ctx.Deadline()
+	s.deadline <- bounded
+	<-ctx.Done()
+	return 0, ctx.Err()
+}
+
+func TestReconcileBoundsEachRexCall(t *testing.T) {
+	st := stuckRex{deadline: make(chan bool, 1)}
+	tr := tracker(t, nil, "block:b0")
+	tr.Rex = st
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go tr.Reconcile(ctx)
+	if bounded := <-st.deadline; !bounded {
+		t.Fatal("a Rex call has no timeout")
+	}
+}
+
+// The stream starts first, so a stuck Rex call cannot stop events, and a block
+// that closes during the reconcile is not missed.
+func TestEventsFlowWhileAReconcileWaits(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "rex")
+	line := `{"type":"session_event","payload":{"session_id":"session:r1","event":{"type":"block_closed","payload":{"block_id":"block:b0"}}}}`
+	if err := os.WriteFile(path, []byte("#!/bin/sh\necho '"+line+"'\nexec /bin/sleep 30\n"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	tr := tracker(t, nil, "block:b0")
+	tr.Rex = stuckRex{deadline: make(chan bool, 1)}
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() { defer close(done); tr.Run(ctx, path) }()
+	defer func() { cancel(); <-done }()
+	limit := time.Now().Add(time.Second)
+	for len(open(t, tr)) != 0 {
+		if time.Now().After(limit) {
+			t.Fatal("the event waited for the reconcile")
+		}
+		time.Sleep(10 * time.Millisecond)
 	}
 }
 

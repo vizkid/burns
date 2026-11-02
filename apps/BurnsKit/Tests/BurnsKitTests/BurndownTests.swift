@@ -101,7 +101,6 @@ struct BurndownTests {
                        10080: Window(percent: 10, resetsAt: weekReset, observedAt: now)])
         let b = Burndown.build(account: u, readings: [reading(300, 50, resets: now - 60, hoursAgo: 1)], now: now)
         #expect(b.line?.minutes == 10080)
-        #expect(b.unknown == [300])
     }
 
     /// Only the longest live window is charted, with its day grid; the five-hour window is the

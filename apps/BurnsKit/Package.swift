@@ -1,4 +1,4 @@
-// swift-tools-version:5.9
+// swift-tools-version:6.0
 // BurnsKit: the code Burns for Mac, Burns for iOS and their widgets share (docs/SPEC.md,
 // "Apps and widgets"): the smithersd wire types, the host merge, pace, Enter's pick, the
 // burndown series, the per-host cache, and the views.
@@ -12,5 +12,5 @@ let package = Package(
         .target(name: "BurnsKit", path: "Sources/BurnsKit", resources: [.process("Resources")]),
         .testTarget(name: "BurnsKitTests", dependencies: ["BurnsKit"], path: "Tests/BurnsKitTests"),
     ],
-    swiftLanguageVersions: [.v5]
+    swiftLanguageModes: [.v6]
 )

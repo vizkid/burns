@@ -1,13 +1,10 @@
 package claude
 
 import (
-	"bufio"
 	"bytes"
 	"encoding/json"
-	"io"
 	"time"
 
-	"github.com/vizkid/burns/internal/tail"
 	"github.com/vizkid/burns/internal/usage"
 )
 
@@ -102,25 +99,4 @@ func (d *Transcript) request(l transcriptLine) (usage.Request, bool) {
 	return usage.Request{Provider: usage.Claude, Key: key, Account: d.Account, Session: l.SessionID,
 		Agent: l.AgentID, Turn: d.Turn, Model: l.Message.Model, Input: u.Input, CachedInput: u.CacheRead,
 		CacheWrite: u.CacheWrite, Output: u.Output, Source: usage.SourceTranscript, At: l.Timestamp}, true
-}
-
-// ScanTranscript reads one whole transcript.
-func ScanTranscript(r io.Reader, account string) ([]usage.Request, []usage.Compaction, error) {
-	br := bufio.NewReaderSize(r, 64<<10)
-	var lines [][]byte
-	for {
-		b, err := br.ReadBytes('\n')
-		if len(b) > 0 && len(b) <= tail.MaxLine {
-			lines = append(lines, b)
-		}
-		if err == io.EOF {
-			break
-		}
-		if err != nil {
-			return nil, nil, err
-		}
-	}
-	d := &Transcript{Account: account}
-	reqs, comps := d.Lines(lines)
-	return reqs, comps, nil
 }

@@ -83,7 +83,7 @@ echo '{"type":"session_destroyed","payload":{"session_id":"session:s1"}}'
 echo 'noise'
 echo '{"type":"session_event","payload":{"session_id":"session:s1","event":{"type":"block_closed","payload":{"block_id":"block:b1"}}}}'`)
 	var got []Kind
-	err := Watch(context.Background(), rex.Path, func(e Event) { got = append(got, e.Kind) })
+	err := Watch(context.Background(), rex.Path, func() {}, func(e Event) { got = append(got, e.Kind) })
 	if err != nil || !reflect.DeepEqual(got, []Kind{SessionDestroyed, BlockClosed}) {
 		t.Fatalf("Watch = %v, events %v", err, got)
 	}

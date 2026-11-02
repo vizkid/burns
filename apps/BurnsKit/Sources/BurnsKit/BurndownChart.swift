@@ -28,7 +28,7 @@ public struct BurndownChart: View {
     /// Readings closer than `minGap` of the window merge into the later one: a near-vertical step
     /// makes a monotone curve overshoot far past the chart. The span before the first reading, where
     /// nothing was read, gets points along its straight line, so the curve does not bow there.
-    static func plotted(_ actual: [Point], minGap: Double) -> [Point] {
+    nonisolated static func plotted(_ actual: [Point], minGap: Double) -> [Point] {
         guard actual.count > 2, let start = actual.first else { return actual }
         var read: [Point] = []
         for p in actual.dropFirst() {
@@ -60,7 +60,7 @@ public struct BurndownChart: View {
     /// Where a dashed line starting at `start` must begin its pattern so its dashes fall on those of
     /// a line with the same pattern starting at `origin`. On pace the projection lies on the steady
     /// line, and two patterns out of step there read as one jagged, beaded line.
-    static func dashPhase(origin: CGPoint, start: CGPoint, period: CGFloat) -> CGFloat {
+    nonisolated static func dashPhase(origin: CGPoint, start: CGPoint, period: CGFloat) -> CGFloat {
         guard period > 0 else { return 0 }
         return hypot(start.x - origin.x, start.y - origin.y).truncatingRemainder(dividingBy: period)
     }
@@ -166,7 +166,7 @@ public struct UsageView<Cell: View>: View {
                         Text(b.headline).font(compact ? .caption2 : .caption).foregroundStyle(.secondary).lineLimit(1).minimumScaleFactor(0.7)
                     }
                     if b.line == nil {
-                        Text(b.headline == "Microsoft credits" ? "Runs on Microsoft credits. No quota windows to draw." : "No live quota window to draw.")
+                        Text(b.credits ? "Runs on Microsoft credits. No quota windows to draw." : "No live quota window to draw.")
                             .font(compact ? .caption2 : .footnote).foregroundStyle(.secondary)
                             .frame(maxWidth: .infinity, maxHeight: .infinity)
                     } else {

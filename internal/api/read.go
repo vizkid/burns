@@ -43,9 +43,9 @@ func (s *Server) usage(w http.ResponseWriter, r *http.Request) {
 	}
 	accounts := make([]accountDoc, 0, len(s.Config.Accounts))
 	for _, a := range s.Config.Accounts {
-		// An account whose home is missing here is not set up on this host: it lists no
+		// An account with none of its homes here is not set up on this host: it lists no
 		// limits, so no usage reads as unknown, never zero.
-		doc := accountDoc{Provider: a.Provider, Account: a.Name, Kind: a.Kind, SetUp: s.homeExists(s.Config.HomeDir(a)), Limits: []limitDoc{}}
+		doc := accountDoc{Provider: a.Provider, Account: a.Name, Kind: a.Kind, SetUp: s.setUp(a), Limits: []limitDoc{}}
 		for _, l := range limits {
 			if !doc.SetUp {
 				break

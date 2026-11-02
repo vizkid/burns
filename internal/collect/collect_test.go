@@ -40,6 +40,29 @@ func setup(t *testing.T) env {
 	return e
 }
 
+// One unreadable folder must not cost the files already found.
+func TestScanReadsPastAnUnreadableFolder(t *testing.T) {
+	e := setup(t)
+	bad := filepath.Join(filepath.Dir(e.transcript), "..", "a-locked")
+	os.MkdirAll(bad, 0o700)
+	os.Chmod(bad, 0)
+	t.Cleanup(func() { os.Chmod(bad, 0o700) })
+	os.WriteFile(e.transcript, []byte(`{"type":"assistant","sessionId":"s1","requestId":"r1","timestamp":"2026-10-28T03:00:00Z","message":{"id":"m1","model":"m","usage":{"input_tokens":1,"output_tokens":1}}}`+"\n"), 0o600)
+	st, err := store.Open(e.db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	c := &Collector{Store: st, Config: e.cfg, Now: func() time.Time { return now }}
+	if err := c.Scan(); err == nil {
+		t.Fatal("want the unreadable folder reported")
+	}
+	got, err := st.Sessions(now.Add(-time.Hour * 2))
+	if err != nil || len(got) != 1 {
+		t.Fatalf("sessions = %+v, %v", got, err)
+	}
+}
+
 func (e env) scan(t *testing.T) *store.Store {
 	t.Helper()
 	st, err := store.Open(e.db)

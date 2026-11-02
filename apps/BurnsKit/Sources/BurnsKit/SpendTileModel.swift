@@ -56,12 +56,15 @@ public struct SpendTileModel: Equatable, Sendable, Identifiable {
         return "\(account): \(spoken(fiveHour)); \(spoken(sevenDay))" + (onCredits ? "; on credits" : "")
     }
 
+    /// `fiveHourMinutes` and `sevenDayMinutes` are the windows' real lengths: pace measured against
+    /// a nominal length would disagree with the burndown.
     public init(account: String, fiveHourPercent: Double?, fiveHourResetsAt: Date?, sevenDayPercent: Double?, sevenDayResetsAt: Date?,
+                fiveHourMinutes: Int? = nil, sevenDayMinutes: Int? = nil,
                 onCredits: Bool, now: Date = Date(), calendar: Calendar = .current) {
         self.account = account
         self.onCredits = onCredits
-        fiveHour = Self.window("5h", "five-hour", fiveHourPercent, fiveHourResetsAt, SpendPace.fiveHours, now, calendar)
-        sevenDay = Self.window("7d", "seven-day", sevenDayPercent, sevenDayResetsAt, SpendPace.sevenDays, now, calendar)
+        fiveHour = Self.window("5h", "five-hour", fiveHourPercent, fiveHourResetsAt, fiveHourMinutes.map { Double($0) * 60 } ?? SpendPace.fiveHours, now, calendar)
+        sevenDay = Self.window("7d", "seven-day", sevenDayPercent, sevenDayResetsAt, sevenDayMinutes.map { Double($0) * 60 } ?? SpendPace.sevenDays, now, calendar)
     }
 
     private static func window(_ name: String, _ spoken: String, _ percent: Double?, _ resetsAt: Date?, _ length: TimeInterval,

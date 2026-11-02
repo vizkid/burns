@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"io"
 	"io/fs"
 	"os"
@@ -128,11 +129,25 @@ func ChangedInfo(c Cursor, info fs.FileInfo) bool {
 }
 
 // Find lists files under root whose names match the glob pattern, at any depth.
+// A root that is a link is followed. An entry below root that cannot be read
+// costs only itself: Find keeps going, and returns what it found with the first
+// such error. A folder that vanished mid-walk is no error, since sessions end.
 func Find(root, pattern string) ([]string, error) {
 	var out []string
-	err := filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
+	var first error
+	// The trailing separator makes the walk follow a root link. Paths keep root's spelling.
+	err := filepath.WalkDir(root+string(filepath.Separator), func(p string, d fs.DirEntry, err error) error {
+		if d == nil {
+			return err // root itself could not be read
+		}
 		if err != nil {
-			return err
+			if first == nil && !errors.Is(err, fs.ErrNotExist) {
+				first = err
+			}
+			if d.IsDir() {
+				return fs.SkipDir
+			}
+			return nil
 		}
 		if !d.IsDir() {
 			if ok, _ := filepath.Match(pattern, d.Name()); ok {
@@ -141,5 +156,8 @@ func Find(root, pattern string) ([]string, error) {
 		}
 		return nil
 	})
+	if err == nil {
+		err = first
+	}
 	return out, err
 }

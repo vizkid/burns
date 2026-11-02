@@ -1,5 +1,6 @@
-// Package rex reads the Rex block facts and events that end and check
-// bindings. It calls only read-only Rex CLI commands.
+// Package rex reads the Rex block facts and events that end and check bindings,
+// and the pane list. Every call is read-only except CLI.Enter, which a launch's
+// watcher uses to answer Claude's channels dialog. smithersd never calls Enter.
 package rex
 
 import "encoding/json"

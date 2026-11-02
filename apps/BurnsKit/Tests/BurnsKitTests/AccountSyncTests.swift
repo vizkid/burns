@@ -56,35 +56,6 @@ struct AccountSyncRuleTests {
     }
 }
 
-/// A host's accounts file and the requests made of it.
-private final class FakeHosts: AccountHosts, @unchecked Sendable {
-    var files: [String: Data] = [:]
-    var unreachable: Set<String> = []
-    var puts: [String] = []
-    var refuse: Int?
-
-    func get(_ host: String) async throws -> (data: Data, etag: String) {
-        if unreachable.contains(host) { throw URLError(.cannotConnectToHost) }
-        return (files[host] ?? Data(), Self.tag(files[host] ?? Data()))
-    }
-
-    func put(_ host: String, data: Data, etag: String) async throws -> String {
-        if let refuse { throw HostFetcher.Refused(status: refuse) }
-        puts.append(host)
-        files[host] = data
-        return Self.tag(data)
-    }
-
-    static func tag(_ d: Data) -> String { "\"\(d.count)-\(d.hashValue)\"" }
-}
-
-private final class FakeValues: KeyValues, @unchecked Sendable {
-    var values: [String: Data] = [:]
-    func data(forKey key: String) -> Data? { values[key] }
-    func set(_ value: Data?, forKey key: String) { values[key] = value }
-    func removeObject(forKey key: String) { values[key] = nil }
-}
-
 private func file(_ accounts: CentralAccount...) -> Data { AccountsFile(accounts: accounts).encoded() }
 
 @MainActor
@@ -127,7 +98,7 @@ struct AccountSyncRunTests {
     @Test func noImportBeforeICloudHasHadTime() async {
         let hosts = FakeHosts(), store = CentralStore(values: FakeValues())
         hosts.files = ["a": file(alpha)]
-        _ = await AccountSync.run(hosts: ["a"], store: store, client: hosts, mayImport: false)
+        _ = await AccountSync.run(hosts: ["a"], store: store, client: hosts, settled: false)
         #expect(store.load() == nil)
     }
 

@@ -27,20 +27,69 @@ struct LaunchTests {
         #expect(s.text(.project) == "x" && s.text(.host) == "One" && s.request != nil)
     }
 
-    @Test func aLateReadTakesTheAgentOnlyWhenThereWereNoAccounts() {
+    /// F10: the read the panel opened from can be hours old.
+    @Test func aLateReadMovesAnUntouchedDefault() {
         let claudeFirst = LaunchSentence(accounts: Array(sentence().accounts.reversed()), projects: [])
         var none = LaunchSentence(accounts: [], projects: [])
         none.adopt(claudeFirst)
         #expect(none.text(.agent) == "Claude")
         var codex = sentence()
         codex.adopt(claudeFirst)
-        #expect(codex.text(.agent) == "Codex")
+        #expect(codex.text(.agent) == "Claude" && codex.text(.account) == "🎱 alpha")
+    }
+
+    @Test func aLateReadKeepsATouchedAgent() {
+        var s = sentence()
+        s.pick("Codex")
+        s.adopt(LaunchSentence(accounts: Array(sentence().accounts.reversed()), projects: []))
+        #expect(s.text(.agent) == "Codex")
+    }
+
+    /// Return on a word takes it, even with no change.
+    @Test func aConfirmedWordIsKept() {
+        var s = sentence()
+        s.confirm()
+        #expect(s.word == .model)
+        s.adopt(LaunchSentence(accounts: Array(sentence().accounts.reversed()), projects: []))
+        #expect(s.text(.agent) == "Codex")
+    }
+
+    @Test func aLateReadMovesAnUntouchedProject() {
+        var s = sentence()
+        let y = LaunchHost(rex: "", shown: "One", path: "/home/a/dev/y", session: "y")
+        s.adopt(LaunchSentence(accounts: s.accounts, projects: [LaunchProject(name: "y", path: "dev/y", hosts: [y])] + s.projects))
+        #expect(s.text(.project) == "y")
+    }
+
+    /// A model comes from the account's catalog, so choosing one holds the account.
+    @Test func aChosenModelHoldsItsAccount() {
+        var s = sentence()
+        s.focus(.model); s.pick("m2")
+        s.adopt(LaunchSentence(accounts: Array(sentence().accounts.prefix(2).reversed()), projects: sentence().projects))
+        #expect(s.text(.account) == "💎 beta" && s.request?.model == "m2")
+    }
+
+    /// F35.
+    @Test func escStepsBackThenCloses() {
+        var s = sentence()
+        s.focus(.account)
+        let first = s.back(), firstWord = s.word
+        let second = s.back(), secondWord = s.word
+        let last = s.back()
+        #expect(first && firstWord == .model && second && secondWord == .agent && !last)
+    }
+
+    @Test func theNoteSaysWhyTheDefaultWon() {
+        var s = LaunchSentence(accounts: sentence().accounts, projects: [], reason: "Codex beta: 96% left", unreachable: ["two: no Rex entry"])
+        #expect(s.note == "Codex beta: 96% left · Not offered: two: no Rex entry")
+        s.focus(.account); s.pick("alpha")
+        #expect(s.note == "Not offered: two: no Rex entry")
     }
 
     @Test func aLateReadKeepsEveryChoice() {
         var s = sentence()
         s.focus(.account); s.pick("alpha")
-        s.focus(.model); s.pick("M1")
+        s.focus(.model); s.pick("m1")
         s.focus(.host); s.pick("Two")
         var fresh = sentence()
         fresh = LaunchSentence(accounts: Array(fresh.accounts.reversed()), projects: [LaunchProject(name: "y", path: "dev/y", hosts: [])] + fresh.projects)
@@ -88,7 +137,7 @@ struct LaunchTests {
     @Test func aPickedModelStaysAndBecomesAFlag() {
         var s = sentence()
         s.focus(.model)
-        s.pick("M2")
+        s.pick("m2")
         s.focus(.account)
         s.pick("alpha")
         #expect(s.request?.model == "m2")

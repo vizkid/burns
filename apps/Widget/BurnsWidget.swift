@@ -33,13 +33,15 @@ struct UsageProvider: TimelineProvider {
     static let entryStep: TimeInterval = 15 * 60
     static let entryCount = 8
 
-    func placeholder(in context: Context) -> UsageEntry { UsageEntry(date: Date(), model: Self.model(at: Date())) }
+    func placeholder(in context: Context) -> UsageEntry { UsageEntry(date: Date(), model: Self.models(at: [Date()])[0]) }
 
     func getSnapshot(in context: Context, completion: @escaping (UsageEntry) -> Void) {
-        completion(UsageEntry(date: Date(), model: Self.model(at: Date())))
+        completion(UsageEntry(date: Date(), model: Self.models(at: [Date()])[0]))
     }
 
     func getTimeline(in context: Context, completion: @escaping (Timeline<UsageEntry>) -> Void) {
+        // WidgetKit does not mark this closure Sendable. Its docs allow a call from any thread.
+        nonisolated(unsafe) let completion = completion
         Task {
             let defaults = AppGroup.defaults
             let last = defaults.object(forKey: AppGroup.lastFetchKey) as? Date ?? .distantPast
@@ -50,28 +52,28 @@ struct UsageProvider: TimelineProvider {
                 defaults.set(Date(), forKey: AppGroup.lastFetchKey)
             }
             let now = Date()
-            let entries = (0..<Self.entryCount).map { i -> UsageEntry in
-                let at = now.addingTimeInterval(Double(i) * Self.entryStep)
-                return UsageEntry(date: at, model: Self.model(at: at))
-            }
+            let times = (0..<Self.entryCount).map { now.addingTimeInterval(Double($0) * Self.entryStep) }
+            let entries = zip(times, Self.models(at: times)).map { UsageEntry(date: $0, model: $1) }
             completion(Timeline(entries: entries, policy: .after(now.addingTimeInterval(Self.fetchEvery))))
         }
     }
 
-    static func model(at date: Date) -> UsageModel {
+    /// One model per time, from one read of the cache.
+    static func models(at dates: [Date]) -> [UsageModel] {
         let defaults = AppGroup.defaults
         let cache = HostCache(defaults: defaults).load()
         let snaps = HostList(defaults: defaults).hosts.compactMap { cache[$0] }
-        return UsageModel(snapshots: snaps, selected: Selection(defaults: defaults).account, accounts: AppGroup.accounts, now: date)
+        let selected = Selection(defaults: defaults).account, accounts = AppGroup.accounts
+        return dates.map { UsageModel(snapshots: snaps, selected: selected, accounts: accounts, now: $0) }
     }
 }
 
 /// Selects a ring for every widget on this device and the app (docs/SPEC.md, "Apps and widgets").
 struct SelectAccountIntent: AppIntent {
-    static var title: LocalizedStringResource = "Show account"
-    static var description = IntentDescription("Show this account's burndown in the Burns widget.")
-    static var openAppWhenRun = false
-    static var isDiscoverable = false
+    static let title: LocalizedStringResource = "Show account"
+    static let description = IntentDescription("Show this account's burndown in the Burns widget.")
+    static let openAppWhenRun = false
+    static let isDiscoverable = false
 
     @Parameter(title: "Provider") var provider: String
     @Parameter(title: "Account") var name: String

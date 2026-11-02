@@ -181,6 +181,12 @@ func (c Config) checkHomes(a Account, claimed map[string]bool) string {
 			return "extra_homes entries must not be empty"
 		}
 	}
+	// Nothing expands ~: it would become a folder literally named ~ under the home.
+	for _, h := range append([]string{a.Home}, a.ExtraHomes...) {
+		if strings.HasPrefix(strings.TrimSpace(h), "~") {
+			return "homes are relative to the user's home and must not start with ~"
+		}
+	}
 	for _, d := range c.HomeDirs(a) {
 		if claimed[d] {
 			return "home " + d + " belongs to another account"
@@ -188,6 +194,24 @@ func (c Config) checkHomes(a Account, claimed map[string]bool) string {
 		claimed[d] = true
 	}
 	return ""
+}
+
+// Dir is the folder of the accounts file and tools.d: $XDG_CONFIG_HOME/burns, as
+// the install has it, or ~/.config/burns.
+func Dir(userHome string) string {
+	if d := os.Getenv("XDG_CONFIG_HOME"); d != "" {
+		return filepath.Join(d, "burns")
+	}
+	return filepath.Join(userHome, ".config", "burns")
+}
+
+// StateDir is the folder of the store and launch.log: $XDG_STATE_HOME/burns, or
+// ~/.local/state/burns.
+func StateDir(userHome string) string {
+	if d := os.Getenv("XDG_STATE_HOME"); d != "" {
+		return filepath.Join(d, "burns")
+	}
+	return filepath.Join(userHome, ".local", "state", "burns")
 }
 
 // UserHome is the directory relative homes resolve against.

@@ -6,10 +6,11 @@ import (
 	"time"
 
 	"github.com/vizkid/burns/internal/quota"
+	"github.com/vizkid/burns/internal/usage"
 )
 
 // Retention for request, compaction, and closed binding rows.
-const Retention = 7 * 24 * time.Hour
+const Retention = usage.Retention
 
 // CompactionMatch is how close an OTel compaction and a transcript boundary
 // of one session must be to count as the same compaction. The two sources

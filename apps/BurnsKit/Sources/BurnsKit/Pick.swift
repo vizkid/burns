@@ -21,21 +21,29 @@ public enum Pick: Equatable, Sendable {
     public static func choose(_ accounts: [AccountUsage], now: Date) -> Pick {
         let quota = accounts.filter(\.isQuota)
         var best: (AccountID, Double)?
-        var allExhausted = !quota.isEmpty
+        // True with no quota accounts: none has any left, so the rule falls to Azure.
+        var allExhausted = true
         for a in quota {
             // Rule 3: an account with no live window does not compete. A window whose reset passed
             // with no newer reading does not block it, or an idle account could never win.
-            let live = a.liveWindows(at: now)
-            guard !live.isEmpty else { allExhausted = false; continue }
-            if live.count < a.windows.count { allExhausted = false }
-            let used = live.values.compactMap(\.percent).max() ?? 0
-            if used < 100 { allExhausted = false }
-            let left = max(0, 100 - used)
-            if left > 0, best == nil || left > best!.1 { best = (a.id, left) }
+            guard let left = a.quotaLeft(at: now) else { allExhausted = false; continue }
+            guard left > 0 else { continue }
+            allExhausted = false
+            if best == nil || left > best!.1 { best = (a.id, left) }
         }
         if let best { return .quota(best.0, left: best.1) }
         if allExhausted, let azure = accounts.first(where: { !$0.isQuota }) { return .azure(azure.id) }
         return quota.first.map { .unknown($0.id) } ?? .none
+    }
+
+    /// Why the panel picked the account (docs/SPEC.md, "Default rule").
+    public func reason(among accounts: [AccountUsage]) -> String {
+        switch self {
+        case .quota(let id, let left): return "\(id.label): \(Int(left.rounded()))% left"
+        case .azure: return accounts.contains(where: \.isQuota) ? "All quotas exhausted: Azure" : "No quota accounts: Azure"
+        case .unknown(let id): return "Usage unknown: \(id.label)"
+        case .none: return ""
+        }
     }
 }
 

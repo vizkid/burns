@@ -1,6 +1,7 @@
 package store
 
 import (
+	"database/sql"
 	"strings"
 	"time"
 )
@@ -88,23 +89,38 @@ func (s *Store) History(from, to time.Time) ([]Bucket, error) {
 	return out, rows.Err()
 }
 
-// SeenModels returns each account's model ids, newest first, keyed by
-// provider and account.
-func (s *Store) SeenModels() (map[[2]string][]string, error) {
-	rows, err := s.rdb.Query(`SELECT provider, account, model FROM request WHERE model != ''
-		GROUP BY provider, account, model ORDER BY max(at) DESC`)
+// Seen is the models an account ran. Models holds every id, newest first, and
+// Thread is the one its main thread ran last: subagents can use a cheaper model
+// more recently, as with pane shares.
+type Seen struct {
+	Models []string
+	Thread string
+}
+
+// SeenModels returns each account's models, keyed by provider and account.
+// Claude's own `<synthetic>` lines are no model.
+func (s *Store) SeenModels() (map[[2]string]Seen, error) {
+	rows, err := s.rdb.Query(`SELECT provider, account, model, max(CASE WHEN agent = '' THEN at END) FROM request
+		WHERE model != '' AND model NOT LIKE '<%' GROUP BY provider, account, model ORDER BY max(at) DESC`)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	out := map[[2]string][]string{}
+	out := map[[2]string]Seen{}
+	newest := map[[2]string]int64{}
 	for rows.Next() {
 		var provider, account, model string
-		if err := rows.Scan(&provider, &account, &model); err != nil {
+		var thread sql.NullInt64
+		if err := rows.Scan(&provider, &account, &model, &thread); err != nil {
 			return nil, err
 		}
 		key := [2]string{provider, account}
-		out[key] = append(out[key], model)
+		seen := out[key]
+		seen.Models = append(seen.Models, model)
+		if thread.Valid && thread.Int64 > newest[key] {
+			seen.Thread, newest[key] = model, thread.Int64
+		}
+		out[key] = seen
 	}
 	return out, rows.Err()
 }

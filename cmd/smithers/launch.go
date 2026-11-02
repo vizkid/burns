@@ -6,10 +6,10 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"syscall"
 	"time"
@@ -25,6 +25,11 @@ const daemonTimeout = 20 * time.Second
 
 // shellTimeout bounds asking the interactive shell for its PATH.
 const shellTimeout = 10 * time.Second
+
+// pipeGrace bounds the wait for an output pipe after a command exits. A forked
+// daemon or an rc file's background job keeps the pipe open, and only WaitDelay
+// ends that wait: the context's timeout kills the direct child alone.
+const pipeGrace = 2 * time.Second
 
 // replace becomes the CLI. It is a variable so tests stop short of it.
 var replace = syscall.Exec
@@ -56,7 +61,7 @@ func startAgent(args []string, errOut io.Writer, getenv func(string) string) err
 	if err != nil {
 		return err
 	}
-	dir := filepath.Join(user, ".config", "burns")
+	dir := config.Dir(user)
 	cfg, err := config.Load(filepath.Join(dir, "accounts.json"), user)
 	if err != nil {
 		return err
@@ -69,7 +74,7 @@ func startAgent(args []string, errOut io.Writer, getenv func(string) string) err
 		return err
 	}
 	home := cfg.HomeDir(a)
-	if err := os.Mkdir(home, 0o700); err != nil && !errors.Is(err, fs.ErrExist) {
+	if err := os.MkdirAll(home, 0o700); err != nil {
 		return err
 	}
 	tools, problems := launch.LoadTools(filepath.Join(dir, "tools.d"))
@@ -115,8 +120,9 @@ func startPlan(plan launch.Plan, errOut io.Writer, block string) error {
 		ctx, cancel := context.WithTimeout(context.Background(), daemonTimeout)
 		defer cancel()
 		cmd := exec.CommandContext(ctx, resolved(plan.Daemon[0], env), plan.Daemon[1:]...)
-		cmd.Env = env
-		if out, err := cmd.CombinedOutput(); err != nil {
+		cmd.Env, cmd.WaitDelay = env, pipeGrace
+		// ErrWaitDelay means the command succeeded and left a daemon holding the pipe.
+		if out, err := cmd.CombinedOutput(); err != nil && !errors.Is(err, exec.ErrWaitDelay) {
 			fmt.Fprintf(errOut, "burns: codex daemon: %v: %s\n", err, strings.TrimSpace(string(out)))
 		}
 	}
@@ -125,7 +131,7 @@ func startPlan(plan launch.Plan, errOut io.Writer, block string) error {
 		return err
 	}
 	if len(plan.Channels) > 0 && block != "" {
-		if err := startWatch(block, plan.Channels); err != nil {
+		if err := startWatch(block, plan.Channels, env); err != nil {
 			fmt.Fprintln(errOut, "burns: channels dialog will wait for you:", err)
 		}
 	}
@@ -145,9 +151,9 @@ func find(program string, env []string) (string, []string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), shellTimeout)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, shell, "-ic", `printf '\n%s' "$PATH"`)
-	cmd.Env = env
+	cmd.Env, cmd.WaitDelay = env, pipeGrace
 	out, err := cmd.Output()
-	if err != nil {
+	if err != nil && !errors.Is(err, exec.ErrWaitDelay) {
 		return "", env, fmt.Errorf("%s not found: %w", program, err)
 	}
 	lines := strings.Split(string(out), "\n")
@@ -156,7 +162,14 @@ func find(program string, env []string) (string, []string, error) {
 	if err != nil {
 		return "", env, err
 	}
-	return path, append(env, "PATH="+full), nil
+	return path, withVar(env, "PATH", full), nil
+}
+
+// withVar sets a variable once. A process reads the first value and exec does
+// not dedupe, so appending would leave the old value in charge.
+func withVar(env []string, name, value string) []string {
+	out := slices.DeleteFunc(slices.Clone(env), func(kv string) bool { return strings.HasPrefix(kv, name+"=") })
+	return append(out, name+"="+value)
 }
 
 func lookIn(program, list string) (string, error) {
@@ -171,10 +184,10 @@ func lookIn(program, list string) (string, error) {
 
 func pathOf(env []string) string { return valueOf(env, "PATH") }
 
-// valueOf reads the last value of a variable, the one a process sees last.
+// valueOf reads the first value of a variable, the one getenv returns.
 func valueOf(env []string, name string) string {
-	for i := len(env) - 1; i >= 0; i-- {
-		if v, ok := strings.CutPrefix(env[i], name+"="); ok {
+	for _, kv := range env {
+		if v, ok := strings.CutPrefix(kv, name+"="); ok {
 			return v
 		}
 	}
@@ -190,17 +203,25 @@ func resolved(program string, env []string) string {
 
 // startWatch leaves a detached watcher behind, since this process is about to
 // become the CLI. It runs on the host, so a sleeping Mac does not stop it.
-func startWatch(block string, servers []string) error {
+func startWatch(block string, servers, env []string) error {
 	self, err := os.Executable()
 	if err != nil {
 		return err
 	}
-	cmd := exec.Command(self, "answer-channels", "--block", block, "--servers", strings.Join(servers, ","))
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
+	cmd := watchCommand(self, block, servers, env)
 	if err := cmd.Start(); err != nil {
 		return err
 	}
 	return cmd.Process.Release()
+}
+
+// watchCommand gets the launch's resolved environment: the watcher's own PATH
+// may lack rex for the same reason it may lack the CLI.
+func watchCommand(self, block string, servers, env []string) *exec.Cmd {
+	cmd := exec.Command(self, "answer-channels", "--block", block, "--servers", strings.Join(servers, ","))
+	cmd.Env = env
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
+	return cmd
 }
 
 func answerChannels(args []string, errOut io.Writer) int {
@@ -211,8 +232,10 @@ func answerChannels(args []string, errOut io.Writer) int {
 	if fl.Parse(args) != nil || *block == "" || *servers == "" {
 		return 2
 	}
-	path, err := exec.LookPath("rex")
+	path, _, err := find("rex", os.Environ())
 	if err != nil {
+		// This process's stderr goes nowhere, so the log is the only record.
+		logLaunch(fmt.Sprintf("%s: channels dialog left for the operator: %v", *block, err))
 		fmt.Fprintln(errOut, "burns:", err)
 		return 1
 	}
@@ -227,7 +250,7 @@ func logLaunch(line string) {
 	if err != nil {
 		return
 	}
-	dir := filepath.Join(user, ".local", "state", "burns")
+	dir := config.StateDir(user)
 	if os.MkdirAll(dir, 0o700) != nil {
 		return
 	}

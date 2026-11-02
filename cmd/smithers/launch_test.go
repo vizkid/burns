@@ -14,6 +14,7 @@ func fakeHost(t *testing.T) string {
 	t.Helper()
 	user := t.TempDir()
 	t.Setenv("HOME", user)
+	t.Setenv("XDG_CONFIG_HOME", "")
 	bin := filepath.Join(user, "bin")
 	os.MkdirAll(bin, 0o700)
 	os.WriteFile(filepath.Join(bin, "claude"), []byte("#!/bin/sh\n"), 0o700)

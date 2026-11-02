@@ -6,6 +6,7 @@ public struct LaunchPanel: View {
     @State private var sentence: LaunchSentence
     @State private var note: String
     @State private var reading = false
+    @State private var launching = false
     @FocusState private var focused: Bool
     private let refresh: (() async -> LaunchSentence)?
     private let launch: (LaunchRequest) async -> String?
@@ -33,9 +34,9 @@ public struct LaunchPanel: View {
                 ScrollView {
                     VStack(spacing: 0) {
                         ForEach(sentence.options) { o in
-                            OptionRow(option: o, on: o.title == sentence.selected).id(o.id)
+                            OptionRow(option: o, on: o.id == sentence.selected).id(o.id)
                                 .contentShape(Rectangle())
-                                .onTapGesture { sentence.pick(o.title) }
+                                .onTapGesture { sentence.pick(o.id) }
                         }
                     }
                 }
@@ -61,8 +62,11 @@ public struct LaunchPanel: View {
         }
     }
 
-    /// With no projects yet, "no project" would read as an answer.
-    private var shownNote: String { note.isEmpty && reading && sentence.projects.isEmpty ? "Reading hosts" : note }
+    /// An error first. With no projects yet, "no project" would read as an answer.
+    private var shownNote: String {
+        if !note.isEmpty { return note }
+        return reading && sentence.projects.isEmpty ? "Reading hosts" : sentence.note
+    }
 
     private func press(_ k: KeyPress) -> KeyPress.Result {
         switch k.key {
@@ -72,9 +76,9 @@ public struct LaunchPanel: View {
         case .rightArrow: sentence.step(1)
         case .upArrow: sentence.move(-1)
         case .downArrow: sentence.move(1)
-        case .escape: close()
+        case .escape: if !sentence.back() { close() }
         case .return:
-            if k.modifiers.contains(.command) || sentence.onLast { go() } else { sentence.step(1) }
+            if k.modifiers.contains(.command) || sentence.onLast { go() } else { sentence.confirm() }
         case .delete: sentence.erase()
         default: return typed(k.characters)
         }
@@ -84,7 +88,7 @@ public struct LaunchPanel: View {
     private func typed(_ text: String) -> KeyPress.Result {
         guard let c = text.first, text.count == 1, c.isLetter || c.isNumber || c == " " || c == "." || c == "-" else { return .ignored }
         if let n = c.wholeNumberValue, n >= 1, sentence.query.isEmpty, n <= sentence.options.count {
-            sentence.pick(sentence.options[n - 1].title)
+            sentence.pick(sentence.options[n - 1].id)
             if !sentence.onLast { sentence.step(1) }
         } else {
             sentence.type(text)
@@ -92,10 +96,14 @@ public struct LaunchPanel: View {
         return .handled
     }
 
+    /// One launch at a time: a second Return while `rex` runs would start a second agent.
     private func go() {
+        guard !launching else { return }
         guard let request = sentence.request else { note = reading ? "" : sentence.problem ?? ""; return }
+        launching = true
         Task {
             if let error = await launch(request) { note = error } else { close() }
+            launching = false
         }
     }
 }

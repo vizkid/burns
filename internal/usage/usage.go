@@ -7,6 +7,9 @@ import "time"
 // Version is stamped at build time.
 var Version = "dev"
 
+// Retention is how long request, compaction, and closed binding rows are kept.
+const Retention = 7 * 24 * time.Hour
+
 // Providers.
 const (
 	Claude = "claude"
@@ -18,7 +21,6 @@ const (
 	SourceOTel       = "otel"
 	SourceTranscript = "transcript"
 	SourceRollout    = "rollout"
-	SourceStatusline = "statusline"
 	SourceHook       = "hook"
 )
 

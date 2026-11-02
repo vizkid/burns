@@ -107,7 +107,7 @@ public struct SpendRings<Mark: View>: View {
     }
 
     /// The time arc to draw over usage, when usage has passed it.
-    static func timeOnTop(fill: Double, elapsed: Double?) -> Double? {
+    nonisolated static func timeOnTop(fill: Double, elapsed: Double?) -> Double? {
         guard let elapsed, elapsed > 0, fill > elapsed else { return nil }
         return elapsed
     }

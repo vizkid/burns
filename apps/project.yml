@@ -14,7 +14,7 @@ configFiles:
   Release: Signing.generated.xcconfig
 settings:
   base:
-    SWIFT_VERSION: "5.0"
+    SWIFT_VERSION: "6.0"
     CODE_SIGN_STYLE: Automatic
     DEVELOPMENT_TEAM: $(BURNS_TEAM)
     MARKETING_VERSION: "0.1"

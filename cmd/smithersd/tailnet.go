@@ -61,16 +61,26 @@ func serveTailnetOnce(ctx context.Context, cli tailnet.CLI, reads http.Handler) 
 		MaxHeaderBytes:    8 << 10,
 		ErrorLog:          log.New(io.Discard, "", 0),
 	}
+	log.Printf("tailnet listener on %s for %s", addr, login)
+	return serveUntil(ctx, srv)
+}
+
+// serveUntil serves until ctx ends, then returns only once the running handlers
+// have finished, or after 5 seconds. ListenAndServe alone returns as soon as
+// shutdown starts, and a restart would then cut off the answer to the PUT behind it.
+func serveUntil(ctx context.Context, srv *http.Server) error {
+	shutDown := make(chan struct{})
 	stop := context.AfterFunc(ctx, func() {
+		defer close(shutDown)
 		shutdown, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 		srv.Shutdown(shutdown)
 	})
-	defer stop()
-	log.Printf("tailnet listener on %s for %s", addr, login)
 	if err := srv.ListenAndServe(); !errors.Is(err, http.ErrServerClosed) {
+		stop()
 		return err
 	}
+	<-shutDown
 	return nil
 }
 

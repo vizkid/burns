@@ -61,6 +61,20 @@ func TestDefaultClaudeHomeIsNotNamed(t *testing.T) {
 	}
 }
 
+// An inherited variable would put the default home's account on another home.
+func TestDefaultClaudeHomeClearsAnInheritedOne(t *testing.T) {
+	p := Build(Input{Account: config.Account{Provider: "claude", Name: "alpha"}, Home: user + "/.claude", UserHome: user})
+	for _, kv := range p.Environ([]string{"CLAUDE_CONFIG_DIR=/elsewhere", "KEEP=1"}) {
+		if strings.HasPrefix(kv, "CLAUDE_CONFIG_DIR=") {
+			t.Fatalf("env keeps %s", kv)
+		}
+	}
+	named := Build(Input{Account: config.Account{Provider: "claude", Name: "alpha"}, Home: user + "/.claude-alpha", UserHome: user})
+	if env := named.Environ([]string{"CLAUDE_CONFIG_DIR=/elsewhere"}); !has(env, "CLAUDE_CONFIG_DIR="+user+"/.claude-alpha") {
+		t.Fatalf("env = %v", env)
+	}
+}
+
 func TestCodexStaysOnItsDaemon(t *testing.T) {
 	a := config.Account{Provider: "codex", Name: "alpha", Launch: &config.Launch{Model: "m1"}}
 	p := Build(Input{Account: a, Home: user + "/.codex-alpha", UserHome: user, Channels: []string{"ignored"}})
@@ -131,6 +145,10 @@ func TestReadsTheDialog(t *testing.T) {
 		{"wrapped list", strings.Replace(dialog, "server:a server:b", "server:a\n          server:b", 1), []string{"a", "b"}, Answer},
 		{"trust", "Do you trust this folder?\n❯ No, exit\n  Yes, I trust this folder", []string{"a"}, Trust},
 		{"session", "Welcome to Claude Code\n> ", []string{"a"}, Nothing},
+		{"part painted", "WARNING: Loading development channels\n", []string{"a", "b"}, Foreign},
+		{"answered: prompt below", dialog + "\nWelcome\n\n❯ half a message\n", []string{"a", "b"}, Foreign},
+		{"scrolled away", dialog + strings.Repeat("output\n", 9), []string{"a", "b"}, Nothing},
+		{"old trust text", "Yes, I trust this folder\n" + strings.Repeat("output\n", 9), []string{"a"}, Nothing},
 	}
 	for _, c := range cases {
 		if got := Read(c.screen, c.want); got != c.got {
@@ -176,6 +194,14 @@ func TestWatchAnswersOnce(t *testing.T) {
 func TestWatchLeavesAForeignDialog(t *testing.T) {
 	p := &pane{screens: []string{dialog}}
 	if got := watch(p, []string{"a"}); !strings.Contains(got, "left for the operator") || p.entered != 0 {
+		t.Fatalf("got %q, entered %d", got, p.entered)
+	}
+}
+
+// A dialog caught mid-paint reads Foreign for a moment, and must not end the watch.
+func TestWatchOutlastsAPartPaintedDialog(t *testing.T) {
+	p := &pane{screens: []string{"WARNING: Loading development channels\n", dialog}}
+	if got := watch(p, []string{"a", "b"}); !strings.Contains(got, "answered") || p.entered != 1 {
 		t.Fatalf("got %q, entered %d", got, p.entered)
 	}
 }

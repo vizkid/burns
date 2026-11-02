@@ -6,7 +6,9 @@ import (
 	"errors"
 	"io"
 	"log"
+	"net"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -41,7 +43,8 @@ type Server struct {
 	accountsMu sync.Mutex
 }
 
-// Handler returns the route table.
+// Handler returns the route table for the loopback listener. Local tools send a
+// loopback Host and no Origin; a web page cannot send both (loopbackOnly).
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /v1/logs", s.logs)
@@ -49,7 +52,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /statusline", s.statusline)
 	mux.HandleFunc("POST /bind", s.bind)
 	s.reads(mux)
-	return mux
+	return loopbackOnly(noBrowser(mux))
 }
 
 // RemoteHandler returns the routes for the tailnet listener: the reads and the
@@ -58,7 +61,41 @@ func (s *Server) Handler() http.Handler {
 func (s *Server) RemoteHandler() http.Handler {
 	mux := http.NewServeMux()
 	s.reads(mux)
-	return mux
+	return noBrowser(mux)
+}
+
+// loopbackOnly refuses a Host that does not name this machine. A DNS-rebinding
+// page reaches 127.0.0.1 under its own name, and its Host still shows that name.
+func loopbackOnly(h http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !isLoopback(r.Host) {
+			http.Error(w, "forbidden", http.StatusForbidden)
+			return
+		}
+		h.ServeHTTP(w, r)
+	})
+}
+
+func isLoopback(host string) bool {
+	if h, _, err := net.SplitHostPort(host); err == nil {
+		host = h
+	}
+	host = strings.Trim(host, "[]")
+	ip := net.ParseIP(host)
+	return strings.EqualFold(host, "localhost") || (ip != nil && ip.IsLoopback())
+}
+
+// noBrowser refuses a request with an Origin header. Only browsers send one, and
+// no Burns caller is a web page. A cross-site POST with a text/plain body has no
+// preflight to stop it.
+func noBrowser(h http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if len(r.Header.Values("Origin")) > 0 {
+			http.Error(w, "forbidden", http.StatusForbidden)
+			return
+		}
+		h.ServeHTTP(w, r)
+	})
 }
 
 func (s *Server) reads(mux *http.ServeMux) {

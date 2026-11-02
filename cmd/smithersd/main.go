@@ -58,8 +58,8 @@ func run() error {
 		return err
 	}
 	addr := flag.String("addr", "127.0.0.1:9766", "listen address")
-	cfgPath := flag.String("config", filepath.Join(home, ".config", "burns", "accounts.json"), "accounts file")
-	dbPath := flag.String("db", filepath.Join(stateDir(home), "smithers.db"), "SQLite store")
+	cfgPath := flag.String("config", filepath.Join(config.Dir(home), "accounts.json"), "accounts file")
+	dbPath := flag.String("db", filepath.Join(config.StateDir(home), "smithers.db"), "SQLite store")
 	host := flag.String("host", shortHostname(), "host name reported to readers")
 	rexPath := flag.String("rex", lookRex(), "rex CLI that checks and ends bindings; empty disables")
 	tailscalePath := flag.String("tailscale", lookTailscale(), "tailscale CLI for the tailnet read listener; empty disables")
@@ -90,8 +90,8 @@ func run() error {
 	}
 	go loop(ctx, &collect.Collector{Store: st, Config: cfg, Now: time.Now}, st)
 
-	// A PUT /accounts write stops the server; run then returns errRestart once every
-	// handler and the store have finished.
+	// A PUT /accounts write stops both listeners; run then returns errRestart once
+	// the handlers on both have finished. Most writes arrive over the tailnet.
 	var restarting atomic.Bool
 	server := &api.Server{Store: st, Config: cfg, ConfigPath: *cfgPath, Host: *host, Now: time.Now,
 		Restart: func() { restarting.Store(true); stop() }}
@@ -105,9 +105,14 @@ func run() error {
 	} else {
 		log.Printf("WARN rex not found: bindings stay unverified and open")
 	}
+	tailnetDone := make(chan struct{})
 	if *tailscalePath != "" {
-		go serveTailnet(ctx, *tailscalePath, server.RemoteHandler())
+		go func() {
+			defer close(tailnetDone)
+			serveTailnet(ctx, *tailscalePath, server.RemoteHandler())
+		}()
 	} else {
+		close(tailnetDone)
 		log.Printf("WARN tailscale not found: no tailnet listener")
 	}
 	srv := &http.Server{
@@ -120,19 +125,11 @@ func run() error {
 		MaxHeaderBytes:    8 << 10,
 		ErrorLog:          log.New(io.Discard, "", 0),
 	}
-	shutDown := make(chan struct{})
-	go func() {
-		defer close(shutDown)
-		<-ctx.Done()
-		shutdown, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		srv.Shutdown(shutdown)
-	}()
 	log.Printf("smithersd %s listening on %s, %d accounts", usage.Version, *addr, len(cfg.Accounts))
-	if err := srv.ListenAndServe(); !errors.Is(err, http.ErrServerClosed) {
+	if err := serveUntil(ctx, srv); err != nil {
 		return err
 	}
-	<-shutDown
+	<-tailnetDone
 	if restarting.Load() {
 		return errRestart
 	}
@@ -162,13 +159,6 @@ func loop(ctx context.Context, c *collect.Collector, st *store.Store) {
 		case <-time.After(c.Interval()):
 		}
 	}
-}
-
-func stateDir(home string) string {
-	if d := os.Getenv("XDG_STATE_HOME"); d != "" {
-		return filepath.Join(d, "burns")
-	}
-	return filepath.Join(home, ".local", "state", "burns")
 }
 
 // lookRex finds rex on PATH. launchd's PATH lacks it, so the install passes --rex.

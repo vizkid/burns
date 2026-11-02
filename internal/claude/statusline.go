@@ -11,7 +11,6 @@ import (
 
 // Status is one statusline post.
 type Status struct {
-	Session        string
 	TranscriptPath string
 	Windows        quota.Windows
 }
@@ -28,7 +27,6 @@ type statusWindow struct {
 }
 
 type statusPayload struct {
-	SessionID      string `json:"session_id"`
 	TranscriptPath string `json:"transcript_path"`
 	RateLimits     *struct {
 		FiveHour *statusWindow `json:"five_hour"`
@@ -42,7 +40,7 @@ func ParseStatusline(body []byte, now time.Time) (Status, error) {
 	if err := json.Unmarshal(body, &p); err != nil {
 		return Status{}, err
 	}
-	st := Status{Session: p.SessionID, TranscriptPath: p.TranscriptPath, Windows: quota.Windows{}}
+	st := Status{TranscriptPath: p.TranscriptPath, Windows: quota.Windows{}}
 	if p.RateLimits == nil {
 		return st, nil
 	}

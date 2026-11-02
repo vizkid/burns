@@ -123,7 +123,11 @@ func (s *Store) Limits() ([]Limit, error) {
 		}
 		get(p, a, l).Windows[m] = quota.Window{Percent: &pct, ResetsAt: fromNanos(reset), ObservedAt: fromNanos(obs)}
 	}
+	err = rows.Err()
 	rows.Close()
+	if err != nil {
+		return nil, err
+	}
 	rows, err = s.rdb.Query(`SELECT provider, account, limit_id, has_credits, unlimited, balance, observed_at FROM credits
 		ORDER BY provider, account, limit_id`)
 	if err != nil {

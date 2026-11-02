@@ -93,7 +93,7 @@ func TestStatuslineAbsentWindowStaysAbsent(t *testing.T) {
 	if !ok || w.Percent == nil || *w.Percent != 0 || !w.ResetsAt.Equal(time.Unix(1793300000, 0)) || !w.ObservedAt.Equal(now) {
 		t.Fatalf("seven_day = %+v", w)
 	}
-	if st.Session != "s1" || st.TranscriptPath == "" {
+	if st.TranscriptPath == "" {
 		t.Fatalf("identity missing: %+v", st)
 	}
 }
@@ -121,11 +121,13 @@ not json
 {"type":"system","subtype":"compact_boundary","sessionId":"s1","uuid":"u1","timestamp":"2026-10-28T04:01:13.532Z","compactMetadata":{"trigger":"manual","preTokens":66481,"postTokens":14838,"durationMs":6675}}
 `
 
-func TestScanTranscriptDedupes(t *testing.T) {
-	reqs, comps, err := ScanTranscript(strings.NewReader(transcript), "personal")
-	if err != nil {
-		t.Fatal(err)
+func TestTranscriptDedupes(t *testing.T) {
+	var lines [][]byte
+	for _, line := range strings.Split(transcript, "\n") {
+		lines = append(lines, []byte(line))
 	}
+	d := &Transcript{Account: "personal"}
+	reqs, comps := d.Lines(lines)
 	if len(reqs) != 2 {
 		t.Fatalf("requests = %d; want 2 (req_1 once, m2 by message id)", len(reqs))
 	}

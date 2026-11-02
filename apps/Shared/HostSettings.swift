@@ -4,7 +4,7 @@ import SwiftUI
 /// The host list (docs/SPEC.md, "Apps and widgets"): one tailnet name per smithersd. A grouped
 /// form, as in System Settings: the hosts and the add row in one section, the note as its footer.
 struct HostSettings: View {
-    @ObservedObject var store: UsageStore
+    let store: UsageStore
     @State private var draft = ""
     @State private var review: HeldHost?
 
@@ -86,7 +86,7 @@ struct HeldHost: Identifiable {
 
 /// Settings' Accounts page, on the live central list.
 struct AccountSettings: View {
-    @ObservedObject var store: UsageStore
+    let store: UsageStore
 
     var body: some View {
         let list = Binding(get: { store.central }, set: { store.edit($0) })

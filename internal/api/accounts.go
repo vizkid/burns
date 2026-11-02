@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"slices"
 
 	"github.com/vizkid/burns/internal/config"
 )
@@ -75,8 +76,13 @@ func (s *Server) putAccounts(w http.ResponseWriter, r *http.Request) {
 }
 
 // writeAtomic writes a temporary file beside path, mode 0600, and renames it
-// over path: a crash mid-write leaves the old file whole.
+// over path: a crash mid-write leaves the old file whole. A symlink stays: the
+// write lands on its target, so a file kept in a dotfiles checkout stays managed.
 func writeAtomic(path string, b []byte) error {
+	path, err := filepath.EvalSymlinks(path)
+	if err != nil {
+		return err
+	}
 	f, err := os.CreateTemp(filepath.Dir(path), ".accounts-*.json")
 	if err != nil {
 		return err
@@ -101,7 +107,12 @@ func writeAtomic(path string, b []byte) error {
 	return os.Rename(tmp, path)
 }
 
-// homeExists reports whether an account's home is on this host.
+// setUp reports whether any of an account's homes is on this host. The collector
+// reads them all, so one is enough for its limits to be real.
+func (s *Server) setUp(a config.Account) bool {
+	return slices.ContainsFunc(s.Config.HomeDirs(a), s.homeExists)
+}
+
 func (s *Server) homeExists(dir string) bool {
 	if s.HomeExists != nil {
 		return s.HomeExists(dir)

@@ -66,7 +66,11 @@ func (s *Store) Sweep(now time.Time) error {
 			gone = append(gone, p)
 		}
 	}
+	err = rows.Err()
 	rows.Close()
+	if err != nil {
+		return err
+	}
 	for _, p := range gone {
 		if _, err := s.db.Exec(`DELETE FROM cursor WHERE path = ?`, p); err != nil {
 			return err

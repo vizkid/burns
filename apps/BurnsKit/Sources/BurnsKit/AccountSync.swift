@@ -13,6 +13,8 @@ public enum AccountSync {
     /// What one run did about one host.
     public enum State: Equatable, Sendable {
         case inStep, written, unreachable, unreadable
+        /// iCloud has not delivered the whole list, so the host was left alone.
+        case waiting
         /// The host's file differs and writing could lose something: held, with what the host has.
         case review([CentralAccount])
         case refused(Int)
@@ -30,12 +32,20 @@ public enum AccountSync {
 
     /// The central list wins, but never silently: a host is written only when that loses nothing.
     /// That is when the file is what was last written, or holds only accounts the list already has.
-    /// An empty list never writes, so a store that came back empty cannot wipe a host.
+    /// An empty list never writes, so a store that came back empty cannot wipe a host. Fields the
+    /// list has not seen are held even when the hash matches: a host in step before the app knew
+    /// `launch` holds a matching hash, and writing would delete its credential reference.
     public static func decide(central: [CentralAccount], host: [CentralAccount], hostHash: String, written: String?) -> Decision {
         if central == host { return .inStep }
-        if central.isEmpty { return .review }
+        if central.isEmpty || holdsUnseenFields(central: central, host: host) { return .review }
         if hostHash == written || host.allSatisfy(central.contains) { return .write }
         return .review
+    }
+
+    /// An account on both sides whose host copy has fields that the list's copy does not match.
+    /// An account gone from the list is a removal, and its fields go with it.
+    static func holdsUnseenFields(central: [CentralAccount], host: [CentralAccount]) -> Bool {
+        host.contains { h in !h.extra.isEmpty && central.contains { $0.id == h.id && $0.extra != h.extra } }
     }
 
     /// First use: every host's accounts, matched by provider and name, in the order first seen. The
@@ -57,30 +67,51 @@ public enum AccountSync {
         return (accounts, conflicts)
     }
 
-    /// One pass over the hosts. A host that cannot be reached catches up on a later pass.
-    /// `mayImport` is false until iCloud has had time to deliver: a new device must not take the
-    /// hosts' accounts over a list it has not downloaded yet.
-    public static func run(hosts: [String], store: CentralStore, client: some AccountHosts, mayImport: Bool = true) async -> [HostSync] {
-        var read: [String: Result<(accounts: [CentralAccount], etag: String), Failure>] = [:]
-        for host in hosts { read[host] = await fetch(host, client) }
-        var central = store.load()
-        if central == nil {
-            guard mayImport else { return hosts.map { HostSync(host: $0, state: .unreachable) } }
+    /// One pass over the hosts, all at one time. A host that cannot be reached catches up on a later
+    /// pass. `settled` is false while iCloud may still be delivering: a new device must not take the
+    /// hosts' accounts over a list it has not downloaded, and a part of a list must not be copied.
+    public static func run(hosts: [String], store: CentralStore, client: some AccountHosts, settled: Bool = true) async -> [HostSync] {
+        let read = await reads(hosts, client)
+        let central: [CentralAccount]
+        switch store.stored() {
+        case .ready(let list): central = list
+        case .arriving:
+            guard settled, let list = store.settle() else { return hosts.map { HostSync(host: $0, state: .waiting) } }
+            central = list
+        case .never:
+            guard settled else { return hosts.map { HostSync(host: $0, state: .waiting) } }
             let answered = hosts.compactMap { host in (try? read[host]?.get())?.accounts }
             guard !answered.isEmpty else { return hosts.map { HostSync(host: $0, state: failure(read[$0])) } }
-            let list = importing(answered).accounts
-            store.save(list)
-            central = list
+            central = importing(answered).accounts
+            store.save(central)
         }
-        var out: [HostSync] = []
-        for host in hosts {
-            guard case .success(let file)? = read[host], let central else {
-                out.append(HostSync(host: host, state: failure(read[host])))
-                continue
+        let states = await withTaskGroup(of: (String, State).self) { group in
+            for host in hosts {
+                let answer = read[host]
+                group.addTask {
+                    guard case .success(let file)? = answer else { return (host, failure(answer)) }
+                    return (host, await apply(central, file, host, store, client))
+                }
             }
-            out.append(HostSync(host: host, state: await apply(central, file, host, store, client)))
+            return await group.reduce(into: [String: State]()) { $0[$1.0] = $1.1 }
         }
-        return out
+        return hosts.map { HostSync(host: $0, state: states[$0] ?? .unreachable) }
+    }
+
+    /// Replaces a held host's file with the list, after the operator chose that in the review.
+    public static func overwrite(host: String, store: CentralStore, client: some AccountHosts) async -> State {
+        guard let central = store.load(), !central.isEmpty else { return .waiting }
+        switch await fetch(host, client) {
+        case .success(let file): return await write(central, file.etag, host, store, client)
+        case let failed: return failure(failed)
+        }
+    }
+
+    private static func reads(_ hosts: [String], _ client: some AccountHosts) async -> [String: Result<(accounts: [CentralAccount], etag: String), Failure>] {
+        await withTaskGroup(of: (String, Result<(accounts: [CentralAccount], etag: String), Failure>).self) { group in
+            for host in hosts { group.addTask { (host, await fetch(host, client)) } }
+            return await group.reduce(into: [:]) { $0[$1.0] = $1.1 }
+        }
     }
 
     enum Failure: Error { case unreachable, unreadable, refused(Int) }
@@ -107,21 +138,26 @@ public enum AccountSync {
 
     private static func apply(_ central: [CentralAccount], _ file: (accounts: [CentralAccount], etag: String), _ host: String,
                               _ store: CentralStore, _ client: some AccountHosts) async -> State {
-        switch decide(central: central, host: file.accounts, hostHash: file.etag, written: store.written(host: host)) {
+        let written = store.written(host: host)
+        switch decide(central: central, host: file.accounts, hostHash: file.etag, written: written) {
         case .inStep:
-            store.setWritten(file.etag, host: host)
+            if written != file.etag { store.setWritten(file.etag, host: host) } // iCloud limits its write rate.
             return .inStep
         case .review:
             return .review(file.accounts)
         case .write:
-            do {
-                store.setWritten(try await client.put(host, data: AccountsFile(accounts: central).encoded(), etag: file.etag), host: host)
-                return .written
-            } catch let e as HostFetcher.Refused {
-                return .refused(e.status)
-            } catch {
-                return .unreachable
-            }
+            return await write(central, file.etag, host, store, client)
+        }
+    }
+
+    private static func write(_ central: [CentralAccount], _ etag: String, _ host: String, _ store: CentralStore, _ client: some AccountHosts) async -> State {
+        do {
+            store.setWritten(try await client.put(host, data: AccountsFile(accounts: central).encoded(), etag: etag), host: host)
+            return .written
+        } catch let e as HostFetcher.Refused {
+            return .refused(e.status)
+        } catch {
+            return .unreachable
         }
     }
 }
@@ -133,6 +169,7 @@ extension AccountSync.State {
         case .inStep: "Accounts in step"
         case .written: "Accounts updated"
         case .unreachable: "Accounts not checked"
+        case .waiting: "Accounts waiting for iCloud"
         case .unreadable: "Accounts file unreadable"
         case .review: "Accounts differ, not overwritten"
         case .refused(let status): "Accounts refused (\(status))"
@@ -152,7 +189,7 @@ public struct HostAccounts: AccountHosts {
     }
 
     private func send(_ request: URLRequest) async throws -> (Data, String) {
-        let (data, response) = try await URLSession(configuration: .ephemeral).data(for: request)
+        let (data, response) = try await HostFetcher.session.data(for: request)
         guard let http = response as? HTTPURLResponse else { throw URLError(.badServerResponse) }
         guard http.statusCode == 200 else { throw HostFetcher.Refused(status: http.statusCode) }
         return (data, http.value(forHTTPHeaderField: "ETag") ?? "")

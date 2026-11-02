@@ -6,7 +6,7 @@ import SwiftUI
 /// the ring row over the selected account's burndown.
 @main
 struct BurnsMacApp: App {
-    @StateObject private var store = UsageStore()
+    private var store: UsageStore { .shared }
     @NSApplicationDelegateAdaptor(BurnsDelegate.self) private var delegate
 
     /// `open -a Burns --args --hosts a.ts.net,b.ts.net` replaces the host list: macOS keeps the
@@ -23,7 +23,7 @@ struct BurnsMacApp: App {
             MenuWindow(store: store)
         } label: {
             Image(nsImage: FlameIcon.image(store.model.pickVerdict))
-                .task { LaunchWindow.store = store; await store.poll() }
+                .task { await store.poll() }
         }
         .menuBarExtraStyle(.window)
         Settings {
@@ -37,8 +37,10 @@ struct BurnsMacApp: App {
 }
 
 struct MenuWindow: View {
-    @ObservedObject var store: UsageStore
-    @StateObject private var panes = PaneReader()
+    let store: UsageStore
+    @State private var panes = PaneReader()
+    /// The menu window: other windows of this app becoming key are not an opening.
+    @State private var window: NSWindow?
     @Environment(\.openSettings) private var openSettings
 
     var body: some View {
@@ -60,9 +62,10 @@ struct MenuWindow: View {
             LaunchWindow.prepare()
             await reload()
         }
+        .background(WindowReader { window = $0 })
         // The window keeps its view between openings, so `.task` runs once. This is each opening.
-        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { _ in
-            Task { await reload() }
+        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { note in
+            if let window, note.object as? NSWindow === window { Task { await reload() } }
         }
     }
 
@@ -89,6 +92,28 @@ extension MenuWindow {
         .buttonStyle(.borderless)
         .imageScale(.large)
     }
+}
+
+/// Reports the window a view sits in.
+private struct WindowReader: NSViewRepresentable {
+    let found: @MainActor (NSWindow?) -> Void
+
+    final class Reader: NSView {
+        var found: (@MainActor (NSWindow?) -> Void)?
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            let window = window, found = found
+            Task { @MainActor in found?(window) } // Not during SwiftUI's own update.
+        }
+    }
+
+    func makeNSView(context: Context) -> Reader {
+        let view = Reader()
+        view.found = found
+        return view
+    }
+
+    func updateNSView(_ view: Reader, context: Context) { view.found = found }
 }
 
 /// The menu bar flame: a template image on or under pace, amber or red when Enter's pick is not.

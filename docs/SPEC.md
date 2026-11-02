@@ -1,6 +1,6 @@
 # Burns
 
-Owner: Viz · Last updated: 2026-10-30 · Status: draft, not ratified
+Owner: Viz · Last updated: 2026-11-01 · Status: draft, not ratified
 
 ## Problem and solution
 
@@ -168,10 +168,10 @@ Today the apps only read accounts, and only a file edit on each host changes the
 | Every account applies to every host. Homes are relative to the user's home, so one path works on each host. | Viz, 2026-10-31: accounts work on any host by default. |
 | The apps propagate the list. On each refresh an app reads each host's accounts with `GET /accounts` and, when they differ from the central list, writes it with `PUT /accounts`. A host that was offline catches up when an app next reaches it. | Hosts never need iCloud. `smithersd` still reads a local file at startup, so a host keeps working with no app running. |
 | `PUT` will replace the file's `accounts` only, once the file has `providers` (not built: the file has only `accounts` today, so `PUT` replaces the whole file). The file's `providers`, each provider's CLI on that host, stay as the host set them. | A CLI's path is a fact of one host, not of the account. |
-| The central list wins, but never silently. An app remembers the hash it last wrote to each host. If the host's file changed since, by hand or by an agent, the app shows the difference and offers to import it into the central list or overwrite it. | Hand edits and the README setup prompt stay useful, and nothing is lost unseen. |
+| The central list wins, but never silently. An app remembers the hash it last wrote to each host. If the host's file changed since, by hand or by an agent, the app shows the difference and offers to import it into the central list or overwrite it. A write never deletes fields the app does not edit: an account keeps `launch` and any other field as read. A host whose copy of an account holds such fields, and the list's copy does not match, is held for review even when its hash matches. Overwrite in the review is the only write that drops them. | Hand edits and the README setup prompt stay useful, and nothing is lost unseen. |
 | On first use, the app imports every host's accounts into the central list, matched by provider and name. If two hosts give one account different homes, the app asks which to keep. | Existing hosts already have files. |
 | `PUT` carries `If-Match` with the `ETag` that `GET` returned, a hash of the file. A mismatch answers 412: the app reads again and applies the rule above. | Another device, or a hand edit, may have changed the file between the read and the write. |
-| An account whose home is missing on a host is "not set up" there. `PUT` accepts it, and `GET /usage` lists it with `set_up: false` and no limits. Each scan already skips a missing home, so collecting starts once the home appears, without a restart. | Accounts exist everywhere, so a missing home is expected, not an error. No usage there is unknown, never zero. A launch creates the home while `smithersd` runs. |
+| An account with none of its homes on a host, `home` or `extra_homes`, is "not set up" there. `PUT` accepts it, and `GET /usage` lists it with `set_up: false` and no limits. Each scan already skips a missing home, so collecting starts once the home appears, without a restart. | Accounts exist everywhere, so a missing home is expected, not an error. No usage there is unknown, never zero. A launch creates the home while `smithersd` runs. |
 | Launching an account on a host where it is not set up sets it up first: Burns creates the home, mode 0700, links its skills, and starts the CLI there. The CLI's own first-run login runs in that session. Settings shows, for each account, the hosts where it is set up. | Viz, 2026-10-31: set up the home on launch. The first launch on a host is when the home is needed, and the login then happens in the terminal Viz is already looking at. |
 | `PUT` validates as startup does. A failure answers 422 with the reason, and the file is unchanged. The write is atomic: a temporary file in the same folder, then a rename. Mode 0600. | A bad list never reaches the collector, and a crash mid-write leaves the old file whole. |
 | After a write, `smithersd` replaces itself with the same binary and arguments (`exec`). | The collector and the API take the accounts at startup. Re-reading in place would need every part to reload. `exec` launches no other program. |
@@ -182,7 +182,7 @@ Today the apps only read accounts, and only a file edit on each host changes the
 | A name with no colour takes the next unused swatch in list order. | Every ring gets a colour without setup. |
 | Ring glyphs draw in the account's colour, full strength when selected and at 55% when not. Azure draws its mark in greyscale, keeping its light and dark parts, and in full colour only when selected. | Viz, 2026-10-30, and as Penfold's rings did. Viz, 2026-10-31: greyscale as Rex draws it, not a flat grey silhouette. |
 | Ring order is the central order. | One list, one order. |
-| Built 2026-10-31: the iCloud list, first-use import and propagation. A host's file is written only when it is what was last written or holds only accounts the list has. Any other difference is held, and Settings says so next to the host. The last written hash is shared in iCloud, so one device's write is not a hand edit on another. An empty list never writes. Rings read `colour`. They do not read the central order yet. Not verified: that the list crosses devices through iCloud. A new device waits 60 seconds for iCloud before it imports from the hosts. | Writing live configuration must lose nothing unseen. Editing needs Settings, so the crossing is tested there. |
+| Built 2026-10-31: the iCloud list, first-use import and propagation. A host's file is written only when it is what was last written or holds only accounts the list has. Any other difference is held, and Settings says so next to the host. The last written hash is shared in iCloud, so one device's write is not a hand edit on another. An empty list never writes. A `digest` key hashes each saved list, because iCloud delivers keys one at a time. A list with a missing account, or one that does not match the digest, copies to no host, and Settings says "Accounts waiting for iCloud". After 60 quiet seconds a list with every account present is accepted. A missing account stays missing until an edit replaces it. Rings read `colour`. They do not read the central order yet. Not verified: that the list crosses devices through iCloud. A new device waits 60 seconds for iCloud before it imports from the hosts. | Writing live configuration must lose nothing unseen. Editing needs Settings, so the crossing is tested there. |
 | `colour` and `emoji` are fields in the accounts file, and `smithersd` validates them: a swatch name, and at most 16 runes with no control characters. | Every host must accept what an app sends. A host on an older `smithersd` refuses these fields with 422, and Settings shows that. |
 | Later, if needed: an optional `hosts` list per account limits it to those hosts. Not built. | Viz, 2026-10-31: does not need it now. |
 
@@ -196,6 +196,7 @@ Burns manages homes, logins and skills only when Viz asks it to, and works with 
 
 | Decision | Reason |
 |---|---|
+| A typed `~/x` is stored as `x`, relative to the user's home. A file home starting with `~` is refused, because nothing on a host expands it. | The apps write the relative form. |
 | Add Account adopts an existing home as it is, or offers a new one, `~/.claude-<name>` or `~/.codex-<name>`. A new home is created on each host at its first launch there. | Nothing moves. On macOS, Claude Code files its login in the Keychain under the home's path, so a moved home loses its login. |
 | A new home logs in with the CLI's own login, in the launched session on that host. Each host logs in once per account. | Both CLIs replace refresh tokens as they use them, so a login copied to a second host can log the first one out. Burns never copies login files. |
 | Optional for Claude: `claude setup-token` makes one long-lived token, kept in cop and passed at launch with `cop run --env CLAUDE_CODE_OAUTH_TOKEN`. The per-host login stays as the fallback. | cop already replicates its keys to every host. Reports of these tokens failing with 401 mean they cannot be the only login. |
@@ -217,7 +218,7 @@ Tools such as roar, smithers, rex and cop each need something in every account's
 | MCP servers register through the CLI's own command, at user scope, in that home: `claude mcp add`, `codex mcp add`. | Burns does not hand-edit the CLIs' configuration files. |
 | Hooks are appended to the home's hook list. Burns never reorders or rewrites existing entries. | Codex trusts a hook by its position and hash, so a reorder untrusts it. Other tools' hooks stay as they are. |
 | Claude channel servers from every tool merge into one `--dangerously-load-development-channels=server:a server:b` flag at launch. | Claude takes one flag for several servers. |
-| Burns answers Claude's development-channels dialog for the sessions it launches. After launch it watches the new pane through Rex for up to 60 seconds. When the dialog lists exactly the servers Burns put in the flag, Burns selects "I am using this for local development". A dialog that lists anything else is left for the operator, and Burns reports it. Each answer is logged with the pane and the servers. Detection reads the screen with `rex capture -s <session> -b <block> --trim`: the dialog starts "WARNING: Loading development channels" and has a "Channels: server:a ..." line, with `❯` on "1. I am using this for local development". Burns sends Enter, never Esc, which cancels. Success shows in `roar panes` as path `channel` for that pane. Untested: the Channels line with several servers. | Viz, 2026-10-31: a session launched overnight must not wait on the dialog. On a Pro or Max account a custom channel needs the development flag, and the docs offer no setting that skips its dialog. Matching the exact server list keeps the answer to the channels Burns itself asked for. Roar, 2026-10-31: Claude reports no program status until the dialog is answered, and roar's server has not started, so only the screen shows it. |
+| Burns answers Claude's development-channels dialog for the sessions it launches. After launch it watches the new pane through Rex for up to 60 seconds. When the dialog lists exactly the servers Burns put in the flag, Burns selects "I am using this for local development". A dialog that lists anything else is left for the operator, and Burns reports it. Each answer is logged with the pane and the servers. Detection reads the screen with `rex capture -s <session> -b <block> --trim`: the dialog starts "WARNING: Loading development channels" and has a "Channels: server:a ..." line, with `❯` on "1. I am using this for local development". That cursor must be the last one in the capture, with at most 4 painted lines below it: the capture includes scrollback, and a later cursor is Claude's live prompt. A dialog must read as not Burns's for 3 reads in a row before Burns leaves it, because a capture can land mid-paint. This reading of one pane's screen is the one exception to "Burns scrapes nothing" (Viz, 2026-10-31). Burns sends Enter, never Esc, which cancels. Success shows in `roar panes` as path `channel` for that pane. Untested: the Channels line with several servers. | Viz, 2026-10-31: a session launched overnight must not wait on the dialog. On a Pro or Max account a custom channel needs the development flag, and the docs offer no setting that skips its dialog. Matching the exact server list keeps the answer to the channels Burns itself asked for. Roar, 2026-10-31: Claude reports no program status until the dialog is answered, and roar's server has not started, so only the screen shows it. |
 | Burns never writes Codex's `trusted_hash`. It reports hooks that still need `/hooks` approval in Settings and in the launched session. | Approval is once per home, not per launch, and an unapproved hook does not stop the session. |
 | A Codex launch first runs `CODEX_HOME=<home> codex app-server daemon start`, which does nothing if a daemon runs. It never passes `-c`, `-p`, `--no-daemon` or `--remote`. `-m <model>` and an initial prompt are allowed. | Roar, 2026-10-31, verified on Codex CLI 0.165.0: any `-c` override, even `-c model_reasoning_effort=medium`, runs the TUI in-process, off the home's app-server daemon, so roar cannot deliver natively. `roar panes [host]` shows `codex_native` for a pane on the daemon. |
 | Burns launches Codex with no effort setting and never edits a home's `config.toml`. Each home keeps the effort its operator set. Panes launched outside Burns stay as their operator launched them. | Viz, 2026-10-31: Burns cannot force users to change their configuration. `-c` is ruled out above. Roar, 2026-10-31, verified on Codex CLI 0.165.0: `-p` also runs the TUI in-process ("--profile requires embedded mode"). A daemon-backed pane binds the first time its agent runs a roar command; until then delivery is typed and `roar panes` shows `unbound_codex`. |
@@ -236,9 +237,9 @@ Tools such as roar, smithers, rex and cop each need something in every account's
 | Rule | Detail |
 |---|---|
 | Address | The first tailnet IPv4 address from `tailscale ip -4`, port 9766. If Tailscale is down at start, `smithersd` retries every 30 seconds. |
-| Routes | `GET /usage`, `/usage/readings`, `/usage/history`, `/usage/sessions`, `/usage/panes`, and `GET` and `PUT /accounts`, so either app can propagate the account list (see "Accounts in the apps"). Every other route answers 404 there. |
+| Routes | `GET /usage`, `/usage/readings`, `/usage/history`, `/usage/sessions`, `/usage/panes`, `GET /models`, and `GET` and `PUT /accounts`, so either app can propagate the account list (see "Accounts in the apps"). Every other route answers 404 there. |
 | Caller check | `tailscale whois --json` on the caller's address. The caller's login must equal the login that owns this host's node. A tagged node, another user, or a failed lookup answers 403. |
-| Cache | A lookup is kept 5 minutes per caller address. |
+| Cache | Each answer, allowed or refused, is kept 5 minutes per caller address. A failed lookup is not kept. A lookup is limited to 5 seconds. |
 | Transport | Plain HTTP inside the tailnet, which WireGuard encrypts. The iOS app allows plain HTTP only for `ts.net` names. |
 | Flag | `--tailscale` names the CLI. The install passes the path it finds, as it does for `rex`. Empty disables the listener. |
 
@@ -256,7 +257,7 @@ The Mac menu bar window and the iPhone app show, under the burndown, how the sel
 | Rex decides what is live, and `smithersd` asks it, so neither app needs the `rex` CLI. A row counts only if its block is in Rex's list now. `checked` says the list is usable. `smithersd` lists panes every 15 seconds and keeps the list in memory, so a read costs no Rex calls: one listing took about 0.4 s. A list older than 2 minutes counts as no answer. | An open binding can outlive its pane: 3 of 9 on one host on 2026-11-01. Why those bindings stayed open is not known. |
 | A host whose `smithersd` or Rex did not answer is named under the bar, and shares leave it out. | Rule 9: unknown is never zero. A partial Rex list counts as no answer, because it would call live panes dead. Rows with `checked` false or missing count as unread. |
 | A host's icon is the one picked in Rex, from any Rex entry for that host: its label or its tailnet name. Rex stores none for its own machine, so that shows a laptop if the Mac has a battery and a desktop if not. Any other host with no pick shows a desktop. | Rex keeps a pick on the one entry it was made on. Viz, 2026-11-01: a pick made in Rex's settings landed on a host's tailnet-name entry, not its label. |
-| Both apps reload through one path: usage and panes together, each host shown as it answers. The Mac reads when the window opens and on Refresh. The iPhone reads on launch, on return, and on a pull. Neither reads panes on the 60-second poll. | Only an open screen draws them. The reload runs in its own task: SwiftUI cancels the task of a pull to refresh, and a cancelled read looked like every host failing. A cancelled read says nothing about a host, so it does not mark one as failed. |
+| Both apps reload through one path: usage and panes together, each host shown as it answers. The Mac reads when the window opens and on Refresh. The iPhone reads on launch, on return, and on a pull. Neither reads panes on the 60-second poll. A host added since the last read gets its panes at once. An open iPhone screen rebuilds from its cache every 60 seconds with no fetch, so a reset passes and the arcs move. | Only an open screen draws them. The reload runs in its own task: SwiftUI cancels the task of a pull to refresh, and a cancelled read looked like every host failing. A cancelled read says nothing about a host, so it does not mark one as failed. |
 | A session nested in a pane, such as `claude -p` run by the agent's shell tool, counts as one of that pane's subagents. | Its bindings share a foreground process and both stay open. The oldest open binding in a block is the pane's own session. |
 | The window ends with one line of hosts: each host's icon, name and answer age. A failed host shows a warning symbol, the reason and the age of its data. With too many hosts for the line, ages go first. | Viz, 2026-11-01: one line under the shares, using the same icons. |
 
@@ -291,7 +292,7 @@ An account is a provider plus an account name, such as Claude `viz` or Codex `az
 Azure exists only for Codex. Local configuration declares the accounts, their agent homes, and their launchers.
 Shared source uses example names only.
 
-`smithersd` reads `~/.config/burns/accounts.json`. The example is `docs/accounts.example.json`.
+`smithersd` reads `$XDG_CONFIG_HOME/burns/accounts.json`, or `~/.config/burns/accounts.json`. `smithers launch` reads the same folder. The example is `docs/accounts.example.json`.
 
 | Field | Meaning |
 |---|---|
@@ -329,7 +330,7 @@ Burns rewrites the code from these rules. Each rule gets a test.
 3. A reported zero with a future reset is a real reading.
 4. If Claude omits a window, keep the stored reading until its reset passes.
 5. If Codex omits the five-hour window, clear it. A Codex account can report only a weekly window.
-6. When merging hosts, take the newest live reading per window. Within one window the highest percent wins (rule 10). Keep source times unchanged.
+6. When merging hosts, take the newest live reading per `limit_id` and window. Within one window the highest percent wins (rule 10). Keep source times unchanged. Each pool merges on its own; for each window length, the pool with the highest percent stands for the account, and the burndown reads only that pool's readings.
 7. Never infer a percentage or a reset time from token counts.
 8. A burn rate needs two samples from one session. Until then it is unavailable.
 9. Unknown or stale data never displays as zero or unlimited.
@@ -338,7 +339,7 @@ Burns rewrites the code from these rules. Each rule gets a test.
 ### Sources
 
 Research on 2026-10-27 and 2026-10-28 picked one live source and one durable backfill per provider.
-Every source is a documented feature or a local file the CLI writes. Burns scrapes nothing.
+Every source is a documented feature or a local file the CLI writes. Burns scrapes nothing, with one exception: a launch reads its own pane through `rex capture` to answer Claude's channels dialog (see "Launch").
 
 | Data | Claude | Codex |
 |---|---|---|
@@ -556,7 +557,7 @@ The top of the modal shows the host and session, filled in from where the modal 
 The launch reads as a sentence, in this order (Viz, 2026-10-31):
 
 1. Agent: Codex, Claude, Antigravity or Devin.
-2. Model: "Default" never shows. Burns resolves it to the actual model, version and effort the account's home would run, and marks that row Default.
+2. Model: "Default" never shows. Burns resolves it to the actual model, version and effort the account's home would run, and marks that row Default. An account's `launch` override comes first. Then the home's settings. For Codex with neither, the listed model of lowest priority in `models_cache.json`, and its effort from `default_reasoning_level`. A custom provider has no such default.
 3. Effort: its own word, shown only when Burns can set it at launch. Codex has none: the model word shows the home's effort, fixed.
 4. Billing account: the accounts of that agent, with quota left.
 5. Project: a folder.
@@ -595,7 +596,9 @@ Exhausted means a live window at 100 percent.
 Rule 5 also puts Azure ahead of paid Claude extra usage.
 
 The winning account brings its model and effort defaults.
-The modal shows why it picked that account, for example "Codex nfx: 62% left" or "All quotas exhausted: Azure".
+With no quota account at all, none has quota left, so the rule chooses Azure.
+
+The modal shows why it picked that account, for example "Codex nfx: 62% left", "All quotas exhausted: Azure", "No quota accounts: Azure" or "Usage unknown: Codex nfx". The line shows while that account is selected.
 
 ### Keyboard
 
@@ -619,13 +622,13 @@ The Unicode marks are only for a terminal fallback, if one is built.
 
 ## Launch
 
-Built 2026-10-31, tested live with real Claude on one host: `smithers launch --provider P --account NAME [--model M] [--effort E] [--permission-mode P]`. The app starts it as the command of a new Rex tab, so it runs inside the tab and knows its block. It reads the accounts file and `tools.d`, creates a missing home (mode 0700), sets the environment, starts Codex's daemon, leaves a detached watcher for Claude's channels dialog, and replaces itself with the CLI (`exec`), so no wrapper stays in the pane. Telemetry variables move here from the dotfiles `claude` function. The watcher runs on the host, so a sleeping Mac does not stop it. It keeps waiting while the folder-trust dialog shows, because the channels dialog may follow it. Answers go to `~/.local/state/burns/launch.log`. A failure holds the tab open with the reason. A Claude home at the default `~/.claude` gets no `CLAUDE_CONFIG_DIR`, because its Keychain login is filed without that path. Accounts take `launch` in the file: `model`, `effort`, `permission_mode` and `credential` (cop `account`, `ref`, `env`). Codex accounts refuse effort and permission mode. Several channel servers pass as one flag with separate values, last on the command line; untested with more than one. Not built: applying `mcp` and `hooks` declarations and skill links.
+Built 2026-10-31, tested live with real Claude on one host: `smithers launch --provider P --account NAME [--model M] [--effort E] [--permission-mode P]`. The app starts it as the command of a new Rex tab, so it runs inside the tab and knows its block. It reads the accounts file and `tools.d`, creates a missing home (mode 0700), sets the environment, starts Codex's daemon, leaves a detached watcher for Claude's channels dialog, and replaces itself with the CLI (`exec`), so no wrapper stays in the pane. Telemetry variables move here from the dotfiles `claude` function. The watcher runs on the host, so a sleeping Mac does not stop it. It keeps waiting while the folder-trust dialog shows, because the channels dialog may follow it. Answers, and a watcher that cannot find `rex`, go to `launch.log` in `$XDG_STATE_HOME/burns` or `~/.local/state/burns`. A failure holds the tab open with the reason. A Claude home at the default `~/.claude` gets no `CLAUDE_CONFIG_DIR`, and an inherited one is removed, because its Keychain login is filed without that path. Accounts take `launch` in the file: `model`, `effort`, `permission_mode` and `credential` (cop `account`, `ref`, `env`). Codex accounts refuse effort and permission mode. Several channel servers pass as one flag with separate values, last on the command line; untested with more than one. Not built: applying `mcp` and `hooks` declarations and skill links.
 
-Built 2026-10-31 for Mac: the panel opens from the menu window's plus button or `burns://new`. It opens at once from the last read, or with accounts alone when there is none, because a read takes seconds. Opening the menu window starts a read, and so does opening the panel. A read asks every host at the same time, with a limit of 4 seconds on `GET /models` and 5 seconds on each Rex command. A host that does not answer keeps its last answer. An answer that arrives after the panel opens changes the lists and keeps each choice that still exists. Each host's `GET /models` gives the models, and `rex block call ... pwd` gives each Rex session's folder. The panel then starts `smithers launch` with `rex window new`, or `rex new` on a host with no session for that project. A new tab's label is the account emoji alone. The panel reports only whether Rex took the command. Not built: the Rex action, showing the new session, and Confirmed or Failed reporting.
+Built 2026-10-31 for Mac: the panel opens from the menu window's plus button or `burns://new`. It opens at once with the store's current ranking and the last read's projects, because a read takes seconds. Opening the menu window starts a read, and so does opening the panel. A read asks every host at the same time, with a limit of 4 seconds on `GET /models` and 5 seconds on each Rex command. A host that does not answer keeps its last answer. An answer that arrives after the panel opens changes the lists and keeps each word the operator chose or confirmed with Return, if it still exists. Every other word takes the new answer's default. Each host's `GET /models` gives the models, and `rex block call ... pwd` gives each Rex session's folder. The panel then starts `smithers launch` with `rex window new`. A host is offered for a project only when one of its sessions sits in that folder, or, for this Mac, when the folder exists; that last case uses `rex new`. Only this Mac runs without `-S`. A host with no Rex entry is left out, and the panel names it with the reason. A new tab's label is the account emoji alone. The panel reports only whether Rex took the command. Not built: the Rex action, showing the new session, and Confirmed or Failed reporting.
 
 1. The Rex action finds the server that owns `ctx.session_id` by checking `session.list` on the local server and each server in `rex.servers()`. It then runs `open "burns://new?host=<host>&session=<session>"` on Stiletto.
 2. The modal collects the choice.
-3. The app resolves the model against the account's catalog. An unknown model is refused before launch.
+3. The app resolves the model against the account's catalog. An unknown model is refused before launch. Any change of account, project or host drops a chosen model that the new catalog lacks.
 4. The app runs `rex -S <host>` to create the tab or session. The command is the account's launcher with the model arguments.
 5. The app asks Rex to show the new session.
 6. The app reports Launched, Confirmed, or Failed, following Penfold's launch confirmation rules.
@@ -636,7 +639,8 @@ Model catalogs port from Penfold's `internal/models` with their tests.
 ## Wire protocol
 
 `smithersd` listens on `127.0.0.1:9766`. Since the cutover (2026-10-29), Claude sends its telemetry here, not to Penfold on `9765`.
-`smithersd` also serves the `GET` routes and `/accounts` on the host's tailnet address, port 9766, and checks each caller there (see "Tailnet listener"). Every route stays on loopback.
+`smithersd` also serves the `GET` routes and `/accounts` on the host's tailnet address, port 9766, and checks each caller there (see "Tailnet listener"). Every route stays on loopback. Loopback routes answer 403 to a `Host` that is not `localhost` or a loopback address, and to any request with an `Origin` header. Tailnet routes apply the `Origin` rule.
+These checks stop web pages, not local programs. Another user on the host can reach every loopback route, and a program on the host may pass the tailnet check as the host's owner. Burns adds no token for this: Viz accepted the risk on 2026-11-02, because an admin on the same machine can already reach the agents' own homes.
 
 | Route | Caller | Answer |
 |---|---|---|
@@ -644,7 +648,7 @@ Model catalogs port from Penfold's `internal/models` with their tests.
 | `POST /v1/metrics` | Claude Code OTLP exporter | Accepted and dropped |
 | `POST /statusline` | `smithers statusline` | Stores Claude windows for the account that owns `transcript_path`. Limit 8 KiB. |
 | `POST /bind` | `smithers hook session-start` | Checks and stores a binding: `provider`, `session`, `rex_block` (required), `rex_session`, `source`, `pids` |
-| `GET /usage` | Apps | Every configured account in settings order, with its limits. A window whose reset passed shows `percent: null` and `state: "unknown"`. `set_up` is false when the account's home is missing on this host, and its limits are then empty. |
+| `GET /usage` | Apps | Every configured account in settings order, with its limits. A window whose reset passed shows `percent: null` and `state: "unknown"`. `set_up` is false when none of the account's homes is on this host, and its limits are then empty. |
 | `GET /usage/readings` | Apps | Every quota reading of the live windows, oldest first. See "Reading history". |
 | `GET /usage/history` | Apps | One-minute token buckets per account for the last 20 minutes |
 | `GET /usage/sessions?since=24h` | Apps | Totals per agent session, and per block and session |
@@ -652,7 +656,7 @@ Model catalogs port from Penfold's `internal/models` with their tests.
 | `GET /usage/panes` | Apps | Each open pane's tokens per account and model, largest first: `provider`, `account`, `block`, `model`, `tokens`, `main_tokens`, `agents`, `session`, `label`, `last`, and `checked` for the whole answer. Answers from memory. See "Live pane shares". |
 | `GET /models` | Apps | What each account can run on this host: `default_id`, `default`, `default_effort` and `models`. See "Steps". Reads the CLIs' files and runs nothing. |
 | `GET /accounts` | Apps | The accounts file as it is on disk, with `ETag`, a quoted SHA-256 of its bytes |
-| `PUT /accounts` | Apps | Replaces the accounts file. Needs `If-Match` with the current `ETag` (428 without, 412 when it changed). A body that would not load answers 422 with the reason. Limit 64 KiB. Writes atomically, mode 0600, answers the new `ETag`, then `smithersd` restarts. |
+| `PUT /accounts` | Apps | Replaces the accounts file. Needs `If-Match` with the current `ETag` (428 without, 412 when it changed). A body that would not load answers 422 with the reason. Limit 64 KiB. Writes atomically, mode 0600, onto a symlink's target, answers the new `ETag`, then `smithersd` restarts. |
 
 Totals carry `cost_micros` for requests with a known cost, `null` when none has one, and `unknown_cost` for the count without one.
 
@@ -666,7 +670,7 @@ Agents call `smithers`. Its agent-side commands never fail the agent. It waits a
 | `smithers hook session-start --provider claude\|codex` | Posts the hook's `session_id` and `source` with `REX_BLOCK` and `REX_SESSION`. Does nothing outside Rex. Prints nothing and exits 0, because Claude adds SessionStart output to the conversation. |
 | `smithers launch --provider P --account NAME` | Runs in a new Rex tab and becomes the CLI. See "Launch". |
 | `smithers answer-channels --block B --servers a,b` | The detached watcher `smithers launch` leaves behind. |
-| `smithers usage [--since 24h]` | Prints, for each configured account, its quota windows and its requests, tokens and cost over `--since`. Reads `GET /usage` and `GET /usage/sessions`. Unknown quota prints `unknown`; requests with no cost print as an unknown count, never as $0. Exits 1 if `smithersd` does not answer. |
+| `smithers usage [--since 24h]` | Prints, for each configured account, its quota windows and its requests, tokens and cost over `--since`. Reads `GET /usage` and `GET /usage/sessions`. Unknown quota prints `unknown`; requests with no cost print as an unknown count, never as $0. Rows with no account print as `<provider> unattributed`, and an account no longer in the file prints under its name. A `--since` past retention prints the 7-day window it covers. Exits 1 if `smithersd` does not answer. |
 
 Both run beside Penfold's forwarder and hooks. Adding them does not wait for the cutover.
 
@@ -676,7 +680,7 @@ Both run beside Penfold's forwarder and hooks. Adding them does not wait for the
 
 | Item | Value |
 |---|---|
-| Accounts | `~/.config/burns/accounts.json`. The install does not create it, because it holds personal names. `smithersd` does not start without it. |
+| Accounts | `$XDG_CONFIG_HOME/burns/accounts.json`, or `~/.config/burns/accounts.json`. The install does not create it, because it holds personal names. `smithersd` does not start without it. |
 | Database | `~/.local/state/burns/smithers.db`, mode 0600. A fresh database backfills the last 7 days of transcripts and rollouts in a few seconds. |
 | Log | macOS: `~/Library/Logs/burns/smithersd.log`. Linux: `journalctl --user -u burns-smithersd`. |
 | Agent | `RunAtLoad` and `KeepAlive`, `ProcessType` `Background`, restart throttled to 10 s |

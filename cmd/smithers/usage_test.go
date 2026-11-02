@@ -87,6 +87,43 @@ func TestUsagePrintsQuotaAndConsumption(t *testing.T) {
 	}
 }
 
+// Burns never drops tokens: a row with no account, or an account no longer in
+// the file, still prints.
+func TestUsagePrintsRowsNoAccountClaims(t *testing.T) {
+	body := strings.Replace(sessionsBody, `"sessions":[`, `"sessions":[
+{"provider":"claude","account":"","session":"s4","requests":7,"input":1,"cached_input":0,"cache_write":0,"output":1,"cost_micros":null,"unknown_cost":7},
+{"provider":"codex","account":"gone","session":"s5","requests":3,"input":1,"cached_input":0,"cache_write":0,"output":1,"cost_micros":null,"unknown_cost":3},`, 1)
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/usage" {
+			w.Write([]byte(usageBody))
+			return
+		}
+		w.Write([]byte(body))
+	}))
+	t.Cleanup(ts.Close)
+	out, errOut, code := runUsage(t, "--url", ts.URL)
+	if code != 0 {
+		t.Fatalf("exit %d: %s", code, errOut)
+	}
+	consumption := out[strings.Index(out, "Last "):]
+	if l := lineOf(consumption, "claude unattributed"); !strings.Contains(l, "7") {
+		t.Errorf("unattributed row missing:\n%s", out)
+	}
+	if l := lineOf(consumption, "codex gone"); !strings.Contains(l, "3") {
+		t.Errorf("removed account's row missing:\n%s", out)
+	}
+}
+
+// The server clamps to retention, so the heading must not promise more.
+func TestUsageHeadingShowsTheClampedWindow(t *testing.T) {
+	var since string
+	ts := usageServer(t, &since)
+	out, errOut, code := runUsage(t, "--url", ts.URL, "--since", "720h")
+	if code != 0 || !strings.Contains(out, "Last 7d") || strings.Contains(out, "720h") {
+		t.Fatalf("exit %d, stderr %q:\n%s", code, errOut, out)
+	}
+}
+
 func TestUsageFailsWhenSmithersdIsDown(t *testing.T) {
 	ts := httptest.NewServer(http.NotFoundHandler())
 	ts.Close()

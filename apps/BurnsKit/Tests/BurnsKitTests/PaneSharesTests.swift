@@ -99,11 +99,11 @@ struct PaneSharesTests {
     }
 
     @Test func aHostsIconComesFromAnyOfItsRexEntries() {
-        let entries: [(label: String, icon: String?)] = [("One", nil), ("one.tailnet.ts.net", "server.rack"), ("Two", "macstudio"), ("Three", nil)]
-        #expect(PaneShares.icon(host: "one", entries: entries) == "server.rack")
-        #expect(PaneShares.icon(host: "Two", entries: entries) == "macstudio")
-        #expect(PaneShares.icon(host: "Three", entries: entries) == nil)
-        #expect(PaneShares.icon(host: "Four", entries: entries) == nil)
+        let rex = RexHosts(entries: [.init(label: "One"), .init(label: "one.tailnet.ts.net", icon: "server.rack"), .init(label: "Two", icon: "macstudio"), .init(label: "Three")])
+        #expect(rex.icon(for: "one") == "server.rack")
+        #expect(rex.icon(for: "Two") == "macstudio")
+        #expect(rex.icon(for: "Three") == nil)
+        #expect(rex.icon(for: "Four") == nil)
     }
 
     @Test func percentsNeverRoundDownToNothing() {

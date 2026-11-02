@@ -116,13 +116,6 @@ public struct PaneShares: Equatable, Sendable {
         p.label.isEmpty || p.label == "shell" ? p.session : "\(p.session) · \(p.label)"
     }
 
-    /// The icon picked for a host. One host can have several Rex entries, such as a label and its
-    /// tailnet name, and a pick lands on only the entry it was made on, so any of them counts.
-    public static func icon(host: String, entries: [(label: String, icon: String?)]) -> String? {
-        let name = host.lowercased()
-        return entries.first { $0.label.split(separator: ".").first?.lowercased() == name && $0.icon != nil }?.icon
-    }
-
     /// `claude-opus-5-5` reads Opus 5.5 and `gpt-6.1-sol` reads Sol 6.1, so the family leads as it does
     /// on both providers. Any other shape shows its id: a wrong guess is worse than a raw name.
     public static func modelName(_ id: String) -> String {
@@ -143,7 +136,8 @@ public struct PaneShares: Equatable, Sendable {
     /// Segment widths that fill `room`. Each keeps `minimum`, and the rest divides by share, so a
     /// tiny pane stays visible and the bar never runs past its edge.
     public static func widths(_ shares: [Double], room: Double, minimum: Double) -> [Double] {
-        let spare = room - minimum * Double(shares.count)
+        // A first layout can have no width, and a frame refuses a negative one.
+        let room = max(0, room), spare = room - minimum * Double(shares.count)
         guard spare > 0 else { return shares.map { _ in room / Double(max(shares.count, 1)) } }
         return shares.map { minimum + spare * $0 }
     }

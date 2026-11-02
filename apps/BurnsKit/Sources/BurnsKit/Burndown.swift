@@ -1,14 +1,13 @@
 import Foundation
 
 /// A point on a burndown: x runs from the window's start (0) to its reset (1), left is percent left.
-public struct Point: Sendable, Hashable {
+public struct Point: Sendable, Equatable {
     public var x: Double
     public var left: Double
     public init(x: Double, left: Double) { self.x = x; self.left = left }
 
     /// Equal within rounding: x comes from seconds divided by the window's length.
     public static func == (a: Point, b: Point) -> Bool { abs(a.x - b.x) < 1e-9 && abs(a.left - b.left) < 1e-9 }
-    public func hash(into h: inout Hasher) { h.combine((x * 1e6).rounded()); h.combine((left * 1e6).rounded()) }
 }
 
 /// One account's burndown (docs/SPEC.md, "Showing usage"): its longest live window, normally the
@@ -17,7 +16,8 @@ public struct Point: Sendable, Hashable {
 public struct Burndown: Equatable, Sendable {
     public struct Line: Equatable, Sendable {
         public var minutes: Int
-        /// Solid: quota left, straight from reading to reading. Ends at the last observation.
+        /// Solid: quota left at each reading, which the chart joins with a monotone curve. Ends at the
+        /// last observation.
         public var actual: [Point]
         /// Faint dashed: 100% at the start to 0% at the reset.
         public var steady: [Point]
@@ -37,28 +37,25 @@ public struct Burndown: Equatable, Sendable {
     public var account: AccountID
     /// The longest live window's line; nil with no live window.
     public var line: Line?
-    /// Windows that are known to exist but have no live reading.
-    public var unknown: [Int]
     /// Days for the week, hours for a five-hour window: the charted window's grid.
     public var grid: [Slot]
     public var headline: String
+    /// Azure: Microsoft credits, so no quota window to draw.
+    public var credits: Bool
 
-    public init(account: AccountID, line: Line?, unknown: [Int], grid: [Slot], headline: String) {
-        self.account = account; self.line = line; self.unknown = unknown; self.grid = grid; self.headline = headline
+    public init(account: AccountID, line: Line?, grid: [Slot], headline: String, credits: Bool = false) {
+        self.account = account; self.line = line; self.grid = grid; self.headline = headline; self.credits = credits
     }
 
     public static func build(account: AccountUsage, readings: [Reading], now: Date) -> Burndown {
-        let live = account.liveWindows(at: now)
-        let unknown = account.windows.keys.filter { live[$0] == nil }.sorted(by: >)
-        guard let (m, w) = live.max(by: { $0.key < $1.key }) else {
-            return Burndown(account: account.id, line: nil, unknown: unknown, grid: [], headline: "Usage unknown")
+        guard let (m, w) = account.liveWindows(at: now).max(by: { $0.key < $1.key }) else {
+            return Burndown(account: account.id, line: nil, grid: [], headline: "Usage unknown")
         }
         let mine = readings.filter {
-            $0.provider == account.id.provider && $0.account == account.id.name && $0.minutes == m
-                && abs($0.resetsAt.timeIntervalSince(w.resetsAt)) <= Merge.resetJitter
+            $0.provider == account.id.provider && $0.account == account.id.name && $0.minutes == m && w.holds($0)
         }
         let charted = line(minutes: m, window: w, readings: mine, now: now)
-        return Burndown(account: account.id, line: charted, unknown: unknown, grid: grid(charted), headline: headline(minutes: m, window: w, now: now))
+        return Burndown(account: account.id, line: charted, grid: grid(charted), headline: headline(minutes: m, window: w, now: now))
     }
 
     static func length(_ minutes: Int) -> TimeInterval { TimeInterval(minutes) * 60 }
@@ -67,9 +64,9 @@ public struct Burndown: Equatable, Sendable {
         let length = length(minutes), start = w.resetsAt.addingTimeInterval(-length)
         func x(_ d: Date) -> Double { min(max(d.timeIntervalSince(start) / length, 0), 1) }
         let used = w.percent ?? 0
-        // Readings sample usage that grew between them, so the line runs straight from one to the
-        // next: a flat hold and a cliff would claim nothing was used until the reading. Rule 10: a
-        // reading below an earlier one is stale and is skipped.
+        // Readings sample usage that grew between them, so each one is a point on the curve: a flat
+        // hold and a cliff would claim nothing was used until the reading. Rule 10: a reading below
+        // an earlier one is stale and is skipped.
         var actual = [Point(x: 0, left: 100)]
         var high = 0.0
         // Readings are whole percents: keep the moment usage first reached each one. A later repeat

@@ -68,8 +68,9 @@ func (c CLI) Enter(ctx context.Context, block string) error {
 }
 
 // Watch runs one `rex events --all --json` stream and calls fn for each event
-// that matters to bindings. It returns when the stream ends or ctx is done.
-func Watch(ctx context.Context, path string, fn func(Event)) error {
+// that matters to bindings. ready runs once the stream's process has started.
+// It returns when the stream ends or ctx is done.
+func Watch(ctx context.Context, path string, ready func(), fn func(Event)) error {
 	cmd := exec.CommandContext(ctx, path, "events", "--all", "--json")
 	cmd.Env = serverEnv()
 	out, err := cmd.StdoutPipe()
@@ -79,6 +80,7 @@ func Watch(ctx context.Context, path string, fn func(Event)) error {
 	if err := cmd.Start(); err != nil {
 		return err
 	}
+	ready()
 	sc := bufio.NewScanner(out)
 	sc.Buffer(make([]byte, 64<<10), 4<<20)
 	for sc.Scan() {

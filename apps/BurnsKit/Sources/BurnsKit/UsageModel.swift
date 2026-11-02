@@ -49,6 +49,8 @@ public struct UsageModel: Equatable, Sendable {
     }
 
     public var rings: [Ring]
+    /// Every account's merged usage, for what else ranks accounts.
+    public var accounts: [AccountUsage]
     public var selected: AccountID?
     public var burndown: Burndown?
     public var pick: Pick
@@ -57,15 +59,17 @@ public struct UsageModel: Equatable, Sendable {
 
     public init(snapshots: [HostSnapshot], selected stored: AccountID?, accounts central: [CentralAccount] = [], now: Date = Date(), calendar: Calendar = .current) {
         let accounts = Merge.accounts(snapshots.map(\.usage), now: now)
+        self.accounts = accounts
         let ordered = RingOrder.ordered(accounts)
         var swatches = Swatch.assign(ordered.map(\.id.name))
         for group in AccountGroup.build(central) { swatches[group.name] = group.swatch }
         rings = ordered.map { a in
             let live = a.liveWindows(at: now)
-            let five = live.filter { $0.key <= 600 }.max { $0.key < $1.key }?.value
-            let seven = live.filter { $0.key > 600 }.max { $0.key < $1.key }?.value
-            let tile = SpendTileModel(account: a.id.label, fiveHourPercent: five?.percent, fiveHourResetsAt: five?.resetsAt,
-                                      sevenDayPercent: seven?.percent, sevenDayResetsAt: seven?.resetsAt,
+            let five = live.filter { $0.key <= Merge.fiveHourMax }.max { $0.key < $1.key }
+            let seven = live.filter { $0.key > Merge.fiveHourMax }.max { $0.key < $1.key }
+            let tile = SpendTileModel(account: a.id.label, fiveHourPercent: five?.value.percent, fiveHourResetsAt: five?.value.resetsAt,
+                                      sevenDayPercent: seven?.value.percent, sevenDayResetsAt: seven?.value.resetsAt,
+                                      fiveHourMinutes: five?.key, sevenDayMinutes: seven?.key,
                                       onCredits: false, now: now, calendar: calendar)
             return Ring(id: a.id, tile: tile, credits: !a.isQuota, swatch: swatches[a.id.name] ?? .grey)
         }
@@ -81,7 +85,7 @@ public struct UsageModel: Equatable, Sendable {
         let readings = Merge.readings(snapshots.map(\.readings), accounts: accounts, now: now)
         burndown = selected.flatMap { id in accounts.first { $0.id == id } }.map { a in
             a.isQuota ? Burndown.build(account: a, readings: readings, now: now)
-                : Burndown(account: a.id, line: nil, unknown: [], grid: [], headline: "Microsoft credits")
+                : Burndown(account: a.id, line: nil, grid: [], headline: "Microsoft credits", credits: true)
         }
         oldestFetch = snapshots.map(\.fetchedAt).min()
     }

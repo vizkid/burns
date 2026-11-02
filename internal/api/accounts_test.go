@@ -219,3 +219,26 @@ func TestPutAccountsTakesColourAndEmoji(t *testing.T) {
 		t.Fatalf("PUT = %d %s", r.StatusCode, b)
 	}
 }
+
+// The accounts file may be a link into a dotfiles checkout. A write lands in the
+// checkout and keeps the link.
+func TestPutKeepsASymlinkedAccountsFile(t *testing.T) {
+	ts, path, _ := accountsServer(t)
+	target := filepath.Join(t.TempDir(), "accounts.json")
+	if err := os.Rename(path, target); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(target, path); err != nil {
+		t.Fatal(err)
+	}
+	_, tag := getAccounts(t, ts.URL)
+	if r, _ := putAccounts(t, ts.URL, tag, accountsEdit); r.StatusCode != http.StatusOK {
+		t.Fatalf("PUT = %d", r.StatusCode)
+	}
+	if info, err := os.Lstat(path); err != nil || info.Mode()&os.ModeSymlink == 0 {
+		t.Fatalf("link replaced: %v %v", info, err)
+	}
+	if got, _ := os.ReadFile(target); string(got) != accountsEdit {
+		t.Fatalf("target = %s", got)
+	}
+}

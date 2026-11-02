@@ -2,56 +2,8 @@ import AppKit
 import BurnsKit
 import SwiftUI
 
-/// Runs `rex`. The app starts without the shell's PATH, so its path comes from a login shell.
-enum Rex {
-    static let path: String? = {
-        let task = Process()
-        task.executableURL = URL(fileURLWithPath: "/bin/zsh")
-        task.arguments = ["-ilc", "whence -p rex"]
-        let out = Pipe()
-        task.standardOutput = out
-        task.standardError = Pipe()
-        guard (try? task.run()) != nil else { return nil }
-        task.waitUntilExit()
-        let text = String(data: out.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
-        return text.split(separator: "\n").last.map { String($0).trimmingCharacters(in: .whitespaces) }
-    }()
-
-    /// Output, or an error's text. Each argument passes as it is, with no shell. A launch has no
-    /// `limit`: stopping `rex` partway could leave a tab that the panel then reports as failed.
-    static func run(_ args: [String], limit: TimeInterval? = nil) async -> Result<Data, RexFailure> {
-        guard let path else { return .failure(RexFailure(text: "rex was not found")) }
-        return await withCheckedContinuation { done in
-            let task = Process()
-            task.executableURL = URL(fileURLWithPath: path)
-            task.arguments = args
-            let out = Pipe(), err = Pipe()
-            task.standardOutput = out
-            task.standardError = err
-            task.terminationHandler = { t in
-                let data = out.fileHandleForReading.readDataToEndOfFile()
-                let text = String(data: err.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
-                done.resume(returning: t.terminationStatus == 0 ? .success(data) : .failure(RexFailure(text: text)))
-            }
-            do { try task.run() } catch { done.resume(returning: .failure(RexFailure(text: "\(error)"))); return }
-            if let limit { DispatchQueue.global().asyncAfter(deadline: .now() + limit) { if task.isRunning { task.terminate() } } }
-        }
-    }
-
-    static func json<T: Decodable>(_ type: T.Type, _ args: [String]) async -> T? {
-        guard case .success(let data) = await run(args, limit: 5) else { return nil }
-        return try? JSONDecoder().decode(type, from: data)
-    }
-}
-
-struct RexFailure: Error { let text: String }
-
 /// What the panel needs from Rex and smithersd, read behind the open panel.
 enum LaunchData {
-    private struct HostList: Decodable {
-        struct Row: Decodable { struct Host: Decodable { let label: String }; let host: Host }
-        let hosts: [Row]
-    }
     private struct Sessions: Decodable {
         struct Row: Decodable { let label: String }
         let sessions: [Row]
@@ -74,6 +26,8 @@ enum LaunchData {
     }
 
     @MainActor private static var known: [String: HostRead] = [:]
+    /// Rex's last answer, so that one timeout does not drop every remote host.
+    @MainActor private static var rexHosts: RexHosts?
 
     /// One host's sessions and their folders, or nil when Rex did not answer. Rex reports a pane's
     /// folder as a file URL.
@@ -95,23 +49,12 @@ enum LaunchData {
         }
     }
 
-    private static func models(_ host: String) async -> [AccountID: ModelEntry] {
-        let config = URLSessionConfiguration.ephemeral
-        config.timeoutIntervalForRequest = 4
-        guard let url = URL(string: "http://\(host):\(HostFetcher.port)/models"),
-              let (data, _) = try? await URLSession(configuration: config).data(from: url) else { return [:] }
-        let decoder = JSONDecoder()
-        decoder.keyDecodingStrategy = .convertFromSnakeCase
-        let list = (try? decoder.decode(ModelsAnswer.self, from: data))?.accounts ?? []
-        return Dictionary(list.map { (AccountID(provider: $0.provider, name: $0.account), $0) }) { first, _ in first }
-    }
-
     /// Each host's parts, at the same time, with an empty or nil part where the host did not answer.
     private static func read(_ hosts: [(address: String, rex: String)]) async -> [(entries: [AccountID: ModelEntry], folders: [Folder]?)] {
         await withTaskGroup(of: (Int, [AccountID: ModelEntry], [Folder]?).self) { group in
             for (i, h) in hosts.enumerated() {
                 group.addTask {
-                    async let entries = models(h.address)
+                    async let entries = HostFetcher().models(h.address)
                     async let found = folders(rex: h.rex)
                     return await (i, entries, found)
                 }
@@ -122,16 +65,26 @@ enum LaunchData {
         }
     }
 
+    /// Each host and where a launch on it goes. A host that Rex cannot reach is left out, with why.
+    @MainActor
+    private static func places(store: UsageStore) async -> (hosts: [Place], unreachable: [String]) {
+        if let answer = await Rex.hosts() { rexHosts = answer }
+        var hosts: [Place] = [], unreachable: [String] = []
+        for status in store.statuses {
+            guard let name = status.snapshot?.usage.host else { unreachable.append("\(status.address): no answer yet"); continue }
+            switch RexHosts.place(host: name, here: RexHosts.thisMachine, rex: rexHosts) {
+            case .here: hosts.append(Place(address: status.address, name: name, rex: ""))
+            case .server(let rex): hosts.append(Place(address: status.address, name: name, rex: rex))
+            case .unreachable(let why): unreachable.append("\(store.hostNames[name] ?? name): \(why)")
+            }
+        }
+        return (hosts, unreachable)
+    }
+
     @MainActor
     static func sentence(store: UsageStore) async -> LaunchSentence {
         let names = store.hostNames
-        let rexHosts = await Rex.json(HostList.self, ["hosts", "list", "--json"])?.hosts.map(\.host.label) ?? []
-        let hosts = store.statuses.compactMap { status in
-            status.snapshot.map { snapshot in
-                let name = snapshot.usage.host
-                return (address: status.address, name: name, rex: rexHosts.first { $0.lowercased() == name.lowercased() } ?? "")
-            }
-        }
+        let (hosts, unreachable) = await places(store: store)
         let answers = await read(hosts.map { (address: $0.address, rex: $0.rex) })
         var found: [(host: LaunchHost, relative: String)] = []
         var entries: [AccountID: ModelEntry] = [:]
@@ -149,37 +102,28 @@ enum LaunchData {
             }
         }
         var projects = LaunchProject.group(found)
-        // A host with no session on a project can start one, when it has any session to show it runs Rex.
-        let all = found.reduce(into: [LaunchHost]()) { list, f in if !list.contains(where: { $0.rex == f.host.rex }) { list.append(f.host) } }
-        for i in projects.indices {
-            for h in all where !projects[i].hosts.contains(where: { $0.rex == h.rex }) {
-                let parts = h.path.split(separator: "/").map(String.init)
-                let path = "/" + parts.prefix(2).joined(separator: "/") + "/" + projects[i].path
-                projects[i].hosts.append(LaunchHost(rex: h.rex, shown: h.shown, path: path, session: nil, entries: h.entries))
-            }
+        if let h = hosts.first(where: { $0.rex.isEmpty }) {
+            let local = LaunchHost(rex: "", shown: names[h.name] ?? h.name, path: "", session: nil, entries: known[h.address]?.entries ?? [:])
+            projects = LaunchProject.offer(local, home: NSHomeDirectory(), to: projects) { FileManager.default.fileExists(atPath: $0) }
         }
-        return LaunchSentence(accounts: store.launchAccounts(entries), projects: projects)
+        return store.launchSentence(entries, projects: projects, unreachable: unreachable)
+    }
+
+    private struct Place: Sendable {
+        let address: String
+        let name: String
+        let rex: String
     }
 }
 
 extension UsageStore {
-    /// The accounts in the order the default rule ranks them, best first.
-    func launchAccounts(_ entries: [AccountID: ModelEntry]) -> [LaunchAccount] {
-        let groups = AccountGroup.build(central)
-        let now = Date()
-        func left(_ a: AccountUsage) -> Double? {
-            guard a.isQuota else { return nil }
-            let live = a.liveWindows(at: now).values.compactMap(\.percent)
-            return live.max().map { 100 - $0 }
-        }
-        let usage = Merge.accounts(statuses.compactMap(\.snapshot?.usage), now: now)
-        var ranked = usage.sorted { (left($0) ?? ($0.isQuota ? -1 : -2)) > (left($1) ?? ($1.isQuota ? -1 : -2)) }
-        // The default rule decides the top: with every quota exhausted, that is Azure.
-        if let pick = model.pick.account, let i = ranked.firstIndex(where: { $0.id == pick }) { ranked.insert(ranked.remove(at: i), at: 0) }
-        return ranked.map { a in
-            let words = !a.isQuota ? "credits" : left(a).map { "\(Int($0.rounded()))% left" } ?? "usage unknown"
-            return LaunchAccount(id: a.id, emoji: groups.first { $0.name == a.id.name }?.emoji ?? "⚪", left: words, entry: entries[a.id])
-        }
+    /// One store for the app: `burns://new` can arrive before any view exists.
+    static let shared = UsageStore()
+
+    /// The sentence from the store's own usage, ranked by the default rule.
+    func launchSentence(_ entries: [AccountID: ModelEntry], projects: [LaunchProject], unreachable: [String]) -> LaunchSentence {
+        LaunchSentence(accounts: LaunchAccount.ranked(model.accounts, pick: model.pick.account, central: central, entries: entries, now: Date()),
+                       projects: projects, reason: model.pick.reason(among: model.accounts), unreachable: unreachable)
     }
 }
 
@@ -193,13 +137,14 @@ enum LaunchWindow {
     private static var panel: NSPanel?
     private static var last: LaunchSentence?
     private static var reading: Task<LaunchSentence, Never>?
-    static weak var store: UsageStore?
 
     /// Opens at once: a read takes seconds, and longer with a host asleep. The panel starts from the
-    /// last read, or from what the store already knows, and takes the new read when it arrives.
+    /// last read's projects and models, ranked by what the store knows now, and takes the new read
+    /// when it arrives.
     static func show() {
-        guard let store, panel == nil else { panel?.makeKeyAndOrderFront(nil); return }
-        let sentence = last ?? LaunchSentence(accounts: store.launchAccounts([:]), projects: [])
+        guard panel == nil else { panel?.makeKeyAndOrderFront(nil); return }
+        let entries = (last?.accounts ?? []).reduce(into: [AccountID: ModelEntry]()) { $0[$1.id] = $1.entry }
+        let sentence = UsageStore.shared.launchSentence(entries, projects: last?.projects ?? [], unreachable: last?.unreachable ?? [])
         let w = KeyPanel(contentRect: NSRect(x: 0, y: 0, width: 820, height: 400), styleMask: [.borderless, .nonactivatingPanel],
                          backing: .buffered, defer: false)
         w.isOpaque = false
@@ -216,9 +161,8 @@ enum LaunchWindow {
     /// One read at a time, shared. It is its own task: closing the panel cancels the panel's wait,
     /// and a cancelled request would look like a host that did not answer.
     private static func read() async -> LaunchSentence {
-        guard let store else { return last ?? LaunchSentence(accounts: [], projects: []) }
         let task = reading ?? Task {
-            let sentence = await LaunchData.sentence(store: store)
+            let sentence = await LaunchData.sentence(store: .shared)
             last = sentence
             reading = nil
             return sentence

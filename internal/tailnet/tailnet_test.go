@@ -98,6 +98,43 @@ func TestGateRetriesFailedLookups(t *testing.T) {
 	}
 }
 
+// A refusal is kept like an allowance: another user's traffic must not start a
+// process per request.
+func TestGateCachesARefusal(t *testing.T) {
+	at := t0
+	w := &fakeWhois{ids: map[string]Identity{"100.64.0.3": {Login: "friend@example.com"}}}
+	h := gate(w, &at)
+	for range 3 {
+		if code := get(h, "100.64.0.3:1"); code != http.StatusForbidden {
+			t.Fatalf("code = %d", code)
+		}
+	}
+	if w.calls != 1 {
+		t.Fatalf("calls = %d; want 1", w.calls)
+	}
+	at = t0.Add(6 * time.Minute)
+	get(h, "100.64.0.3:1")
+	if w.calls != 2 {
+		t.Fatalf("calls = %d after the TTL; want 2", w.calls)
+	}
+}
+
+type deadlineWhois struct{ bounded bool }
+
+func (d *deadlineWhois) Whois(ctx context.Context, _ string) (Identity, error) {
+	_, d.bounded = ctx.Deadline()
+	return Identity{}, errors.New("down")
+}
+
+func TestGateBoundsTheLookup(t *testing.T) {
+	at := t0
+	w := &deadlineWhois{}
+	get(gate(w, &at), "100.64.0.2:1")
+	if !w.bounded {
+		t.Fatal("the lookup has no timeout")
+	}
+}
+
 func fakeTailscale(t *testing.T, script string) CLI {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "tailscale")

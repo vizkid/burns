@@ -268,3 +268,26 @@ func TestStoreFilesArePrivate(t *testing.T) {
 		}
 	}
 }
+
+func TestSeenModelsLeaveOutSyntheticAndNameTheMainThread(t *testing.T) {
+	s := open(t)
+	add := func(key, model, agent string, at time.Time) {
+		t.Helper()
+		r := req(key, usage.SourceTranscript, 1)
+		r.Model, r.Agent, r.At = model, agent, at
+		if err := s.AddRequests([]usage.Request{r}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	add("a", "claude-fable-5-5", "", t0)
+	add("b", "claude-haiku-5-5", "agent-1", t0.Add(time.Minute))
+	add("c", "<synthetic>", "", t0.Add(2*time.Minute))
+	seen, err := s.SeenModels()
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := seen[[2]string{usage.Claude, "personal"}]
+	if got.Thread != "claude-fable-5-5" || len(got.Models) != 2 || got.Models[0] != "claude-haiku-5-5" {
+		t.Fatalf("seen = %+v", got)
+	}
+}

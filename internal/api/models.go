@@ -17,10 +17,15 @@ func (s *Server) models(w http.ResponseWriter, r *http.Request) {
 	entries := []catalog.Entry{}
 	for _, a := range s.Config.Accounts {
 		home := s.Config.HomeDir(a)
+		over := catalog.Override{}
+		if a.Launch != nil {
+			over = catalog.Override{Model: a.Launch.Model, Effort: a.Launch.Effort}
+		}
 		if a.Provider == "claude" {
-			entries = append(entries, catalog.Claude(home, a.Name, seen[[2]string{a.Provider, a.Name}]))
+			m := seen[[2]string{a.Provider, a.Name}]
+			entries = append(entries, catalog.Claude(home, a.Name, m.Models, m.Thread, over))
 		} else {
-			entries = append(entries, catalog.Codex(home, a.Name))
+			entries = append(entries, catalog.Codex(home, a.Name, over))
 		}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"host": s.Host, "accounts": entries})

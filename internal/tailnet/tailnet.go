@@ -77,9 +77,12 @@ func (c CLI) run(ctx context.Context, args ...string) ([]byte, error) {
 	return out, nil
 }
 
-// Gate lets a request through only when its caller's login is Login.
-// Allowed callers are cached for TTL per IP; refusals are not, so a lookup that
-// failed while tailscaled restarted is tried again.
+// LookupTimeout bounds one whois: a request's context has no deadline.
+const LookupTimeout = 5 * time.Second
+
+// Gate lets a request through only when its caller's login is Login. Each
+// answer is cached for TTL per IP, so another user's requests cost one process.
+// A failed lookup is not an answer: it is tried again, in case tailscaled was restarting.
 type Gate struct {
 	Whois Whois
 	Login string
@@ -87,7 +90,12 @@ type Gate struct {
 	Now   func() time.Time
 
 	mu      sync.Mutex
-	allowed map[string]time.Time // IP → when the lookup expires
+	answers map[string]answer // by IP
+}
+
+type answer struct {
+	allowed bool
+	until   time.Time
 }
 
 // Wrap guards h.
@@ -108,25 +116,27 @@ func (g *Gate) allow(r *http.Request) bool {
 	}
 	now := g.Now()
 	g.mu.Lock()
-	until, ok := g.allowed[ip]
+	a, ok := g.answers[ip]
 	g.mu.Unlock()
-	if ok && now.Before(until) {
-		return true
+	if ok && now.Before(a.until) {
+		return a.allowed
 	}
-	id, err := g.Whois.Whois(r.Context(), ip)
+	lookup, cancel := context.WithTimeout(r.Context(), LookupTimeout)
+	defer cancel()
+	id, err := g.Whois.Whois(lookup, ip)
 	if err != nil {
 		log.Printf("WARN tailnet caller %s: %v", ip, err)
 		return false
 	}
-	if id.Tagged || id.Login != g.Login {
+	allowed := !id.Tagged && id.Login == g.Login
+	if !allowed {
 		log.Printf("WARN tailnet caller %s refused: %q", ip, id.Login)
-		return false
 	}
 	g.mu.Lock()
-	if g.allowed == nil {
-		g.allowed = map[string]time.Time{}
+	if g.answers == nil {
+		g.answers = map[string]answer{}
 	}
-	g.allowed[ip] = now.Add(g.TTL)
+	g.answers[ip] = answer{allowed: allowed, until: now.Add(g.TTL)}
 	g.mu.Unlock()
-	return true
+	return allowed
 }

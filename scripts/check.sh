@@ -11,9 +11,9 @@ go vet ./...
 go test -race -count=1 -timeout 2m ./...
 
 limit=300
-over=$(find cmd internal -name '*.go' -exec wc -l {} + | awk -v l=$limit '$2 != "total" && $1 > l {print}')
+over=$(find cmd internal -name '*.go' -exec wc -l {} + | awk -v l=$limit '$2 != "total" && $1 >= l {print}')
 if [ -n "$over" ]; then
-	echo "Files over $limit lines:"; echo "$over"; exit 1
+	echo "Files of $limit lines or more:"; echo "$over"; exit 1
 fi
 
 # The apps' shared Swift package, where a Swift toolchain exists (macOS).

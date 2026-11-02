@@ -107,6 +107,7 @@ type Plan struct {
 	Program  string
 	Args     []string
 	Env      map[string]string
+	Unset    []string // variables to drop from the inherited environment
 	Channels []string // Claude's channels, for the consent dialog
 	Daemon   []string // command to run first, program included; empty means none
 }
@@ -148,6 +149,9 @@ func claude(in Input, l config.Launch) Plan {
 	// home's entry has none, so naming the default home would lose its login.
 	if in.Home != filepath.Join(in.UserHome, ".claude") {
 		p.Env["CLAUDE_CONFIG_DIR"] = in.Home
+	} else {
+		// A session started from another account's pane inherits that account's home.
+		p.Unset = []string{"CLAUDE_CONFIG_DIR"}
 	}
 	if in.Block != "" {
 		p.Env["OTEL_RESOURCE_ATTRIBUTES"] = "rex.block=" + in.Block + ",rex.session=" + in.Session
@@ -186,12 +190,13 @@ func pairs(kv ...string) []string {
 	return out
 }
 
-// Environ is base with the plan's variables replacing any of the same name.
+// Environ is base without the plan's Unset variables, and with its variables
+// replacing any of the same name.
 func (p Plan) Environ(base []string) []string {
 	out := make([]string, 0, len(base)+len(p.Env))
 	for _, kv := range base {
 		name, _, _ := strings.Cut(kv, "=")
-		if _, set := p.Env[name]; !set {
+		if _, set := p.Env[name]; !set && !slices.Contains(p.Unset, name) {
 			out = append(out, kv)
 		}
 	}

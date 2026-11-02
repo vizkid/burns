@@ -1,6 +1,8 @@
 package tail
 
 import (
+	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -136,6 +138,41 @@ func TestFindWalksTree(t *testing.T) {
 	got, err := Find(root, "rollout-*.jsonl")
 	if err != nil || len(got) != 2 {
 		t.Fatalf("find = %v, %v", got, err)
+	}
+}
+
+// One bad folder reports an error and costs only itself.
+func TestFindKeepsGoingPastAnUnreadableFolder(t *testing.T) {
+	root := t.TempDir()
+	bad := filepath.Join(root, "a")
+	os.MkdirAll(bad, 0o700)
+	write(t, filepath.Join(bad, "rollout-hidden.jsonl"), "")
+	os.MkdirAll(filepath.Join(root, "b"), 0o700)
+	write(t, filepath.Join(root, "b", "rollout-c.jsonl"), "")
+	os.Chmod(bad, 0)
+	t.Cleanup(func() { os.Chmod(bad, 0o700) })
+	got, err := Find(root, "rollout-*.jsonl")
+	if err == nil || len(got) != 1 || filepath.Base(got[0]) != "rollout-c.jsonl" {
+		t.Fatalf("find = %v, %v", got, err)
+	}
+}
+
+func TestFindFollowsARootLink(t *testing.T) {
+	real := t.TempDir()
+	write(t, filepath.Join(real, "rollout-a.jsonl"), "")
+	link := filepath.Join(t.TempDir(), "sessions")
+	if err := os.Symlink(real, link); err != nil {
+		t.Fatal(err)
+	}
+	got, err := Find(link, "rollout-*.jsonl")
+	if err != nil || len(got) != 1 || got[0] != filepath.Join(link, "rollout-a.jsonl") {
+		t.Fatalf("find = %v, %v", got, err)
+	}
+}
+
+func TestFindReportsAMissingRoot(t *testing.T) {
+	if _, err := Find(filepath.Join(t.TempDir(), "none"), "*"); !errors.Is(err, fs.ErrNotExist) {
+		t.Fatalf("err = %v", err)
 	}
 }
 

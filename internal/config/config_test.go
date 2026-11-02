@@ -50,6 +50,8 @@ func TestLoadAndLookup(t *testing.T) {
 func TestLoadRejectsBadFiles(t *testing.T) {
 	for name, body := range map[string]string{
 		"unknown field": `{"accounts":[],"extra":1}`,
+		"tilde home":    `{"accounts":[{"provider":"claude","name":"a","home":"~/.c","kind":"subscription"}]}`,
+		"tilde extra":   `{"accounts":[{"provider":"claude","name":"a","home":".c","extra_homes":["~/.d"],"kind":"subscription"}]}`,
 		"bad provider":  `{"accounts":[{"provider":"gemini","name":"a","home":".g","kind":"subscription"}]}`,
 		"bad kind":      `{"accounts":[{"provider":"claude","name":"a","home":".c","kind":"free"}]}`,
 		"azure claude":  `{"accounts":[{"provider":"claude","name":"a","home":".c","kind":"azure"}]}`,

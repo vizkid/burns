@@ -1,108 +1,15 @@
 import Foundation
 
-/// smithersd's `GET /models`: what each account can run on one host.
-public struct ModelsAnswer: Codable, Equatable, Sendable {
-    public var host: String
-    public var accounts: [ModelEntry]
-}
-
-public struct CatalogModel: Codable, Equatable, Sendable, Hashable {
-    public var id: String
-    public var display: String
-    public var efforts: [String]?
-    public init(id: String, display: String, efforts: [String]? = nil) { self.id = id; self.display = display; self.efforts = efforts }
-}
-
-public struct ModelEntry: Codable, Equatable, Sendable {
-    public var provider: String
-    public var account: String
-    public var defaultId: String
-    public var `default`: String
-    public var defaultEffort: String
-    public var models: [CatalogModel]
-    public init(provider: String, account: String, defaultId: String, default d: String, defaultEffort: String, models: [CatalogModel]) {
-        self.provider = provider; self.account = account; self.defaultId = defaultId
-        self.default = d; self.defaultEffort = defaultEffort; self.models = models
-    }
-}
-
-/// One account the launch sentence can bill.
-public struct LaunchAccount: Equatable, Sendable {
-    public var id: AccountID
-    public var emoji: String
-    /// In words: "96% left", "usage unknown", "credits".
-    public var left: String
-    public var entry: ModelEntry?
-    public init(id: AccountID, emoji: String, left: String, entry: ModelEntry?) { self.id = id; self.emoji = emoji; self.left = left; self.entry = entry }
-}
-
-/// A place a project can run. An empty `rex` is this Mac's own server. A nil session starts one.
-public struct LaunchHost: Equatable, Sendable {
-    public var rex: String
-    public var shown: String
-    public var path: String
-    public var session: String?
-    /// What each account runs on this host: a default is a fact of the host's home.
-    public var entries: [AccountID: ModelEntry]
-    public init(rex: String, shown: String, path: String, session: String?, entries: [AccountID: ModelEntry] = [:]) {
-        self.rex = rex; self.shown = shown; self.path = path; self.session = session; self.entries = entries
-    }
-}
-
-public struct LaunchProject: Equatable, Sendable {
-    public var name: String
-    public var path: String
-    public var hosts: [LaunchHost]
-    public init(name: String, path: String, hosts: [LaunchHost]) { self.name = name; self.path = path; self.hosts = hosts }
-
-    /// Folders from each host's sessions, one project per folder relative to the user's home, so
-    /// the same checkout on two hosts is one project. A home folder is no project.
-    public static func group(_ found: [(host: LaunchHost, relative: String)]) -> [LaunchProject] {
-        var out: [LaunchProject] = []
-        for item in found where !item.relative.isEmpty {
-            if let i = out.firstIndex(where: { $0.path == item.relative }) {
-                if !out[i].hosts.contains(where: { $0.rex == item.host.rex }) { out[i].hosts.append(item.host) }
-            } else {
-                let name = item.relative.split(separator: "/").last.map(String.init) ?? item.relative
-                out.append(LaunchProject(name: name, path: item.relative, hosts: [item.host]))
-            }
-        }
-        return out
-    }
-}
-
-/// The launch the sentence describes, ready for Rex.
-public struct LaunchRequest: Equatable, Sendable {
-    public var host: LaunchHost
-    public var project: String
-    public var provider: String
-    public var account: String
-    public var model: String?
-    public var effort: String?
-    public var emoji: String
-
-    /// Arguments for `rex`. Each value is one argument, never shell code.
-    public var arguments: [String] {
-        var smithers = ["smithers", "launch", "--provider", provider, "--account", account]
-        if let model { smithers += ["--model", model] }
-        if let effort { smithers += ["--effort", effort] }
-        let server = host.rex.isEmpty ? [] : ["-S", host.rex]
-        if let session = host.session {
-            return server + ["window", "new", "-s", session, "-c", host.path, emoji, "--"] + smithers
-        }
-        return server + ["new", project, "-c", host.path, "--window", emoji, "--"] + smithers
-    }
-}
-
 /// The launch sentence (docs/SPEC.md, "Steps"): agent, model, effort where it can be set, billing
 /// account, project, host. Everything is filled in from the start.
 public struct LaunchSentence: Equatable, Sendable {
     public enum Word: Int, Sendable { case agent, model, effort, account, project, host }
     public struct Option: Equatable, Sendable, Identifiable {
+        /// What this option is: a model's id, a project's folder, a host's Rex label. Titles can repeat.
+        public var id: String
         public var mark = ""
         public var title: String
         public var note = ""
-        public var id: String { title }
     }
 
     /// In the order Viz set. The last two have no accounts yet, so they cannot launch.
@@ -119,29 +26,58 @@ public struct LaunchSentence: Equatable, Sendable {
     public private(set) var project = 0
     public private(set) var host = 0
     public private(set) var query = ""
+    /// Why the first account is the default.
+    public private(set) var reason: String
+    /// Hosts left out of the lists, each with why: "two: no Rex entry".
+    public private(set) var unreachable: [String]
+    /// Words the operator chose or confirmed. A newer read keeps these and moves all others.
+    private var touched: Set<Word> = []
 
     /// `accounts` come best first, so the first is what the default rule picked.
-    public init(accounts: [LaunchAccount], projects: [LaunchProject]) {
+    public init(accounts: [LaunchAccount], projects: [LaunchProject], reason: String = "", unreachable: [String] = []) {
         self.accounts = accounts
         self.projects = projects
+        self.reason = reason
+        self.unreachable = unreachable
         let first = accounts.first?.id.provider ?? "codex"
         agent = Self.agents.firstIndex { $0.0 == first } ?? 0
     }
 
-    /// Takes a newer read while the panel is open. Choices are matched by identity, not position:
-    /// a read can reorder the lists, and a launch must not move to another account under the keys.
+    /// Takes a newer read while the panel is open. A choice the operator made is matched by identity,
+    /// because a read can reorder the lists. Anything untouched takes the new read's default: the
+    /// read the panel opened from can be hours old, and Return must launch the best account now.
     public mutating func adopt(_ fresh: LaunchSentence) {
         let shown = word, chosen = current?.id, at = place?.rex
         let folder = projects.indices.contains(project) ? projects[project].path : nil
-        if accounts.isEmpty { agent = fresh.agent }
         accounts = fresh.accounts
         projects = fresh.projects
-        account = billing.firstIndex { $0.id == chosen } ?? 0
-        project = projects.firstIndex { $0.path == folder } ?? 0
-        host = projects.indices.contains(project) ? projects[project].hosts.firstIndex { $0.rex == at } ?? 0 : 0
+        reason = fresh.reason
+        unreachable = fresh.unreachable
+        if !touched.contains(.agent) { agent = fresh.agent }
+        account = touched.contains(.account) ? billing.firstIndex { $0.id == chosen } ?? 0 : 0
+        project = touched.contains(.project) ? projects.firstIndex { $0.path == folder } ?? 0 : 0
+        host = touched.contains(.host) && projects.indices.contains(project) ? projects[project].hosts.firstIndex { $0.rex == at } ?? 0 : 0
+        revalidate()
+        slot = words.firstIndex(of: shown) ?? min(slot, words.count - 1)
+    }
+
+    /// A choice also holds what it was chosen from: a model comes from an account's catalog, and a
+    /// host from a project's list.
+    private func holds(_ w: Word) -> Set<Word> {
+        switch w {
+        case .agent: [.agent]
+        case .account: [.agent, .account]
+        case .model, .effort: [.agent, .account, .model]
+        case .project: [.project]
+        case .host: [.project, .host]
+        }
+    }
+
+    /// A model or effort the current account and host do not list would fail in the new tab, so
+    /// it never reaches a request.
+    private mutating func revalidate() {
         if let m = model { model = catalog.first { $0.id == m.id } }
         if let e = effort, !efforts.contains(e) { effort = nil }
-        slot = words.firstIndex(of: shown) ?? min(slot, words.count - 1)
     }
 
     var provider: String { Self.agents[agent].0 }
@@ -182,58 +118,71 @@ public struct LaunchSentence: Equatable, Sendable {
         let all: [Option]
         switch word {
         case .agent: all = Self.agents.map { a in
-            Option(title: a.1, note: accounts.first { $0.id.provider == a.0 }.map { "\($0.id.name) \($0.left)" } ?? "not in Burns yet") }
-        case .model: all = catalog.map { Option(title: $0.display, note: $0 == defaultModel ? "Default" : "") }
-        case .effort: all = efforts.map { Option(title: $0, note: $0 == entry?.defaultEffort ? "Default" : "") }
-        case .account: all = billing.map { Option(mark: $0.emoji, title: $0.id.name, note: $0.left) }
-        case .project: all = projects.map { Option(title: $0.name, note: $0.path) }
+            Option(id: a.1, title: a.1, note: accounts.first { $0.id.provider == a.0 }.map { "\($0.id.name) \($0.left)" } ?? "not in Burns yet") }
+        case .model: all = catalog.map { Option(id: $0.id, title: $0.display, note: $0 == defaultModel ? "Default" : "") }
+        case .effort: all = efforts.map { Option(id: $0, title: $0, note: $0 == entry?.defaultEffort ? "Default" : "") }
+        case .account: all = billing.map { Option(id: $0.id.name, mark: $0.emoji, title: $0.id.name, note: $0.left) }
+        case .project: all = projects.map { Option(id: $0.path, title: $0.name, note: $0.path) }
         case .host: all = projects.indices.contains(project) ? projects[project].hosts.map {
-            Option(title: $0.shown, note: $0.session == nil ? "new session" : "open session") } : []
+            Option(id: $0.rex, title: $0.shown, note: $0.session == nil ? "new session" : "open session") } : []
         }
         let q = query.lowercased()
         return q.isEmpty ? all : all.filter { "\($0.title) \($0.note)".lowercased().contains(q) }
     }
 
+    /// The selected option's `id`.
     public var selected: String {
         switch word {
         case .agent: return Self.agents[agent].1
-        case .model: return shownModel?.display ?? ""
+        case .model: return shownModel?.id ?? ""
         case .effort: return shownEffort
         case .account: return current?.id.name ?? ""
-        case .project: return projects.indices.contains(project) ? projects[project].name : ""
-        case .host: return place?.shown ?? ""
+        case .project: return projects.indices.contains(project) ? projects[project].path : ""
+        case .host: return place?.rex ?? ""
         }
     }
 
-    public mutating func pick(_ title: String) {
+    /// Chooses the option with this `id`.
+    public mutating func pick(_ id: String) {
         switch word {
         case .agent:
-            if let i = Self.agents.firstIndex(where: { $0.1 == title }), i != agent { agent = i; account = 0; model = nil; effort = nil }
+            if let i = Self.agents.firstIndex(where: { $0.1 == id }), i != agent {
+                agent = i; account = 0; model = nil; effort = nil
+                touched.subtract([.account, .model])
+            }
         case .model:
-            model = catalog.first { $0.display == title }
+            model = catalog.first { $0.id == id }
             if model == defaultModel { model = nil }
-            if let e = effort, !efforts.contains(e) { effort = nil }
-        case .effort: effort = title == entry?.defaultEffort ? nil : title
+        case .effort: effort = id == entry?.defaultEffort ? nil : id
         case .account:
-            if let i = billing.firstIndex(where: { $0.id.name == title }) {
-                account = i
-                if let m = model, !catalog.contains(m) { model = nil } // an untouched model follows the account
-            }
+            if let i = billing.firstIndex(where: { $0.id.name == id }) { account = i } // an untouched model follows the account
         case .project:
-            if let i = projects.firstIndex(where: { $0.name == title }) { project = i; host = 0 }
+            if let i = projects.firstIndex(where: { $0.path == id }) { project = i; host = 0; touched.remove(.host) }
         case .host:
-            if projects.indices.contains(project), let i = projects[project].hosts.firstIndex(where: { $0.shown == title }) {
-                host = i
-                if let m = model, !catalog.contains(m) { model = nil }
-            }
+            if projects.indices.contains(project), let i = projects[project].hosts.firstIndex(where: { $0.rex == id }) { host = i }
         }
+        touched.formUnion(holds(word))
+        revalidate()
     }
 
     public mutating func move(_ by: Int) {
         let list = options
         guard !list.isEmpty else { return }
-        let at = list.firstIndex { $0.title == selected } ?? -1
-        pick(list[max(0, min(list.count - 1, at + by))].title)
+        let at = list.firstIndex { $0.id == selected } ?? -1
+        pick(list[max(0, min(list.count - 1, at + by))].id)
+    }
+
+    /// Return on a word: the operator saw it and took it, so a newer read must not change it.
+    public mutating func confirm() {
+        touched.formUnion(holds(word))
+        step(1)
+    }
+
+    /// Esc steps back. False at the first word, where it closes the panel.
+    public mutating func back() -> Bool {
+        guard slot > 0 else { return false }
+        step(-1)
+        return true
     }
 
     /// Left and right stop at the ends.
@@ -244,7 +193,7 @@ public struct LaunchSentence: Equatable, Sendable {
 
     public mutating func type(_ text: String) {
         query += text.lowercased()
-        if let first = options.first { pick(first.title) }
+        if let first = options.first { pick(first.id) }
     }
 
     public mutating func erase() { if !query.isEmpty { query.removeLast() } }
@@ -254,6 +203,13 @@ public struct LaunchSentence: Equatable, Sendable {
         if current == nil { return "\(Self.agents[agent].1) has no account in Burns yet." }
         if place == nil { return "No project: no Rex session has a folder yet." }
         return nil
+    }
+
+    /// The panel's line: why the default won, while it is still the default, and who is missing.
+    public var note: String {
+        let why = current?.id == accounts.first?.id ? reason : ""
+        let missing = unreachable.isEmpty ? "" : "Not offered: " + unreachable.joined(separator: ", ")
+        return [why, missing].filter { !$0.isEmpty }.joined(separator: " · ")
     }
 
     /// Only what differs from the account's defaults becomes a flag.

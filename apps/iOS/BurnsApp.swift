@@ -5,7 +5,7 @@ import SwiftUI
 /// burndown, its live pane shares, and a line of hosts. No launch.
 @main
 struct BurnsApp: App {
-    @StateObject private var store = UsageStore()
+    @State private var store = UsageStore()
 
     var body: some Scene {
         WindowGroup {
@@ -15,8 +15,8 @@ struct BurnsApp: App {
 }
 
 struct HomeView: View {
-    @ObservedObject var store: UsageStore
-    @StateObject private var panes = PaneReader()
+    let store: UsageStore
+    @State private var panes = PaneReader()
     @Environment(\.scenePhase) private var phase
     @State private var showsSettings = false
     @State private var visible: CGFloat = 0
@@ -61,5 +61,13 @@ struct HomeView: View {
         }
         .task { await panes.reload(store) }
         .onChange(of: phase) { _, now in if now == .active { Task { await panes.reload(store) } } }
+        // No fetch: the model rebuilds from the cache, so a reset passes and the arcs move while the
+        // screen stays open. Rule 2 needs this between pulls.
+        .task(id: phase) {
+            while phase == .active, !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(60))
+                if !Task.isCancelled { store.rebuild() }
+            }
+        }
     }
 }
