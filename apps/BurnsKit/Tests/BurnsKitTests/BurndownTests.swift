@@ -75,15 +75,36 @@ struct BurndownTests {
     }
 
     /// Codex reports only when a turn runs, so the newest observation can be hours old. The
-    /// projection starts where the line ends, at that observation, so no gap opens between them;
-    /// its end is still the pace at now (Viz, 2026-10-31).
+    /// projection starts where the line ends, at that observation, so no gap opens between them
+    /// (Viz, 2026-10-31). The quiet hours since then count as burning nothing: 2.6% in the last
+    /// 24 hours is a slow current rate, so this ends near 50% left, not at the window's average of 30%.
     @Test func projectionStartsAtTheLastObservation() throws {
         let u = usage([10080: Window(percent: 40, resetsAt: weekReset, observedAt: now - 19 * h)])
         let line = try #require(Burndown.build(account: u, readings: [], now: now).line)
         let end = try #require(line.projection.last)
         #expect(line.projection.first == line.actual.last)
         #expect(line.projection.first == Point(x: x(19), left: 60))
-        #expect(end.x == 1 && abs(end.left - 30) < 0.01)
+        #expect(end.x == 1 && abs(end.left - 50.1) < 0.1)
+    }
+
+    /// The projection follows the current burn, not the window's average (Viz, 2026-11-02). A slow
+    /// three days then 24% in the last day: the average would leave 30% at the reset, and the
+    /// last day's rate of 1% an hour runs out 40 hours from now.
+    @Test func projectionFollowsTheLastDay() throws {
+        let u = usage([10080: Window(percent: 40, resetsAt: weekReset, observedAt: now)])
+        let rs = [reading(10080, 16, resets: weekReset, hoursAgo: 24), reading(10080, 40, resets: weekReset, hoursAgo: 0)]
+        let line = try #require(Burndown.build(account: u, readings: rs, now: now).line)
+        let end = try #require(line.projection.last)
+        #expect(line.projection.first == Point(x: x(0), left: 60))
+        #expect(end.left == 0 && abs(end.x - x(-60)) < 1e-6)
+    }
+
+    /// A burn that stopped: nothing used in the last 24 hours projects flat to the reset.
+    @Test func projectionHoldsFlatAfterAQuietDay() throws {
+        let u = usage([10080: Window(percent: 40, resetsAt: weekReset, observedAt: now)])
+        let line = try #require(Burndown.build(account: u, readings: [reading(10080, 40, resets: weekReset, hoursAgo: 30)], now: now).line)
+        let end = try #require(line.projection.last)
+        #expect(end.x == 1 && abs(end.left - 60) < 1e-6)
     }
 
     /// Over pace, the projection stops where it reaches 0% left.
@@ -93,6 +114,41 @@ struct BurndownTests {
         let end = try #require(line.projection.last)
         #expect(end.left == 0 && end.x < 1)
         #expect(abs(end.x - x(0) * 100 / 80) < 0.0001)
+    }
+
+    /// The header gives the current reading against the steady line, then where the current burn
+    /// ends up: 4/7 of the week gone at 40% used is 17% under, and that rate leaves 30% at the reset
+    /// (Viz, 2026-11-02).
+    @Test func headlineBehindPace() {
+        let u = usage([10080: Window(percent: 40, resetsAt: weekReset, observedAt: now)])
+        #expect(Burndown.build(account: u, readings: [], now: now).headline == "60% left · 17% under · 30% behind pace · resets 3d")
+    }
+
+    /// Over the line and out two days early.
+    @Test func headlineAheadOfPace() {
+        let u = usage([10080: Window(percent: 80, resetsAt: weekReset, observedAt: now)])
+        #expect(Burndown.build(account: u, readings: [], now: now).headline == "20% left · 23% over · 2d ahead of pace · resets 3d")
+    }
+
+    /// Under the line now and still running out early: the case the two readings exist for.
+    @Test func headlineUnderTheLineAndAheadOfPace() {
+        let u = usage([10080: Window(percent: 40, resetsAt: weekReset, observedAt: now)])
+        let rs = [reading(10080, 16, resets: weekReset, hoursAgo: 24), reading(10080, 40, resets: weekReset, hoursAgo: 0)]
+        #expect(Burndown.build(account: u, readings: rs, now: now).headline == "60% left · 17% under · 12h ahead of pace · resets 3d")
+    }
+
+    /// On the steady line now with the burn ending at the reset: no gap, and at pace.
+    @Test func headlineAtPace() {
+        let u = usage([10080: Window(percent: 400.0 / 7, resetsAt: weekReset, observedAt: now)])
+        #expect(Burndown.build(account: u, readings: [], now: now).headline == "43% left · at pace · resets 3d")
+    }
+
+    /// Too early to say, and a spent window, keep their short headlines.
+    @Test func headlineWithNoGap() {
+        let early = Window(percent: 1, resetsAt: now + 167 * h, observedAt: now)
+        #expect(Burndown.headline(minutes: 10080, window: early, now: now) == "99% left · resets 6d 23h")
+        let spent = Window(percent: 100, resetsAt: weekReset, observedAt: now)
+        #expect(Burndown.headline(minutes: 10080, window: spent, now: now) == "Budget spent · resets 3d")
     }
 
     /// An unknown window draws no line and is named; readings of other windows stay out.
@@ -122,8 +178,8 @@ struct BurndownTests {
     @Test func headline() {
         let five = Window(percent: 66, resetsAt: now + 2 * h, observedAt: now)
         let week = Window(percent: 70, resetsAt: weekReset, observedAt: now)
-        #expect(Burndown.build(account: usage([300: five, 10080: week]), readings: [], now: now).headline == "30% left · 13% ahead · resets 3d")
-        #expect(Burndown.build(account: usage([300: five]), readings: [], now: now).headline == "34% left · 6% ahead · resets 2h")
+        #expect(Burndown.build(account: usage([300: five, 10080: week]), readings: [], now: now).headline == "30% left · 13% over · 1d 6h ahead of pace · resets 3d")
+        #expect(Burndown.build(account: usage([300: five]), readings: [], now: now).headline == "34% left · 6% over · 27m ahead of pace · resets 2h")
         let spent = Window(percent: 100, resetsAt: now + 2 * h, observedAt: now)
         #expect(Burndown.build(account: usage([300: spent]), readings: [], now: now).headline == "Budget spent · resets 2h")
         #expect(Burndown.build(account: usage([:]), readings: [], now: now).headline == "Usage unknown")

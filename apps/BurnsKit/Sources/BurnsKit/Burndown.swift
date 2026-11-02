@@ -21,7 +21,7 @@ public struct Burndown: Equatable, Sendable {
         public var actual: [Point]
         /// Faint dashed: 100% at the start to 0% at the reset.
         public var steady: [Point]
-        /// Heavy dashed: the current rate to the reset, or to empty. Empty when it is too early to say.
+        /// Heavy dashed: the last day's rate to the reset, or to empty. Empty when it is too early to say.
         public var projection: [Point]
         public var verdict: SpendPace.Verdict?
         /// Where now is on this window's axis.
@@ -55,7 +55,7 @@ public struct Burndown: Equatable, Sendable {
             $0.provider == account.id.provider && $0.account == account.id.name && $0.minutes == m && w.holds($0)
         }
         let charted = line(minutes: m, window: w, readings: mine, now: now)
-        return Burndown(account: account.id, line: charted, grid: grid(charted), headline: headline(minutes: m, window: w, now: now))
+        return Burndown(account: account.id, line: charted, grid: grid(charted), headline: headline(minutes: m, window: w, now: now, projection: charted.projection))
     }
 
     static func length(_ minutes: Int) -> TimeInterval { TimeInterval(minutes) * 60 }
@@ -82,19 +82,33 @@ public struct Burndown: Equatable, Sendable {
             actual.append(Point(x: max(x(w.observedAt), lastPoint.x), left: 100 - max(used, high)))
         }
         let pace = SpendPace(usedPercent: used, resetsAt: w.resetsAt, length: length, now: now)
-        var projection: [Point] = []
-        if let pace, pace.verdict != nil {
-            // From where the line ends, the last observation, which can be hours before now: Codex
-            // reports only when a turn runs. Starting at now would leave a gap between the two.
-            let from = actual.last ?? Point(x: x(now), left: 100 - used)
-            if let out = pace.runsOutAt {
-                projection = [from, Point(x: x(out), left: 0)]
-            } else if used < 100 {
-                projection = [from, Point(x: 1, left: 100 - used / max(pace.elapsed, SpendPace.quietFraction))]
-            }
-        }
+        let projection = pace?.verdict != nil && used < 100 ? project(actual, now: x(now)) : []
         return Line(minutes: minutes, actual: actual, steady: [Point(x: 0, left: 100), Point(x: 1, left: 0)],
                     projection: projection, verdict: pace?.verdict, now: x(now))
+    }
+
+    /// How far back the current burn is measured: a seventh of the window, so a day of a week. A
+    /// whole day holds a night's idle and a day's work, so neither alone sets the slope.
+    static let recentFraction = 1.0 / 7
+
+    /// The current burn carried to the reset, or to 0% left. It starts where the line ends, the last
+    /// observation, which can be hours before now: starting at now would leave a gap. The burn is
+    /// measured to now, not to that observation, because usage only moves when a reading arrives,
+    /// so the quiet hours since it burned nothing.
+    static func project(_ actual: [Point], now: Double) -> [Point] {
+        guard let last = actual.last else { return [] }
+        let end = max(now, last.x), start = max(end - recentFraction, 0)
+        let rate = (left(actual, at: start) - last.left) / max(end - start, SpendPace.quietFraction)
+        if rate > 0, last.x + last.left / rate < 1 { return [last, Point(x: last.x + last.left / rate, left: 0)] }
+        return [last, Point(x: 1, left: last.left - rate * (1 - last.x))]
+    }
+
+    /// Percent left at `x`, straight between readings. The actual line starts at (0, 100).
+    static func left(_ actual: [Point], at x: Double) -> Double {
+        guard let i = actual.firstIndex(where: { $0.x >= x }) else { return actual.last?.left ?? 100 }
+        guard i > 0, actual[i].x > actual[i - 1].x else { return actual[i].left }
+        let a = actual[i - 1], b = actual[i]
+        return a.left + (b.left - a.left) * (x - a.x) / (b.x - a.x)
     }
 
     static func grid(_ line: Line) -> [Slot] {
@@ -105,12 +119,35 @@ public struct Burndown: Equatable, Sendable {
         }
     }
 
-    /// "34% left · 6% ahead · resets 2h", for the charted window.
-    static func headline(minutes m: Int, window w: Window, now: Date) -> String {
+    /// "34% left · 15% under · 4h ahead of pace · resets 1d 7h", for the charted window.
+    static func headline(minutes m: Int, window w: Window, now: Date, projection: [Point] = []) -> String {
         guard let used = w.percent else { return "Usage unknown" }
         let reset = SpendReset.countdown(to: w.resetsAt, now: now).map { "resets " + $0 }
         if used >= 100 { return (["Budget spent"] + [reset].compactMap { $0 }).joined(separator: " · ") }
-        let words = SpendPace(usedPercent: used, resetsAt: w.resetsAt, length: length(m), now: now)?.words()
-        return ([String(format: "%.0f%% left", 100 - used)] + [words, reset].compactMap { $0 }).joined(separator: " · ")
+        let pace = SpendPace(usedPercent: used, resetsAt: w.resetsAt, length: length(m), now: now)
+        let parts = [pace.flatMap { current($0) }, outlook(projection, length: length(m), now: now), reset]
+        return ([String(format: "%.0f%% left", 100 - used)] + parts.compactMap { $0 }).joined(separator: " · ")
+    }
+
+    /// The current reading against the steady line: "15% under". Nil on the line, or while it is
+    /// too early to say.
+    static func current(_ pace: SpendPace) -> String? {
+        guard pace.verdict != nil, let points = pace.aheadPoints, points != 0 else { return nil }
+        return "\(abs(points))% \(points > 0 ? "over" : "under")"
+    }
+
+    /// Where the current burn ends up (Viz, 2026-11-02): out early is the time short of the reset,
+    /// "4h ahead of pace"; quota left at the reset is that percent, "12% behind pace". A reading
+    /// can be under the steady line and ahead of pace, so the header shows both.
+    static func outlook(_ projection: [Point], length: TimeInterval, now: Date) -> String? {
+        guard let end = projection.last else { return nil }
+        if end.left >= 0.5 { return "\(Int(end.left.rounded()))% behind pace" }
+        let early = (1 - end.x) * length
+        return early / length < 0.005 ? "at pace" : "\(span(early, now: now)) ahead of pace"
+    }
+
+    /// A duration in the countdown's format. The half minute keeps 47h 59m 59.9s from reading short.
+    static func span(_ seconds: TimeInterval, now: Date) -> String {
+        SpendReset.countdown(to: now.addingTimeInterval(seconds + 30), now: now) ?? "<1m"
     }
 }
