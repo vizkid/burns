@@ -18,6 +18,9 @@ const (
 	tailnetPort  = "9766"
 	tailnetRetry = 30 * time.Second
 	whoisTTL     = 5 * time.Minute
+	// whoisGrace keeps a caller's last answer while tailscaled is too slow to
+	// answer: a tailnet address names one node, and its owner rarely changes.
+	whoisGrace = time.Hour
 )
 
 // serveTailnet serves reads on this node's tailnet address until ctx ends. While
@@ -49,7 +52,7 @@ func serveTailnetOnce(ctx context.Context, cli tailnet.CLI, reads http.Handler) 
 	if err != nil {
 		return err
 	}
-	gate := &tailnet.Gate{Whois: cli, Login: login, TTL: whoisTTL, Now: time.Now}
+	gate := &tailnet.Gate{Whois: cli, Login: login, Self: ip, TTL: whoisTTL, Grace: whoisGrace, Now: time.Now}
 	addr := net.JoinHostPort(ip, tailnetPort)
 	srv := &http.Server{
 		Addr:              addr,

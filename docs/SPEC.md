@@ -239,8 +239,8 @@ Tools such as roar, smithers, rex and cop each need something in every account's
 |---|---|
 | Address | The first tailnet IPv4 address from `tailscale ip -4`, port 9766. If Tailscale is down at start, `smithersd` retries every 30 seconds. |
 | Routes | `GET /usage`, `/usage/readings`, `/usage/history`, `/usage/sessions`, `/usage/panes`, `GET /models`, and `GET` and `PUT /accounts`, so either app can propagate the account list (see "Accounts in the apps"). Every other route answers 404 there. |
-| Caller check | `tailscale whois --json` on the caller's address. The caller's login must equal the login that owns this host's node. A tagged node, another user, or a failed lookup answers 403. |
-| Cache | Each answer, allowed or refused, is kept 5 minutes per caller address. A failed lookup is not kept. A lookup is limited to 5 seconds. |
+| Caller check | `tailscale whois --json` on the caller's address. The caller's login must equal the login that owns this host's node. A tagged node, another user, or a failed lookup with no earlier answer answers 403. This node's own address needs no lookup: `smithersd` learned it and its owner at startup. |
+| Cache | Each answer, allowed or refused, is kept 5 minutes per caller address. Requests from one address that arrive together share one lookup. A failed lookup is not kept, and the next request tries again. Until one succeeds, the last answer for that address stands for up to an hour past its 5 minutes. A lookup is limited to 5 seconds. 2026-11-02: at load 57 on 18 cores, `whois` took more than 5 seconds. The Mac app reads its own host over the tailnet and waits 4 seconds, so it reported "timed out". Each concurrent read started its own `whois`, six were killed in one second, and each failure answered 403 with nothing kept. A tailnet address names one node, so a slow `tailscaled` is no reason to refuse a caller allowed minutes earlier. |
 | Transport | Plain HTTP inside the tailnet, which WireGuard encrypts. The iOS app allows plain HTTP only for `ts.net` names. |
 | Flag | `--tailscale` names the CLI. The install passes the path it finds, as it does for `rex`. Empty disables the listener. |
 

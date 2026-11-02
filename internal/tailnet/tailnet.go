@@ -7,13 +7,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
 	"net"
-	"net/http"
 	"os/exec"
 	"strings"
-	"sync"
-	"time"
 )
 
 // Identity is who Tailscale says a peer is.
@@ -75,68 +71,4 @@ func (c CLI) run(ctx context.Context, args ...string) ([]byte, error) {
 		return nil, fmt.Errorf("tailscale %s: %w: %s", args[0], err, strings.TrimSpace(stderr.String()))
 	}
 	return out, nil
-}
-
-// LookupTimeout bounds one whois: a request's context has no deadline.
-const LookupTimeout = 5 * time.Second
-
-// Gate lets a request through only when its caller's login is Login. Each
-// answer is cached for TTL per IP, so another user's requests cost one process.
-// A failed lookup is not an answer: it is tried again, in case tailscaled was restarting.
-type Gate struct {
-	Whois Whois
-	Login string
-	TTL   time.Duration
-	Now   func() time.Time
-
-	mu      sync.Mutex
-	answers map[string]answer // by IP
-}
-
-type answer struct {
-	allowed bool
-	until   time.Time
-}
-
-// Wrap guards h.
-func (g *Gate) Wrap(h http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if !g.allow(r) {
-			http.Error(w, "forbidden", http.StatusForbidden)
-			return
-		}
-		h.ServeHTTP(w, r)
-	})
-}
-
-func (g *Gate) allow(r *http.Request) bool {
-	ip, _, err := net.SplitHostPort(r.RemoteAddr)
-	if err != nil || net.ParseIP(ip) == nil {
-		return false
-	}
-	now := g.Now()
-	g.mu.Lock()
-	a, ok := g.answers[ip]
-	g.mu.Unlock()
-	if ok && now.Before(a.until) {
-		return a.allowed
-	}
-	lookup, cancel := context.WithTimeout(r.Context(), LookupTimeout)
-	defer cancel()
-	id, err := g.Whois.Whois(lookup, ip)
-	if err != nil {
-		log.Printf("WARN tailnet caller %s: %v", ip, err)
-		return false
-	}
-	allowed := !id.Tagged && id.Login == g.Login
-	if !allowed {
-		log.Printf("WARN tailnet caller %s refused: %q", ip, id.Login)
-	}
-	g.mu.Lock()
-	if g.answers == nil {
-		g.answers = map[string]answer{}
-	}
-	g.answers[ip] = answer{allowed: allowed, until: now.Add(g.TTL)}
-	g.mu.Unlock()
-	return allowed
 }
