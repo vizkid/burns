@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/vizkid/burns/internal/api"
+	"github.com/vizkid/burns/internal/billing"
 	"github.com/vizkid/burns/internal/bindings"
 	"github.com/vizkid/burns/internal/collect"
 	"github.com/vizkid/burns/internal/config"
@@ -88,7 +89,14 @@ func run() error {
 	if err := st.Sweep(time.Now()); err != nil {
 		log.Printf("WARN sweep: %v", err)
 	}
+	if err := st.RollUp(time.Time{}, time.Now()); err != nil {
+		log.Printf("WARN roll up: %v", err)
+	}
 	go loop(ctx, &collect.Collector{Store: st, Config: cfg, Now: time.Now}, st)
+	if home, err := os.UserHomeDir(); err == nil {
+		go (&billing.Poller{Store: st, Config: cfg, Client: http.DefaultClient, URL: billing.UsageURL,
+			Token: billing.StoredToken(home, time.Now), Now: time.Now}).Run(ctx)
+	}
 
 	// A PUT /accounts write stops both listeners; run then returns errRestart once
 	// the handlers on both have finished. Most writes arrive over the tailnet.
@@ -136,11 +144,17 @@ func run() error {
 	return nil
 }
 
+// recentHours is how far back the minute's roll-up reaches.
+const recentHours = 3 * time.Hour
+
 // loop scans agent homes at the collector's adaptive interval and sweeps old
 // rows once an hour.
 func loop(ctx context.Context, c *collect.Collector, st *store.Store) {
 	sweep := time.NewTicker(time.Hour)
 	defer sweep.Stop()
+	rollup := time.NewTicker(time.Minute)
+	defer rollup.Stop()
+	rolled := time.Now()
 	lastErr := ""
 	for {
 		if err := c.Scan(); err != nil && err.Error() != lastErr {
@@ -155,6 +169,16 @@ func loop(ctx context.Context, c *collect.Collector, st *store.Store) {
 		case <-sweep.C:
 			if err := st.Sweep(time.Now()); err != nil {
 				log.Printf("WARN sweep: %v", err)
+			}
+		case <-rollup.C:
+			// The last few hours each minute. Each hour, everything: a late row can be days old.
+			now := time.Now()
+			from := now.Add(-recentHours)
+			if now.Sub(rolled) >= time.Hour {
+				from, rolled = time.Time{}, now
+			}
+			if err := st.RollUp(from, now); err != nil {
+				log.Printf("WARN roll up: %v", err)
 			}
 		case <-time.After(c.Interval()):
 		}

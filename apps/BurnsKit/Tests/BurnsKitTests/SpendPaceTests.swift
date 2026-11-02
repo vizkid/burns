@@ -89,14 +89,14 @@ struct SpendPaceTests {
         #expect(five(100, elapsed: 4)?.sentence(calendar: Self.utc, now: Self.now) == "You have reached 100%. The window resets at 13:00, in 1h")
     }
 
-    /// A window that just reset: under 3% elapsed the ratio is noise, so there is a tick and no verdict.
+    /// A window that just reset: under 0.5% elapsed the ratio is noise, so there is a tick and no verdict.
     @Test func theFirstMinutesGiveNoVerdict() throws {
-        let p = try #require(five(4, elapsed: 0.1))   // 6 of 300 minutes: 2%
+        let p = try #require(five(4, elapsed: 0.02))   // 1.2 of 300 minutes: 0.4%
         #expect(p.verdict == nil && p.projectedPercent == nil && p.runsOutAt == nil)
-        #expect(abs(p.elapsed - 0.02) < 1e-9)
+        #expect(abs(p.elapsed - 0.004) < 1e-9)
         #expect(p.short(calendar: Self.utc, now: Self.now) == nil && p.sentence(calendar: Self.utc, now: Self.now) == nil)
-        // At 3% the verdict starts.
-        #expect(five(10, elapsed: 0.15)?.verdict == .critical)
+        // At 0.5% the verdict starts (Viz, 2026-11-02: a three percent hold hid a real burn for 5 hours of a week).
+        #expect(five(10, elapsed: 0.025)?.verdict == .critical)
     }
 
     /// A window nearly over: the projection barely moves, and a late overshoot is amber.
@@ -168,5 +168,14 @@ struct SpendPaceTests {
         #expect(SpendPace.line(fiveHour: over, sevenDay: out, calendar: Self.utc, now: Self.now) == "5h 6% ahead · 7d out")
         #expect(SpendPace.line(fiveHour: nil, sevenDay: nil, calendar: Self.utc, now: Self.now) == nil)
         #expect(SpendPace.worst(over, out) == .critical && SpendPace.worst(fine, nil) == .onPace && SpendPace.worst(nil, nil) == nil)
+    }
+
+    /// 0.5% of a week is 50 minutes. 13% used then reads red, and 34 minutes in it is still held.
+    @Test func aFastStartShowsAfterFiftyMinutes() throws {
+        func week(_ minutes: Double) -> SpendPace? {
+            SpendPace(usedPercent: 13, resetsAt: Self.now.addingTimeInterval(SpendPace.sevenDays - minutes * 60), length: SpendPace.sevenDays, now: Self.now)
+        }
+        #expect(week(34)?.verdict == nil)
+        #expect(week(51)?.verdict == .critical)
     }
 }

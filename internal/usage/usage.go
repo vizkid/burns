@@ -30,24 +30,38 @@ const (
 // cached tokens in input_tokens, so the Codex decoder subtracts them.
 // Output includes reasoning tokens for both providers.
 type Request struct {
-	Provider    string    `json:"provider"`
-	Key         string    `json:"key"`
-	Account     string    `json:"account"`
-	Session     string    `json:"session"`
-	Agent       string    `json:"agent,omitempty"`
-	Turn        string    `json:"turn,omitempty"`
-	Model       string    `json:"model,omitempty"`
-	Input       int64     `json:"input"`
-	CachedInput int64     `json:"cached_input"`
-	CacheWrite  int64     `json:"cache_write"`
-	Output      int64     `json:"output"`
-	Reasoning   int64     `json:"reasoning"`
-	CostMicros  *int64    `json:"cost_micros"`
-	Compaction  bool      `json:"compaction"`
-	Block       string    `json:"block,omitempty"`
-	RexSession  string    `json:"rex_session,omitempty"`
-	Source      string    `json:"source"`
-	At          time.Time `json:"at"`
+	Provider    string `json:"provider"`
+	Key         string `json:"key"`
+	Account     string `json:"account"`
+	Session     string `json:"session"`
+	Agent       string `json:"agent,omitempty"`
+	Turn        string `json:"turn,omitempty"`
+	Model       string `json:"model,omitempty"`
+	Input       int64  `json:"input"`
+	CachedInput int64  `json:"cached_input"`
+	CacheWrite  int64  `json:"cache_write"`
+	// CacheWrite1h is the part of CacheWrite written with a one-hour lifetime. The rest is five
+	// minutes on Claude. Zero when the source did not say.
+	CacheWrite1h int64 `json:"cache_write_1h,omitempty"`
+	// Speed is a paid speed tier such as "fast". Empty is the standard speed.
+	Speed      string    `json:"speed,omitempty"`
+	Output     int64     `json:"output"`
+	Reasoning  int64     `json:"reasoning"`
+	CostMicros *int64    `json:"cost_micros"`
+	Compaction bool      `json:"compaction"`
+	Block      string    `json:"block,omitempty"`
+	RexSession string    `json:"rex_session,omitempty"`
+	Source     string    `json:"source"`
+	At         time.Time `json:"at"`
+}
+
+// PaidSpeed returns a speed tier as stored: the names each source uses for its standard tier are empty.
+func PaidSpeed(s string) string {
+	switch s {
+	case "normal", "standard", "default":
+		return ""
+	}
+	return s
 }
 
 // Total is every token the request consumed.

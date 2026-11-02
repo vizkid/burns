@@ -15,6 +15,8 @@ enum HostIcon {
 final class PaneReader {
     /// Each host's answer, without its display name or icon: those can change between reads.
     private var hosts: [HostPanes]?
+    /// Each host's money, by the same rules.
+    private var costs: [HostCost]?
     @ObservationIgnored private var running: Task<Void, Never>?
     /// The addresses the last read covered.
     @ObservationIgnored private var read: [String] = []
@@ -25,9 +27,10 @@ final class PaneReader {
         let task = Task {
             // Panes start from the cached host list, so a slow host cannot hold them back.
             async let panes: Void = readPanes(store.statuses)
+            async let cost: Void = readCost(store.statuses)
             await store.refresh()
             if let found = await icons?(store.statuses) { store.addHostIcons(found) }
-            _ = await panes
+            _ = await (panes, cost)
         }
         running = task
         await task.value
@@ -41,7 +44,9 @@ final class PaneReader {
         let addresses = store.statuses.map(\.address)
         guard running == nil, !addresses.allSatisfy(read.contains) else { return }
         running = Task {
-            await readPanes(store.statuses)
+            async let panes: Void = readPanes(store.statuses)
+            async let cost: Void = readCost(store.statuses)
+            _ = await (panes, cost)
             running = nil
         }
     }
@@ -66,6 +71,27 @@ final class PaneReader {
         }
     }
 
+    private func readCost(_ statuses: [HostStatus]) async {
+        let names = statuses.map { (address: $0.address, name: Self.name($0)) }
+        var answers = (costs ?? []).reduce(into: [String: HostCost]()) { $0[$1.host] = $1 }
+        await withTaskGroup(of: HostCost.self) { group in
+            for h in names {
+                group.addTask { HostCost(host: h.name, answer: try? await HostFetcher().cost(h.address)) }
+            }
+            for await answer in group {
+                answers[answer.host] = answer
+                costs = names.compactMap { answers[$0.name] }
+            }
+        }
+    }
+
+    /// The selected account's money, with today's host names. Azure has no window, so its period is the last 7 days.
+    func cost(_ store: UsageStore) -> CostSummary? {
+        guard let costs, let b = store.model.burndown else { return nil }
+        let shown = costs.map { HostCost(host: store.hostNames[$0.host] ?? $0.host, answer: $0.answer) }
+        return CostSummary.build(shown, account: b.account, windowStart: b.windowStart ?? Date(timeIntervalSinceNow: -7 * 86_400), limitAt: b.limitAt)
+    }
+
     static func name(_ s: HostStatus) -> String {
         s.snapshot?.usage.host ?? s.address.split(separator: ".").first.map(String.init) ?? s.address
     }
@@ -80,6 +106,21 @@ final class PaneReader {
             return named
         }
         return PaneShares.build(shown, account: id)
+    }
+}
+
+/// Money on a spent window, and on Azure. Both apps draw it between the chart and the panes.
+struct CostPanel: View {
+    let store: UsageStore
+    let reader: PaneReader
+
+    var body: some View {
+        // Money charged in this reset period always shows, even with room left in the week: the
+        // five-hour limit can start paid usage (Viz, 2026-11-02). The chart squashes only when spent.
+        if let b = store.model.burndown, b.showsCost || reader.cost(store)?.hasSpend == true {
+            CostView(summary: reader.cost(store), period: b.windowStart == nil ? "Last 7 days" : "This window")
+            Divider()
+        }
     }
 }
 

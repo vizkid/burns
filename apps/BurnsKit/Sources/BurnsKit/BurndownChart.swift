@@ -138,6 +138,7 @@ public struct BurndownChart: View {
 /// The ring row above the selected account's burndown: the menu bar window, the iPhone screen and
 /// the medium widgets. `cell` wraps each ring in the caller's kind of button.
 public struct UsageView<Cell: View>: View {
+
     let model: UsageModel
     let diameter: CGFloat
     let compact: Bool
@@ -166,9 +167,12 @@ public struct UsageView<Cell: View>: View {
                         Text(b.headline).font(compact ? .caption2 : .caption).foregroundStyle(.secondary).lineLimit(1).minimumScaleFactor(0.7)
                     }
                     if b.line == nil {
-                        Text(b.credits ? "Runs on Microsoft credits. No quota windows to draw." : "No live quota window to draw.")
-                            .font(compact ? .caption2 : .footnote).foregroundStyle(.secondary)
-                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        // A full view shows Azure's money under this, so it needs no words here.
+                        if compact || !b.credits {
+                            Text(b.credits ? "Runs on Microsoft credits. No quota windows to draw." : "No live quota window to draw.")
+                                .font(compact ? .caption2 : .footnote).foregroundStyle(.secondary)
+                                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        }
                     } else {
                         BurndownChart(burndown: b, compact: compact)
                     }

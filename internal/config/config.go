@@ -39,6 +39,8 @@ var settingPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._:-]{0,63}$`)
 
 var envPattern = regexp.MustCompile(`^[A-Z_][A-Z0-9_]{0,63}$`)
 
+var currencyPattern = regexp.MustCompile(`^[A-Z]{3}$`)
+
 // Account is one provider and account name with its agent home.
 // Home is absolute, or relative to the user's home directory. ExtraHomes are
 // other homes signed in to the same account, such as the CLI's default home:
@@ -52,6 +54,14 @@ type Account struct {
 	Colour     string   `json:"colour,omitempty"`
 	Emoji      string   `json:"emoji,omitempty"`
 	Launch     *Launch  `json:"launch,omitempty"`
+	// CreditPrice is what this account paid per credit. Plans differ, and no API states it.
+	CreditPrice *CreditPrice `json:"credit_price,omitempty"`
+}
+
+// CreditPrice is one credit's price. Burns converts no currency.
+type CreditPrice struct {
+	Currency string  `json:"currency"`
+	Amount   float64 `json:"amount"`
 }
 
 // Launch is an account's launch overrides. An empty field leaves the CLI's own
@@ -135,6 +145,8 @@ func (c Config) validate() error {
 			problem = "emoji must be one emoji"
 		case seen[a.Provider+"/"+a.Name]:
 			problem = "duplicate account"
+		case a.CreditPrice != nil && (a.CreditPrice.Amount <= 0 || !currencyPattern.MatchString(a.CreditPrice.Currency)):
+			problem = "credit_price needs a three-letter currency and a positive amount"
 		default:
 			if problem = CheckLaunch(a); problem == "" {
 				problem = c.checkHomes(a, homes)

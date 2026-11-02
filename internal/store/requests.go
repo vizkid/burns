@@ -9,7 +9,7 @@ import (
 )
 
 const requestCols = `provider, key, account, session, agent, turn, model, input, cached_input, cache_write,
-	output, reasoning, cost_micros, compaction, block, rex_session, source, at`
+	output, reasoning, cost_micros, compaction, block, rex_session, source, at, cache_write_1h, speed`
 
 // AddRequests stores requests. A key already stored keeps its tokens unless the
 // new row comes from OTel and the stored one does not, or the new row has a
@@ -39,9 +39,9 @@ func (s *Store) AddRequests(rs []usage.Request) error {
 		if found && sameRequest(old, r) {
 			continue
 		}
-		if _, err := tx.Exec(`INSERT OR REPLACE INTO request (`+requestCols+`) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+		if _, err := tx.Exec(`INSERT OR REPLACE INTO request (`+requestCols+`) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 			r.Provider, r.Key, r.Account, r.Session, r.Agent, r.Turn, r.Model, r.Input, r.CachedInput, r.CacheWrite,
-			r.Output, r.Reasoning, r.CostMicros, boolInt(r.Compaction), r.Block, r.RexSession, r.Source, nanos(r.At)); err != nil {
+			r.Output, r.Reasoning, r.CostMicros, boolInt(r.Compaction), r.Block, r.RexSession, r.Source, nanos(r.At), r.CacheWrite1h, r.Speed); err != nil {
 			return err
 		}
 	}
@@ -58,12 +58,15 @@ func mergeRequest(old, next usage.Request) usage.Request {
 		keep.CostMicros = other.CostMicros
 	}
 	keep.Compaction = keep.Compaction || other.Compaction
+	if keep.CacheWrite1h == 0 {
+		keep.CacheWrite1h = other.CacheWrite1h
+	}
 	for _, f := range []struct {
 		dst *string
 		src string
 	}{
 		{&keep.Account, other.Account}, {&keep.Block, other.Block}, {&keep.RexSession, other.RexSession},
-		{&keep.Turn, other.Turn}, {&keep.Agent, other.Agent}, {&keep.Model, other.Model},
+		{&keep.Turn, other.Turn}, {&keep.Agent, other.Agent}, {&keep.Model, other.Model}, {&keep.Speed, other.Speed},
 	} {
 		if *f.dst == "" {
 			*f.dst = f.src
@@ -103,7 +106,7 @@ func loadRequest(tx *sql.Tx, provider, key string) (usage.Request, bool, error) 
 	var cost sql.NullInt64
 	err := tx.QueryRow(`SELECT `+requestCols+` FROM request WHERE provider = ? AND key = ?`, provider, key).Scan(
 		&r.Provider, &r.Key, &r.Account, &r.Session, &r.Agent, &r.Turn, &r.Model, &r.Input, &r.CachedInput,
-		&r.CacheWrite, &r.Output, &r.Reasoning, &cost, &comp, &r.Block, &r.RexSession, &r.Source, &at)
+		&r.CacheWrite, &r.Output, &r.Reasoning, &cost, &comp, &r.Block, &r.RexSession, &r.Source, &at, &r.CacheWrite1h, &r.Speed)
 	if errors.Is(err, sql.ErrNoRows) {
 		return r, false, nil
 	}

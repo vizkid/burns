@@ -30,8 +30,9 @@ struct HomeView: View {
                         Button { store.select(ring.id) } label: { RingCell(ring: ring, selected: selected, diameter: 52, showsName: true) }
                             .buttonStyle(.plain)
                     }
-                    .frame(height: store.model.rings.isEmpty ? 120 : ScreenFit.usageHeight(visible: visible, below: hosts))
+                    .frame(height: store.model.rings.isEmpty ? 120 : store.model.usageHeight(full: ScreenFit.usageHeight(visible: visible, below: hosts)))
                     VStack(alignment: .leading, spacing: ScreenFit.spacing) {
+                        CostPanel(store: store, reader: panes)
                         LivePanes(store: store, reader: panes)
                         HostStatusLine(statuses: store.statuses, names: store.hostNames, icons: store.hostIcons)
                     }

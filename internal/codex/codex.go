@@ -38,6 +38,7 @@ type Decoder struct {
 	Thread     string `json:"thread"`
 	Session    string `json:"session"`
 	Model      string `json:"model"`
+	Speed      string `json:"speed,omitempty"` // paid service tier of the thread; empty is the default
 	Records    bool   `json:"records"`
 	LastTotal  int64  `json:"last_total"`
 	TotalCount int    `json:"total_count"`

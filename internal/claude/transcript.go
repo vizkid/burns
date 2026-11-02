@@ -27,10 +27,14 @@ type transcriptLine struct {
 		ID    string `json:"id"`
 		Model string `json:"model"`
 		Usage *struct {
-			Input      int64 `json:"input_tokens"`
-			CacheRead  int64 `json:"cache_read_input_tokens"`
-			CacheWrite int64 `json:"cache_creation_input_tokens"`
-			Output     int64 `json:"output_tokens"`
+			Input      int64  `json:"input_tokens"`
+			CacheRead  int64  `json:"cache_read_input_tokens"`
+			CacheWrite int64  `json:"cache_creation_input_tokens"`
+			Output     int64  `json:"output_tokens"`
+			Speed      string `json:"speed"`
+			Lifetimes  struct {
+				OneHour int64 `json:"ephemeral_1h_input_tokens"`
+			} `json:"cache_creation"`
 		} `json:"usage"`
 	} `json:"message"`
 	CompactMetadata *struct {
@@ -98,5 +102,5 @@ func (d *Transcript) request(l transcriptLine) (usage.Request, bool) {
 	u := l.Message.Usage
 	return usage.Request{Provider: usage.Claude, Key: key, Account: d.Account, Session: l.SessionID,
 		Agent: l.AgentID, Turn: d.Turn, Model: l.Message.Model, Input: u.Input, CachedInput: u.CacheRead,
-		CacheWrite: u.CacheWrite, Output: u.Output, Source: usage.SourceTranscript, At: l.Timestamp}, true
+		CacheWrite: u.CacheWrite, CacheWrite1h: u.Lifetimes.OneHour, Speed: usage.PaidSpeed(u.Speed), Output: u.Output, Source: usage.SourceTranscript, At: l.Timestamp}, true
 }

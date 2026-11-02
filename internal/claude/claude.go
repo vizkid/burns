@@ -47,7 +47,10 @@ func request(e otlp.Event, session string) (usage.Request, bool) {
 	r.Input, _ = e.Int("input_tokens")
 	r.CachedInput, _ = e.Int("cache_read_tokens")
 	r.CacheWrite, _ = e.Int("cache_creation_tokens")
+	r.CacheWrite1h, _ = e.Int("cache_creation_1h_tokens")
 	r.Output, _ = e.Int("output_tokens")
+	speed, _ := e.String("speed")
+	r.Speed = usage.PaidSpeed(speed)
 	if c, ok := e.Int("cost_usd_micros"); ok {
 		r.CostMicros = &c
 	}

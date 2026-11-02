@@ -144,3 +144,38 @@ func TestTranscriptDedupes(t *testing.T) {
 		t.Fatalf("compactions = %+v", comps)
 	}
 }
+
+// Telemetry names the cache lifetime and the speed. Standard speed is stored as empty.
+func TestEventCarriesCacheLifetimeAndSpeed(t *testing.T) {
+	logs := func(speed string) []byte {
+		return []byte(`{"resourceLogs":[{"scopeLogs":[{"logRecords":[{"timeUnixNano":"1793160073000000000","attributes":[
+		 {"key":"event.name","value":{"stringValue":"api_request"}},
+		 {"key":"session.id","value":{"stringValue":"s1"}},
+		 {"key":"request_id","value":{"stringValue":"r1"}},
+		 {"key":"cache_creation_tokens","value":{"intValue":900}},
+		 {"key":"cache_creation_1h_tokens","value":{"intValue":600}},
+		 {"key":"speed","value":{"stringValue":"` + speed + `"}}]}]}]}]}`)
+	}
+	for speed, want := range map[string]string{"fast": "fast", "normal": ""} {
+		evs, err := otlp.ParseLogs(logs(speed))
+		if err != nil {
+			t.Fatal(err)
+		}
+		reqs, _ := FromEvents(evs)
+		if len(reqs) != 1 || reqs[0].CacheWrite1h != 600 || reqs[0].Speed != want {
+			t.Fatalf("speed %s: requests = %+v", speed, reqs)
+		}
+	}
+}
+
+// A transcript line carries the same split under usage.cache_creation.
+func TestTranscriptCarriesCacheLifetimeAndSpeed(t *testing.T) {
+	line := `{"type":"assistant","sessionId":"s1","requestId":"r1","timestamp":"2026-10-20T03:26:14Z","message":{"id":"m1","model":"claude-opus-5-5",` +
+		`"usage":{"input_tokens":1,"cache_creation_input_tokens":900,"cache_read_input_tokens":2,"output_tokens":3,"speed":"standard",` +
+		`"cache_creation":{"ephemeral_1h_input_tokens":600,"ephemeral_5m_input_tokens":300}}}}`
+	d := &Transcript{Account: "personal"}
+	reqs, _ := d.Lines([][]byte{[]byte(line)})
+	if len(reqs) != 1 || reqs[0].CacheWrite1h != 600 || reqs[0].Speed != "" {
+		t.Fatalf("requests = %+v", reqs)
+	}
+}

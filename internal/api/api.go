@@ -104,6 +104,7 @@ func (s *Server) reads(mux *http.ServeMux) {
 	mux.HandleFunc("GET /usage/history", s.history)
 	mux.HandleFunc("GET /usage/sessions", s.sessions)
 	mux.HandleFunc("GET /usage/panes", s.panes)
+	mux.HandleFunc("GET /usage/cost", s.cost)
 	mux.HandleFunc("GET /models", s.models)
 	mux.HandleFunc("GET /accounts", s.getAccounts)
 	mux.HandleFunc("PUT /accounts", s.putAccounts)

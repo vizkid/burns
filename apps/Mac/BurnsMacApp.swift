@@ -50,8 +50,9 @@ struct MenuWindow: View {
                 Button { store.select(ring.id) } label: { RingCell(ring: ring, selected: selected, diameter: 40, showsName: true) }
                     .buttonStyle(.plain)
             }
-            .frame(height: store.model.rings.isEmpty ? 60 : 250)
+            .frame(height: store.model.rings.isEmpty ? 60 : store.model.usageHeight(full: 250))
             Divider()
+            CostPanel(store: store, reader: panes)
             LivePanes(store: store, reader: panes)
             if !store.model.rings.isEmpty { Divider() }
             HostStatusLine(statuses: store.statuses, names: store.hostNames, icons: store.hostIcons)

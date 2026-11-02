@@ -56,6 +56,27 @@ CREATE TABLE reading (
 	provider TEXT NOT NULL, account TEXT NOT NULL, limit_id TEXT NOT NULL, minutes INTEGER NOT NULL,
 	percent REAL NOT NULL, resets_at INTEGER NOT NULL, observed_at INTEGER NOT NULL,
 	PRIMARY KEY (provider, account, limit_id, minutes, observed_at)) WITHOUT ROWID;
+`, `
+ALTER TABLE request ADD COLUMN cache_write_1h INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE request ADD COLUMN speed TEXT NOT NULL DEFAULT '';
+CREATE TABLE credit_balance (
+	provider TEXT NOT NULL, account TEXT NOT NULL, limit_id TEXT NOT NULL,
+	balance REAL NOT NULL, observed_at INTEGER NOT NULL,
+	PRIMARY KEY (provider, account, limit_id, observed_at)) WITHOUT ROWID;
+CREATE TABLE usage_hour (
+	hour INTEGER NOT NULL, provider TEXT NOT NULL, account TEXT NOT NULL, model TEXT NOT NULL,
+	speed TEXT NOT NULL, band INTEGER NOT NULL, requests INTEGER NOT NULL, input INTEGER NOT NULL,
+	cached_input INTEGER NOT NULL, write_5m INTEGER NOT NULL, write_1h INTEGER NOT NULL, output INTEGER NOT NULL,
+	PRIMARY KEY (hour, provider, account, model, speed, band)) WITHOUT ROWID;
+CREATE TABLE billed (
+	provider TEXT NOT NULL, account TEXT NOT NULL, source TEXT NOT NULL, currency TEXT NOT NULL,
+	used_minor INTEGER NOT NULL, exponent INTEGER NOT NULL, limit_minor INTEGER,
+	enabled INTEGER NOT NULL, reason TEXT NOT NULL, observed_at INTEGER NOT NULL,
+	PRIMARY KEY (provider, account));
+`, `
+CREATE TABLE billed_point (
+	provider TEXT NOT NULL, account TEXT NOT NULL, used_minor INTEGER NOT NULL, observed_at INTEGER NOT NULL,
+	PRIMARY KEY (provider, account, observed_at)) WITHOUT ROWID;
 `}
 
 // Open opens or creates the store and applies migrations.

@@ -42,6 +42,12 @@ public struct Burndown: Equatable, Sendable {
     public var headline: String
     /// Azure: Microsoft credits, so no quota window to draw.
     public var credits: Bool
+    /// When the charted window began. Nil with none.
+    public var windowStart: Date?
+    /// The window is at 100%: the chart squashes and money takes its place.
+    public var spent = false
+    /// When a reading first showed 100%. Nil when no reading did.
+    public var limitAt: Date?
 
     public init(account: AccountID, line: Line?, grid: [Slot], headline: String, credits: Bool = false) {
         self.account = account; self.line = line; self.grid = grid; self.headline = headline; self.credits = credits
@@ -55,8 +61,18 @@ public struct Burndown: Equatable, Sendable {
             $0.provider == account.id.provider && $0.account == account.id.name && $0.minutes == m && w.holds($0)
         }
         let charted = line(minutes: m, window: w, readings: mine, now: now)
-        return Burndown(account: account.id, line: charted, grid: grid(charted), headline: headline(minutes: m, window: w, now: now, projection: charted.projection))
+        var b = Burndown(account: account.id, line: charted, grid: grid(charted), headline: headline(minutes: m, window: w, now: now, projection: charted.projection))
+        b.windowStart = w.resetsAt.addingTimeInterval(-length(m))
+        b.spent = (w.percent ?? 0) >= 100
+        // Any window at 100% counts: the five-hour limit starts paid usage while the week has room.
+        b.limitAt = account.liveWindows(at: now).filter { ($0.value.percent ?? 0) >= 100 }.flatMap { minutes, window in
+            readings.filter { $0.provider == account.id.provider && $0.account == account.id.name && $0.minutes == minutes && window.holds($0) && $0.percent >= 100 }
+        }.map(\.observedAt).min()
+        return b
     }
+
+    /// Money shows on a spent window and always on Azure, which has no chart.
+    public var showsCost: Bool { spent || credits }
 
     static func length(_ minutes: Int) -> TimeInterval { TimeInterval(minutes) * 60 }
 

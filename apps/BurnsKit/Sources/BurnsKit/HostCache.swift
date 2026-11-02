@@ -140,6 +140,11 @@ public struct HostFetcher: Sendable {
         try await get(address, "/usage/panes", as: PanesAnswer.self)
     }
 
+    /// Read when the window opens, as panes are: money changes slowly, and an answer holds a week of hours.
+    public func cost(_ address: String) async throws -> CostAnswer {
+        try await get(address, "/usage/cost", as: CostAnswer.self)
+    }
+
     /// What each account can run on the host. Empty when the host did not answer, which callers
     /// treat as unknown.
     public func models(_ address: String) async -> [AccountID: ModelEntry] {

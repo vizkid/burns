@@ -157,3 +157,18 @@ func itoa(v int64) string {
 	}
 	return string(b)
 }
+
+// The thread's service tier prices its requests. The default tier is stored as empty.
+func TestServiceTierReachesRequests(t *testing.T) {
+	settings := func(tier string) string {
+		return `{"timestamp":"2026-10-20T03:26:11Z","type":"event_msg","payload":{"type":"thread_settings_applied","thread_settings":{"model":"gpt-6.1-sol","service_tier":"` + tier + `"}}}`
+	}
+	record := func(id string) string {
+		return `{"timestamp":"2026-10-20T03:26:14Z","type":"token_usage_record","payload":{"thread_id":"t1","session_id":"t1","turn_id":"u1","response_id":"` + id + `","usage":` + usage1 + `}}`
+	}
+	d := &Decoder{Account: "work"}
+	out := run(d, meta+"\n"+settings("fast")+"\n"+record("r1")+"\n"+settings("default")+"\n"+record("r2"))
+	if len(out.Requests) != 2 || out.Requests[0].Speed != "fast" || out.Requests[1].Speed != "" {
+		t.Fatalf("requests = %+v", out.Requests)
+	}
+}

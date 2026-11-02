@@ -19,8 +19,9 @@ public struct SpendPace: Equatable, Sendable {
 
     public static let fiveHours: TimeInterval = 5 * 3600
     public static let sevenDays: TimeInterval = 7 * 86_400
-    /// Under this much of the window the ratio is noise: one prompt reads as ten times over pace.
-    public static let quietFraction = 0.03
+    /// Under this much of the window the ratio is noise. It is 50 minutes of a week: a longer hold hid
+    /// a real burn just after a reset (Viz, 2026-11-02).
+    public static let quietFraction = 0.005
     static let criticalFraction = 0.25
     static let projectionCap = 999.0
 

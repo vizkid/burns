@@ -36,7 +36,7 @@ func (t tokens) sum() int64 {
 // response items it never needs, so Line checks for a marker before decoding.
 var wanted = [][]byte{
 	[]byte(`"type":"session_meta"`), []byte(`"type":"turn_context"`), []byte(`"type":"token_usage_record"`),
-	[]byte(`"type":"compacted"`), []byte(`"type":"token_count"`),
+	[]byte(`"type":"compacted"`), []byte(`"type":"token_count"`), []byte(`"type":"thread_settings_applied"`),
 }
 
 func relevant(b []byte) bool {
@@ -126,7 +126,7 @@ func (d *Decoder) request(key, session, turn string, t tokens, at time.Time) usa
 		input = 0
 	}
 	return usage.Request{Provider: usage.Codex, Key: key, Account: d.Account, Session: session, Turn: turn,
-		Model: d.Model, Input: input, CachedInput: t.Cached, CacheWrite: t.CacheWrite, Output: t.Output,
+		Model: d.Model, Speed: d.Speed, Input: input, CachedInput: t.Cached, CacheWrite: t.CacheWrite, Output: t.Output,
 		Reasoning: t.Reasoning, Source: usage.SourceRollout, At: at}
 }
 
@@ -150,8 +150,18 @@ func (d *Decoder) event(l line) Output {
 			Last  tokens `json:"last_token_usage"`
 		} `json:"info"`
 		RateLimits *rateLimits `json:"rate_limits"`
+		Settings   struct {
+			ServiceTier string `json:"service_tier"`
+		} `json:"thread_settings"`
 	}
-	if json.Unmarshal(l.Payload, &p) != nil || p.Type != "token_count" {
+	if json.Unmarshal(l.Payload, &p) != nil {
+		return Output{}
+	}
+	if p.Type == "thread_settings_applied" {
+		d.Speed = usage.PaidSpeed(p.Settings.ServiceTier)
+		return Output{}
+	}
+	if p.Type != "token_count" {
 		return Output{}
 	}
 	var out Output

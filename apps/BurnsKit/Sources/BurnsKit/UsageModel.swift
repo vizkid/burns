@@ -1,3 +1,4 @@
+import CoreGraphics
 import Foundation
 
 /// The selected ring, shared by the app and its widgets through the app group.
@@ -94,5 +95,12 @@ public struct UsageModel: Equatable, Sendable {
     public var pickVerdict: SpendPace.Verdict? {
         guard let id = pick.account, let ring = rings.first(where: { $0.id == id }) else { return nil }
         return ring.tile.worst
+    }
+
+    /// The usage view's height: `full` with a chart to read, less on a spent window, whose chart
+    /// squashes to about a quarter, and on Azure, which has no chart.
+    public func usageHeight(full: CGFloat) -> CGFloat {
+        guard let b = burndown, b.showsCost else { return full }
+        return min(full, b.credits ? 100 : 160)
     }
 }

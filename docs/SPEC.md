@@ -41,7 +41,7 @@ A burndown plots quota left from the window's start to its reset. It charts the 
 | Area with a solid edge | Quota left over time, filled in the pace colour, from the window's readings (see "Reading history"). The window starts at its reset minus its length, at 100%. Readings are whole percents, so the line keeps the moment usage first reached each one, and readings closer than 1% of the window merge into the later one. A monotone curve joins them: it never turns back or overshoots a reading. A reading lower than an earlier one in the window is stale and skipped (rule 10). Before the first reading, and with no readings yet, it is a straight line. It ends at the current percent, at the time it was last observed: readings record changes only, so a percent unchanged since the last reading holds flat to that time (Viz, 2026-10-31). |
 | Thin faint dashed line | The steady burn: 100% at the window's start to 0% at its reset |
 | Header, right side | Percent left, the current reading, the outlook and the time to reset: `34% left · 15% under · 4h ahead of pace · resets 1d 7h`. The current reading is `over` or `under` the steady line, in percent. The outlook is where the projection ends: `4h ahead of pace` when it runs out before the reset, `12% behind pace` when that much is left at the reset, and `at pace` when it ends within half a percent of the window of the reset (Viz, 2026-11-02). A reading can be under the line and ahead of pace. Each part is left out while it has nothing to say, and a spent window shows `Budget spent`. |
-| Heavy grey dashed line, faint grey area under it | The current burn projected to the reset, or to 0% left. The burn is the change over the last seventh of the window, a day of a week, measured to now (Viz, 2026-11-02: the window's average did not follow current burn). It starts where the actual line ends, at the last observation, which can be hours old because Codex reports only when a turn runs (Viz, 2026-10-31); the quiet hours since count as burning nothing. Ring colours and verdicts still use the window's average. Same dash as the steady line, grey, with its dashes in step with the steady line's so the two read as one where they meet (Viz, 2026-10-29). |
+| Heavy grey dashed line, faint grey area under it | The current burn projected to the reset, or to 0% left. The burn is the change over the last seventh of the window, a day of a week, measured to now (Viz, 2026-11-02: the window's average did not follow current burn). It starts where the actual line ends, at the last observation, which can be hours old because Codex reports only when a turn runs (Viz, 2026-10-31); the quiet hours since count as burning nothing. Ring colours and verdicts still use the window's average. Verdicts and the projection hold for the first 0.5% of a window, 50 minutes of a week (Viz, 2026-11-02). Same dash as the steady line, grey, with its dashes in step with the steady line's so the two read as one where they meet (Viz, 2026-10-29). |
 | Headline | For the charted window: percent left, the pace verdict ("over pace"), and time to reset. "Budget spent" when it reached 0%. |
 | Bars behind the chart | A time grid: hours for the five-hour window, days for the week. Elapsed slots are shaded. |
 
@@ -514,6 +514,62 @@ Cost is out of phase 1 for Codex.
 A later phase uses a checked-in price table, with `as_of`, `source_url`, and `basis` on every row.
 Azure rows come from the Retail Prices API at `prices.azure.com/api/retail/prices`. Price depends on deployment type and region, so local configuration declares both.
 Subscription accounts show cost as "list-price equivalent", never as spend.
+
+#### Billed spend and list price
+
+Built 2026-11-02, except Azure's billed reading, which needs a credential. The account file's `credit_price` field needs the new `smithersd` on every host, because older ones refuse unknown fields.
+
+Once a window is spent, the chart gives way to money: how much past the plan cost, and what the work was worth. An account has two different numbers, and they must never share a label.
+
+| Number | Meaning | Includes plan usage |
+|---|---|---|
+| Billed | What a provider says it charged, from that provider's own source. | No |
+| List price | Burns's estimate: tokens times the published price. | Yes |
+
+**Billed sources**
+
+| Kind of account | Source | Unit and period | Status |
+|---|---|---|---|
+| Azure | Azure Cost Management, per resource and meter, read with a read-only credential. | Dollars, per day. Refreshes about every 4 hours. | Documented. Not built: it needs a credential. Until then Azure shows "Not available". |
+| Claude subscription | `extra_usage.used_credits` and `monthly_limit` from Claude's usage endpoint, `/api/oauth/usage`. | The account's currency, in minor units, per month. | Undocumented, read live on 2026-11-02. `smithersd` polls every 15 minutes with Claude Code's stored login: the keychain on macOS, `.credentials.json` elsewhere. It never refreshes that login, and a failed read keeps the last reading with its age. |
+| Codex with credits | `credits.balance` in the rollout and from the app-server's `account/rateLimits/read`. A drop in balance is credits spent. | Credits, between two readings. | Documented, but sparse: one host's rollouts held 166 balances in 54,748 events, and the live read can return null. Workspace credits may be shared. Tested 2026-11-02: `account/rateLimits/read` and the undocumented `/wham/usage` both return a null balance on a workspace with credits, and `/api/codex/usage` answers 403. So no automatic source reports these credits today, and Billed shows "Not available" until two real balances arrive. |
+| Codex without credits | None needed. | No charge past the limit. | Shown as no credits. |
+
+Rejected: Anthropic's usage and cost API covers Console organizations, not subscriptions. OpenAI's Costs API covers Platform API spend, and third-party documents say it leaves out ChatGPT Codex credits. Its own page could not be read. Codex Analytics appears to be for Enterprise.
+
+**List price**
+
+| Rule | Detail |
+|---|---|
+| One method | Burns computes every list price from tokens, so accounts share a basis. A reported `cost_micros` is never mixed in. It stays as the check on the table. |
+| Price table | Checked in, with `as_of`, `source_url` and `basis` on every row, and start dates so a change does not reprice earlier work. A script refreshes it. `smithersd` never calls a pricing site. |
+| Rates | Input, cached input, cache writes by lifetime, and output, by model. Long context applies per request: over 100,000 tokens on Haiku 5.5, over 272,000 on GPT-6 models. Fast tiers apply through `speed` and `service_tier`. |
+| New fields | Claude's `speed` and its 5-minute and 1-hour cache writes. Codex's `service_tier`. |
+| Hourly totals | Tokens by account, model, tier and hour, kept 400 days. `smithersd` rebuilds the last 3 hours each minute and all retained hours each hour. Dollars are worked out on read, so correcting a price corrects history. |
+| Route | `GET /usage/cost?since=192h` answers each host's hours and billed readings. The apps add hours across hosts and take the newest billed reading per account. They read it with panes, not on the 60-second poll. |
+| Unknown | A model with no price reads "No price", and the total reads "at least". A row with no tokens is no work. |
+
+Tested on 2026-11-02 against 17,792 Claude requests with a reported cost, $1,954 in all: the table came 4.5% low with every cache write at the 5-minute rate, and 1.6% low at the 1-hour rate. Opus stayed about 3% low at the 1-hour rate, and Haiku about half of a $4 total on one host. Neither gap is explained.
+
+**Screen**
+
+| Rule | Detail |
+|---|---|
+| When | The panel shows on a spent window, on Azure, and whenever money was billed in the current reset period, even with room left in the week: the five-hour limit can start paid usage (Viz, 2026-11-02). Only a spent window squashes the chart, to about a quarter of its height. Azure has no chart. |
+| Order | One large number leads: money billed in this reset period if there was any, else the list price, labelled as that, with tokens below it. Then the month's billed total, "Since limit" and list price by model. |
+| Billed this window | Providers report a month's total, so `smithersd` keeps each change, and the apps add what the total rose by inside the window. A fall is a new month. Spend before the history began is left out. |
+| Since limit | List price of requests after any window reached 100%, while it stays there. Past five-hour limits are not kept, so this covers only the current one. It is an estimate of what past-limit work cost, and it leaves out plan usage. |
+| Missing | A billed number that cannot be read shows "Not available", never $0. A host that did not answer is named. |
+| Calibration | Where billed and list price cover the same period, Burns shows the difference. |
+
+Decisions (Viz, 2026-11-02):
+
+1. Burns tries the undocumented Claude endpoint.
+2. Azure prices as Global Standard.
+3. A Codex credit costs what the account paid: the billing page showed 2,052 credits as SGD 106.72, about SGD 0.052 each. The price and its currency are account configuration, because purchase prices differ by plan. Burns converts no currency.
+4. Dollars are the headline number, with tokens below them and less prominent.
+
+Auto-reload tops up a Codex balance, so only a fall in balance counts as spend. A rise is a reload, and it is never negative spend.
 
 ### Storage
 

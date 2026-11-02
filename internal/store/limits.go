@@ -86,13 +86,27 @@ func sameWindows(a, b quota.Windows) bool {
 }
 
 // SetCredits stores the newest credits reading of one limit. An older reading is ignored.
+// Codex usually sends a null balance, which arrives empty and says nothing, so the last real
+// balance stays. A balance that changed joins the history that spend is worked out from.
 func (s *Store) SetCredits(provider, account, limitID string, c Credits) error {
-	_, err := s.db.Exec(`INSERT INTO credits VALUES (?,?,?,?,?,?,?)
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	_, err = tx.Exec(`INSERT INTO credits VALUES (?,?,?,?,?,?,?)
 		ON CONFLICT (provider, account, limit_id) DO UPDATE SET has_credits = excluded.has_credits,
-		unlimited = excluded.unlimited, balance = excluded.balance, observed_at = excluded.observed_at
+		unlimited = excluded.unlimited, observed_at = excluded.observed_at,
+		balance = CASE excluded.balance WHEN '' THEN credits.balance ELSE excluded.balance END
 		WHERE excluded.observed_at > credits.observed_at`,
 		provider, account, limitID, boolInt(c.HasCredits), boolInt(c.Unlimited), c.Balance, nanos(c.ObservedAt))
-	return err
+	if err != nil {
+		return err
+	}
+	if err := recordBalance(tx, provider, account, limitID, c); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 // Limits returns every stored limit, ordered by provider, account, and limit.

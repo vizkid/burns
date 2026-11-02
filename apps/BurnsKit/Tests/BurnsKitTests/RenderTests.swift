@@ -10,6 +10,22 @@ import Testing
 /// the PNGs land in the same folder.
 @MainActor
 struct RenderTests {
+    /// The money panel, from a saved `GET /usage/cost` answer in `cost.json`.
+    @Test(.enabled(if: ProcessInfo.processInfo.environment["BURNS_RENDER_DIR"] != nil))
+    func renderCost() throws {
+        let dir = URL(fileURLWithPath: ProcessInfo.processInfo.environment["BURNS_RENDER_DIR"]!)
+        let answer = try Wire.decoder.decode(CostAnswer.self, from: Data(contentsOf: dir.appendingPathComponent("cost.json")))
+        let start = Date(timeIntervalSinceNow: -7 * 86_400), limit = Date(timeIntervalSinceNow: -6 * 3600)
+        for (name, account) in [("claude-viz", AccountID(provider: "claude", name: "viz")), ("codex-viz", AccountID(provider: "codex", name: "viz"))] {
+            var s = CostSummary.build([HostCost(host: "a", answer: answer), HostCost(host: "Other", answer: nil)], account: account, windowStart: start, limitAt: limit)
+            if name == "claude-viz" { s.windowBilledMinor = 3_850 } // Spend, to see the large number with money in it.
+            for scheme in [ColorScheme.dark, .light] {
+                try save(AnyView(CostView(summary: s, period: "This window").frame(width: 352).padding(14).background(scheme == .dark ? Color.black : Color.white)),
+                         scheme: scheme, size: CGSize(width: 380, height: 290), to: dir.appendingPathComponent("cost-\(name)-\(scheme == .dark ? "dark" : "light").png"))
+            }
+        }
+    }
+
     @Test(.enabled(if: ProcessInfo.processInfo.environment["BURNS_RENDER_DIR"] != nil))
     func renderSavedAnswers() throws {
         let dir = URL(fileURLWithPath: ProcessInfo.processInfo.environment["BURNS_RENDER_DIR"]!)
