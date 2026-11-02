@@ -103,10 +103,15 @@ func (s *Server) billed(since time.Time) ([]store.Billed, error) {
 			return nil, err
 		}
 	}
+	reported := map[string]bool{}
+	for _, b := range out {
+		reported[b.Provider+"/"+b.Account] = true
+	}
 	now := s.Now().UTC()
 	month := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.UTC)
 	for _, a := range s.Config.Accounts {
-		if a.Provider != "codex" || a.Kind != config.Subscription {
+		// A provider's own report beats working spend out from balances.
+		if a.Provider != "codex" || a.Kind != config.Subscription || reported[a.Provider+"/"+a.Name] {
 			continue
 		}
 		balances, err := s.Store.CreditBalances(a.Provider, a.Name, a.Provider, month)

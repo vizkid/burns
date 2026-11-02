@@ -174,6 +174,9 @@ public struct CostView: View {
                     if !s.hasSpend { tokens(s) }
                 }
                 line("Billed this month", s.billedText)
+                if s.billed?.source == "codex-usage" {
+                    Text("Reported daily, and can lag about two days.").font(.caption2).foregroundStyle(.secondary)
+                }
                 if let since = s.sinceLimitMicros { line("Since limit", CostSummary.dollars(since)) }
                 // Tokens are the list price's: billed money can cover far fewer of them.
                 if s.hasSpend {

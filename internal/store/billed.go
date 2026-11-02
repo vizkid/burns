@@ -54,6 +54,29 @@ func (s *Store) SetBilled(b Billed) error {
 	return tx.Commit()
 }
 
+// SetBilledDays stores a reading whose source reports each day. Its days replace the account's
+// history whole, because a provider can restate a recent day.
+func (s *Store) SetBilledDays(b Billed, days []BilledPoint) error {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if _, err := tx.Exec(`INSERT OR REPLACE INTO billed VALUES (?,?,?,?,?,?,?,?,?,?)`, b.Provider, b.Account, b.Source,
+		b.Currency, b.UsedMinor, b.Exponent, b.LimitMinor, boolInt(b.Enabled), b.Reason, nanos(b.ObservedAt)); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`DELETE FROM billed_point WHERE provider = ? AND account = ?`, b.Provider, b.Account); err != nil {
+		return err
+	}
+	for _, p := range days {
+		if _, err := tx.Exec(`INSERT OR REPLACE INTO billed_point VALUES (?,?,?,?)`, b.Provider, b.Account, p.UsedMinor, nanos(p.ObservedAt)); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
+}
+
 // BilledHistory returns an account's amounts since a time, oldest first, after the last one
 // before it: that one is what a window's spend is measured from.
 func (s *Store) BilledHistory(provider, account string, since time.Time) ([]BilledPoint, error) {

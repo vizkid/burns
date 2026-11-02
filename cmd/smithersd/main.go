@@ -95,7 +95,8 @@ func run() error {
 	go loop(ctx, &collect.Collector{Store: st, Config: cfg, Now: time.Now}, st)
 	if home, err := os.UserHomeDir(); err == nil {
 		go (&billing.Poller{Store: st, Config: cfg, Client: http.DefaultClient, URL: billing.UsageURL,
-			Token: billing.StoredToken(home, time.Now), Now: time.Now}).Run(ctx)
+			Token:    billing.StoredToken(home, time.Now),
+			CodexURL: billing.CodexUsageURL, CodexLogin: billing.StoredCodexLogin, Now: time.Now}).Run(ctx)
 	}
 
 	// A PUT /accounts write stops both listeners; run then returns errRestart once

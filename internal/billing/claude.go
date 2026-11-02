@@ -77,8 +77,11 @@ type Poller struct {
 	Client *http.Client
 	URL    string
 	Token  func(home string) (string, error)
-	Now    func() time.Time
-	failed map[string]string
+	// CodexURL and CodexLogin read Codex accounts. A nil CodexLogin skips them.
+	CodexURL   string
+	CodexLogin func(home string) (token, account string, err error)
+	Now        func() time.Time
+	failed     map[string]string
 }
 
 // Poll reads every account once. It logs a failure once until it changes, and never the token.
@@ -87,15 +90,24 @@ func (p *Poller) Poll(ctx context.Context) {
 		p.failed = map[string]string{}
 	}
 	for _, a := range p.Config.Accounts {
-		if a.Provider != usage.Claude || a.Kind != config.Subscription {
+		if a.Kind != config.Subscription {
 			continue
 		}
-		err := p.one(ctx, a)
-		if text := fmt.Sprint(err); err != nil && !errors.Is(err, ErrNoToken) && p.failed[a.Name] != text {
-			log.Printf("WARN billing %s: %v", a.Name, err)
-			p.failed[a.Name] = text
+		var err error
+		switch {
+		case a.Provider == usage.Claude:
+			err = p.one(ctx, a)
+		case a.Provider == usage.Codex && p.CodexLogin != nil:
+			err = p.codex(ctx, a)
+		default:
+			continue
+		}
+		key := a.Provider + "/" + a.Name
+		if text := fmt.Sprint(err); err != nil && !errors.Is(err, ErrNoToken) && p.failed[key] != text {
+			log.Printf("WARN billing %s: %v", key, err)
+			p.failed[key] = text
 		} else if err == nil {
-			delete(p.failed, a.Name)
+			delete(p.failed, key)
 		}
 	}
 }
