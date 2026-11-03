@@ -27,3 +27,11 @@ public enum SpendReset {
         return text
     }
 }
+
+/// "now", "12m ago", "3h ago": how old an answer or a reading is.
+public func ageText(_ date: Date?, now: Date = Date()) -> String {
+    guard let date else { return "never" }
+    let s = now.timeIntervalSince(date)
+    if s < 60 { return "now" }
+    return (SpendReset.countdown(to: now.addingTimeInterval(s), now: now) ?? "") + " ago"
+}

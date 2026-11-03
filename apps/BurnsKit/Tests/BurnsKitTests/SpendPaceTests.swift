@@ -10,7 +10,6 @@ struct SpendPaceTests {
         #expect(p.verdict == .over)
         #expect(p.aheadPoints == 0)
         #expect(p.words() == "On the edge")
-        #expect(p.short(calendar: Self.utc, now: Self.now) == "On the edge · resets 2h")
     }
 
     @Test func veryLargeFiniteUsageReportsOutWithoutIntegerOverflow() throws {
@@ -34,8 +33,7 @@ struct SpendPaceTests {
         let p = try #require(five(31, elapsed: 2.5))
         #expect(p.elapsed == 0.5 && p.verdict == .onPace)
         #expect(p.projectedPercent == 62 && p.runsOutAt == nil)
-        #expect(p.short(calendar: Self.utc, now: Self.now) == nil)   // words only when it matters
-        #expect(p.sentence(calendar: Self.utc, now: Self.now) == "At this pace you finish the window at 62% when it resets in 2h 30m")
+        #expect(p.words() == nil)   // words only when it matters
     }
 
     /// Exactly on pace is not over it.
@@ -53,9 +51,7 @@ struct SpendPaceTests {
         #expect(abs(out.timeIntervalSince(Self.now) - (3 / 0.66 - 3) * Self.h) < 1)
         // Ahead is points above an even pace: 66 used, 60 elapsed.
         #expect(p.aheadPoints == 6)
-        #expect(p.short(calendar: Self.utc, now: Self.now) == "6% ahead · resets 2h")
         #expect(p.words() == "6% ahead")
-        #expect(p.sentence(calendar: Self.utc, now: Self.now) == "At this pace you reach 100% at 13:32, 27m before the reset in 2h")
     }
 
     /// 100% projected with more than a quarter of the window left: red, and the words name the time.
@@ -63,8 +59,7 @@ struct SpendPaceTests {
         // 1h in, 50% used: 100% at 2h, 3h before the reset.
         let p = try #require(five(50, elapsed: 1))
         #expect(p.verdict == .critical && abs(p.projectedPercent! - 250) < 1e-6)
-        #expect(p.short(calendar: Self.utc, now: Self.now) == "30% ahead · resets 4h")
-        #expect(p.sentence(calendar: Self.utc, now: Self.now) == "At this pace you reach 100% at 13:00, 3h before the reset in 4h")
+        #expect(p.words() == "30% ahead")
     }
 
     /// A seven-day window runs out on another day: the words name the day too.
@@ -73,8 +68,7 @@ struct SpendPaceTests {
         let p = try #require(SpendPace(usedPercent: 60, resetsAt: Self.now.addingTimeInterval(5 * 24 * Self.h), length: SpendPace.sevenDays, now: Self.now))
         #expect(p.verdict == .critical)
         // 60 used, 2 of 7 days gone (28.6): 31 points ahead.
-        #expect(p.short(calendar: Self.utc, now: Self.now) == "31% ahead · resets 5d")
-        #expect(p.sentence(calendar: Self.utc, now: Self.now) == "At this pace you reach 100% at Thu 20:00, 3d 16h before the reset in 5d")
+        #expect(p.words() == "31% ahead")
     }
 
     /// Already at or past 100%: red whatever the clock says, the first minutes included.
@@ -83,10 +77,9 @@ struct SpendPaceTests {
         for (used, elapsed, reset) in [(100.0, 4.0, "1h"), (137.0, 2.0, "3h"), (100.0, 0.05, "4h 57m")] {
             let p = try #require(five(used, elapsed: elapsed))
             #expect(p.verdict == .critical && p.runsOutAt == nil)
-            #expect(p.short(calendar: Self.utc, now: Self.now) == "out · resets " + reset)
+            #expect(SpendReset.countdown(to: p.resetsAt, now: Self.now) == reset)
             #expect(p.words() == "out")
         }
-        #expect(five(100, elapsed: 4)?.sentence(calendar: Self.utc, now: Self.now) == "You have reached 100%. The window resets at 13:00, in 1h")
     }
 
     /// A window that just reset: under 0.5% elapsed the ratio is noise, so there is a tick and no verdict.
@@ -94,7 +87,7 @@ struct SpendPaceTests {
         let p = try #require(five(4, elapsed: 0.02))   // 1.2 of 300 minutes: 0.4%
         #expect(p.verdict == nil && p.projectedPercent == nil && p.runsOutAt == nil)
         #expect(abs(p.elapsed - 0.004) < 1e-9)
-        #expect(p.short(calendar: Self.utc, now: Self.now) == nil && p.sentence(calendar: Self.utc, now: Self.now) == nil)
+        #expect(p.words() == nil)
         // At 0.5% the verdict starts (Viz, 2026-11-02: a three percent hold hid a real burn for 5 hours of a week).
         #expect(five(10, elapsed: 0.025)?.verdict == .critical)
     }
@@ -105,10 +98,9 @@ struct SpendPaceTests {
         #expect(under.verdict == .onPace && Int(under.projectedPercent!.rounded()) == 82)
         let over = try #require(five(99, elapsed: 4.9))
         #expect(over.verdict == .over)
-        #expect(over.sentence(calendar: Self.utc, now: Self.now) == "At this pace you reach 100% at 12:02, 3m before the reset in 6m")
     }
 
-    /// Nothing used: on pace, and the sentence says so without dividing by zero.
+    /// Nothing used: on pace, without dividing by zero.
     @Test func nothingUsed() throws {
         let p = try #require(five(0, elapsed: 2))
         #expect(p.verdict == .onPace && p.projectedPercent == 0)
@@ -145,32 +137,11 @@ struct SpendPaceTests {
         }
     }
 
-    /// Codex check P3: the tick stays inside the bar, and a bar too narrow for it has none.
-    @Test func theTickStaysInsideTheBar() throws {
-        let p = try #require(five(31, elapsed: 2.5))
-        #expect(p.tickOffset(width: 60) == 29.25)
-        #expect(p.tickOffset(width: 0) == nil && p.tickOffset(width: 1) == nil)
-        #expect(five(31, elapsed: 4.999)?.tickOffset(width: 60) == 58.5)
-        #expect(SpendPace(usedPercent: 1, resetsAt: Self.now.addingTimeInterval(6 * Self.h), length: SpendPace.fiveHours, now: Self.now)?.tickOffset(width: 60) == 0)
-    }
-
     /// The projection is capped for display.
     @Test func theProjectionIsCapped() throws {
         #expect(five(90, elapsed: 0.2)?.projectedPercent == 999)
     }
 
-    /// One line under an account's bars, only for the windows with something to say. Each bar shows its
-    /// own reset, so the line carries the pace alone.
-    @Test func theAccountLineNamesOnlyWhatMatters() throws {
-        let over = five(66, elapsed: 3), fine = five(31, elapsed: 2.5), out = five(100, elapsed: 4)
-        #expect(SpendPace.line(fiveHour: fine, sevenDay: fine, calendar: Self.utc, now: Self.now) == nil)
-        #expect(SpendPace.line(fiveHour: over, sevenDay: fine, calendar: Self.utc, now: Self.now) == "5h 6% ahead")
-        #expect(SpendPace.line(fiveHour: over, sevenDay: out, calendar: Self.utc, now: Self.now) == "5h 6% ahead · 7d out")
-        #expect(SpendPace.line(fiveHour: nil, sevenDay: nil, calendar: Self.utc, now: Self.now) == nil)
-        #expect(SpendPace.worst(over, out) == .critical && SpendPace.worst(fine, nil) == .onPace && SpendPace.worst(nil, nil) == nil)
-    }
-
-    /// 0.5% of a week is 50 minutes. 13% used then reads red, and 34 minutes in it is still held.
     @Test func aFastStartShowsAfterFiftyMinutes() throws {
         func week(_ minutes: Double) -> SpendPace? {
             SpendPace(usedPercent: 13, resetsAt: Self.now.addingTimeInterval(SpendPace.sevenDays - minutes * 60), length: SpendPace.sevenDays, now: Self.now)

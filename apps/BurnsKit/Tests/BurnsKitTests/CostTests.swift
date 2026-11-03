@@ -63,6 +63,54 @@ struct CostTests {
         #expect(s.listText == "at least $2.00")
     }
 
+    /// Rule 9: with no host answering, nothing is known. The panel never reads $0.00 or 0 tokens.
+    @Test func noHostAnsweredIsNotAvailable() {
+        for hosts in [[HostCost(host: "a", answer: nil), HostCost(host: "b", answer: nil)], []] {
+            let s = summary(hosts, start: now - 24 * h, limitAt: now - 3 * h)
+            #expect(s.listText == "Not available" && s.tokensText == "Not available" && s.sinceLimitText == "Not available")
+            #expect(s.headline(period: "This window").value == "Not available")
+        }
+    }
+
+    /// Some hosts answered: their work is only part of the total, so every total is a floor.
+    @Test func aPartialReadIsAFloor() {
+        let hosts = [HostCost(host: "a", answer: CostAnswer(host: "a", hours: [hour(1, dollars: 2)], billed: [])), HostCost(host: "b", answer: nil)]
+        let s = summary(hosts, start: now - 24 * h, limitAt: now - 3 * h)
+        #expect(s.listText == "at least $2.00" && s.sinceLimitText == "at least $2.00" && s.tokensText == "at least 1000 tokens")
+    }
+
+    /// Every host answered and every model has a price: the totals are estimates, not floors.
+    @Test func aFullReadIsAnEstimate() {
+        let s = summary([HostCost(host: "a", answer: CostAnswer(host: "a", hours: [hour(5, dollars: 4), hour(1, dollars: 2)], billed: []))], start: now - 24 * h, limitAt: now - 3 * h)
+        #expect(s.listText == "~$6.00" && s.sinceLimitText == "~$2.00" && s.tokensText == "2000 tokens")
+        #expect(summary([], start: now - 24 * h).sinceLimitText == nil)
+    }
+
+    /// Unpriced work since the limit makes that figure a floor too, and work before it does not.
+    @Test func unpricedWorkSinceTheLimitIsAFloor() {
+        let before = [hour(5, "new-model", dollars: 0, unpriced: 2), hour(1, dollars: 2)]
+        let after = [hour(5, dollars: 4), hour(1, "new-model", dollars: 0, unpriced: 2), hour(1, dollars: 2)]
+        func since(_ hours: [CostHour]) -> String? {
+            summary([HostCost(host: "a", answer: CostAnswer(host: "a", hours: hours, billed: []))], start: now - 24 * h, limitAt: now - 3 * h).sinceLimitText
+        }
+        #expect(since(before) == "~$2.00" && since(after) == "at least $2.00")
+    }
+
+    static var utc: Calendar { var c = Calendar(identifier: .gregorian); c.timeZone = TimeZone(identifier: "UTC")!; return c }
+
+    /// smithersd keeps its last billed reading when a poll fails, so the reading shows its age,
+    /// and one from an earlier month is never labelled as this month's.
+    @Test func billedShowsItsAgeAndMonth() {
+        func reading(_ at: Date) -> CostSummary { inWindow(billed(150, at: at)) }
+        #expect(reading(now - 2 * h).billedLabel(now: now, calendar: Self.utc) == "Billed this month")
+        #expect(reading(now - 40 * 86_400).billedLabel(now: now, calendar: Self.utc) == "Billed in September")
+        #expect(reading(now - 365 * 86_400).billedLabel(now: now, calendar: Self.utc) == "Billed in October 2025")
+        #expect(reading(now - 2 * h).billedAge(now: now) == "Read 2h ago")
+        #expect(reading(now - 30).billedAge(now: now) == "Read now")
+        let none = summary([HostCost(host: "a", answer: CostAnswer(host: "a", hours: [], billed: []))], start: now - h)
+        #expect(none.billedAge(now: now) == nil && none.billedLabel(now: now, calendar: Self.utc) == "Billed this month")
+    }
+
     /// A model with no price says so, and never reads as free.
     @Test func anUnpricedModelReadsAsUnknown() {
         let s = summary([HostCost(host: "a", answer: CostAnswer(host: "a", hours: [hour(1, "new-model", dollars: 0, unpriced: 4)], billed: []))], start: now - 24 * h)

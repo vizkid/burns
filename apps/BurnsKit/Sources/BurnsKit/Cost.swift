@@ -75,6 +75,10 @@ public struct CostSummary: Equatable, Sendable {
     public var unread: [String]
     /// What the billed total rose by inside the window. Zero with no history.
     public var windowBilledMinor: Int64 = 0
+    /// Whether any host answered. With none, every list price and token total is unknown.
+    public var answered = true
+    /// Requests since the limit with no known price.
+    public var sinceLimitUnpriced: Int64 = 0
 
     /// Money was charged in this reset period, so the panel shows whatever the chart says.
     public var hasSpend: Bool { windowBilledMinor > 0 }
@@ -108,10 +112,12 @@ public struct CostSummary: Equatable, Sendable {
         let models = Dictionary(grouping: mine, by: \.model).map { id, rows in
             Model(model: PaneShares.modelName(id), micros: rows.reduce(0) { $0 + $1.micros }, tokens: rows.reduce(0) { $0 + $1.tokens }, unpriced: rows.reduce(0) { $0 + $1.unpriced })
         }.sorted { ($1.micros, $0.model) < ($0.micros, $1.model) }
+        let sinceLimit = limitAt.map { at in mine.filter { covers($0, from: at) } }
         return CostSummary(billed: billed, listMicros: mine.reduce(0) { $0 + $1.micros }, tokens: mine.reduce(0) { $0 + $1.tokens },
-                           sinceLimitMicros: limitAt.map { at in mine.filter { covers($0, from: at) }.reduce(0) { $0 + $1.micros } },
+                           sinceLimitMicros: sinceLimit.map { $0.reduce(0) { $0 + $1.micros } },
                            models: models, unpriced: mine.reduce(0) { $0 + $1.unpriced }, unread: hosts.filter { $0.answer == nil }.map(\.host),
-                           windowBilledMinor: risen(billed?.history ?? [], from: windowStart))
+                           windowBilledMinor: risen(billed?.history ?? [], from: windowStart),
+                           answered: !answers.isEmpty, sinceLimitUnpriced: sinceLimit?.reduce(0) { $0 + $1.unpriced } ?? 0)
     }
 
     /// Whether an hour's work falls from a moment on. The moment's own hour counts: totals are
@@ -125,9 +131,38 @@ public struct CostSummary: Equatable, Sendable {
         return b.enabled ? used : "\(used) · usage credits off"
     }
 
-    /// The window's list price, as a floor when some of it has no price.
-    public var listText: String {
-        unpriced > 0 ? "at least " + Self.plainDollars(listMicros) : Self.dollars(listMicros)
+    /// "Billed this month", or the reading's own month: smithersd keeps its last reading when a
+    /// poll fails, so a reading can belong to a month that has ended.
+    public func billedLabel(now: Date = Date(), calendar: Calendar = .current) -> String {
+        guard let at = billed?.observedAt, !calendar.isDate(at, equalTo: now, toGranularity: .month) else { return "Billed this month" }
+        let f = DateFormatter()
+        f.calendar = calendar; f.timeZone = calendar.timeZone; f.locale = Locale(identifier: "en_US_POSIX")
+        f.dateFormat = calendar.isDate(at, equalTo: now, toGranularity: .year) ? "LLLL" : "LLLL yyyy"
+        return "Billed in " + f.string(from: at)
+    }
+
+    /// How old the billed reading is, in the host line's words: "Read 2h ago". Nil with no reading.
+    public func billedAge(now: Date = Date()) -> String? {
+        billed.map { "Read " + ageText($0.observedAt, now: now) }
+    }
+
+    /// The window's list price.
+    public var listText: String { estimate(listMicros, unpriced: unpriced) }
+
+    /// List price since the window reached 100%. Nil with no such moment.
+    public var sinceLimitText: String? { sinceLimitMicros.map { estimate($0, unpriced: sinceLimitUnpriced) } }
+
+    /// The window's tokens, as a floor when a host did not answer.
+    public var tokensText: String {
+        guard answered else { return "Not available" }
+        return unread.isEmpty ? Self.tokens(tokens) : "at least " + Self.tokens(tokens)
+    }
+
+    /// Rule 9: with no host answering the amount is unknown, never $0.00. A host that did not
+    /// answer, or work with no price, makes it a floor.
+    private func estimate(_ micros: Int64, unpriced: Int64) -> String {
+        guard answered else { return "Not available" }
+        return unpriced > 0 || !unread.isEmpty ? "at least " + Self.plainDollars(micros) : Self.dollars(micros)
     }
 
     static func money(_ minor: Int64, _ b: BilledReading) -> String {
@@ -153,69 +188,5 @@ public struct CostSummary: Equatable, Sendable {
         case 10_000...: String(format: "%.0fK tokens", Double(n) / 1000)
         default: "\(n) tokens"
         }
-    }
-}
-
-/// Money under a spent window, or in place of Azure's chart. Dollars lead, and tokens sit below
-/// them in a quieter style (Viz, 2026-11-02).
-public struct CostView: View {
-    let summary: CostSummary?
-    let period: String
-
-    public init(summary: CostSummary?, period: String) { self.summary = summary; self.period = period }
-
-    public var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            if let s = summary {
-                let headline = s.headline(period: period)
-                VStack(alignment: .leading, spacing: 0) {
-                    Text(headline.label).font(.subheadline).foregroundStyle(.secondary)
-                    Text(headline.value).font(.largeTitle.bold().monospacedDigit()).lineLimit(1).minimumScaleFactor(0.6)
-                    if !s.hasSpend { tokens(s) }
-                }
-                line("Billed this month", s.billedText)
-                if s.billed?.source == "codex-usage" {
-                    Text("Reported daily, and can lag about two days.").font(.caption2).foregroundStyle(.secondary)
-                }
-                if let since = s.sinceLimitMicros { line("Since limit", CostSummary.dollars(since)) }
-                // Tokens are the list price's: billed money can cover far fewer of them.
-                if s.hasSpend {
-                    VStack(alignment: .leading, spacing: 1) {
-                        line("\(period), list price", s.listText)
-                        tokens(s)
-                    }
-                }
-                ForEach(s.models.prefix(4)) { m in
-                    HStack(alignment: .firstTextBaseline) {
-                        Text(m.model)
-                        Spacer(minLength: 8)
-                        Text(CostSummary.tokens(m.tokens)).font(.caption2)
-                        Text(m.amountText).monospacedDigit().foregroundStyle(.primary)
-                    }
-                    .font(.caption).foregroundStyle(.secondary)
-                }
-                if !s.unread.isEmpty {
-                    Text("Not read: \(s.unread.joined(separator: ", ")). List price leaves those hosts out.")
-                        .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-                }
-                Text("List price is an estimate of the work at published rates. Only Billed is money charged.")
-                    .font(.caption2).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-            } else {
-                Text("Reading cost").font(.footnote).foregroundStyle(.secondary)
-            }
-        }
-    }
-
-    private func tokens(_ s: CostSummary) -> some View {
-        Text(CostSummary.tokens(s.tokens)).font(.caption).foregroundStyle(.secondary)
-    }
-
-    private func line(_ label: String, _ value: String) -> some View {
-        HStack(alignment: .firstTextBaseline) {
-            Text(label).foregroundStyle(.secondary)
-            Spacer(minLength: 8)
-            Text(value).monospacedDigit()
-        }
-        .font(.subheadline)
     }
 }

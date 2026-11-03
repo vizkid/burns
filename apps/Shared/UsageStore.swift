@@ -158,11 +158,3 @@ final class UsageStore {
         if statuses.isEmpty { statuses = hosts.map { HostStatus(address: $0, snapshot: cached[$0], error: nil) } }
     }
 }
-
-/// "now", "12m ago", "3h ago": how old a host's answer is.
-func ageText(_ date: Date?, now: Date = Date()) -> String {
-    guard let date else { return "never" }
-    let s = now.timeIntervalSince(date)
-    if s < 60 { return "now" }
-    return (SpendReset.countdown(to: now.addingTimeInterval(s), now: now) ?? "") + " ago"
-}
