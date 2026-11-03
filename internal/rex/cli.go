@@ -2,77 +2,60 @@ package rex
 
 import (
 	"bufio"
-	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
-	"os/exec"
-	"strings"
+
+	kit "github.com/vizkid/rexkit/rex"
 )
 
 // ErrNoBlock means Rex does not know the block: it was closed.
 var ErrNoBlock = errors.New("rex: block not found")
 
-// CLI calls the rex command at Path.
+// CLI calls the rex command at Path, through rexkit, without this process's pane
+// identity: inside a pane, REX_SESSION scopes block lookups to that pane's
+// session, and blocks in other sessions read as not found.
 type CLI struct{ Path string }
+
+func (c CLI) kit() kit.Client {
+	return kit.Client{Bin: c.Path, Env: kit.WithoutPane(os.Environ())}
+}
 
 // Foreground returns the pid of the block's foreground process, or 0 when it
 // has none. It uses the read-only block `process` method.
 func (c CLI) Foreground(ctx context.Context, block string) (int, error) {
-	var stderr bytes.Buffer
-	cmd := exec.CommandContext(ctx, c.Path, "block", "call", "--block", block, "process")
-	cmd.Env, cmd.Stderr = serverEnv(), &stderr
-	out, err := cmd.Output()
+	p, err := c.kit().Process(ctx, "", block)
 	if err != nil {
 		// rex exits 3 for a missing target; other failures say nothing about the block.
-		var exit *exec.ExitError
-		if errors.As(err, &exit) && exit.ExitCode() == 3 && strings.Contains(stderr.String(), "not found") {
+		if errors.Is(err, kit.ErrNotFound) {
 			return 0, ErrNoBlock
 		}
-		return 0, fmt.Errorf("rex process %s: %w: %s", block, err, strings.TrimSpace(stderr.String()))
-	}
-	var p struct {
-		Foreground *proc `json:"foreground"`
-	}
-	if err := json.Unmarshal(out, &p); err != nil {
 		return 0, fmt.Errorf("rex process %s: %w", block, err)
 	}
 	if p.Foreground == nil {
 		return 0, nil
 	}
-	return p.Foreground.Pid, nil
+	return p.Foreground.PID, nil
 }
 
 // Capture returns the block's screen and scrollback as text.
 func (c CLI) Capture(ctx context.Context, block string) (string, error) {
-	var stderr bytes.Buffer
-	cmd := exec.CommandContext(ctx, c.Path, "capture", "-b", block, "--trim")
-	cmd.Env, cmd.Stderr = serverEnv(), &stderr
-	out, err := cmd.Output()
-	if err != nil {
-		return "", fmt.Errorf("rex capture %s: %w: %s", block, err, strings.TrimSpace(stderr.String()))
-	}
-	return string(out), nil
+	out, err := c.kit().Run(ctx, "capture", "-b", block, "--trim")
+	return string(out), err
 }
 
 // Enter presses Enter in the block.
 func (c CLI) Enter(ctx context.Context, block string) error {
-	cmd := exec.CommandContext(ctx, c.Path, "send", "-b", block, "\r")
-	cmd.Env = serverEnv()
-	if out, err := cmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("rex send %s: %w: %s", block, err, strings.TrimSpace(string(out)))
-	}
-	return nil
+	_, err := c.kit().Run(ctx, "send", "-b", block, "\r")
+	return err
 }
 
 // Watch runs one `rex events --all --json` stream and calls fn for each event
 // that matters to bindings. ready runs once the stream's process has started.
 // It returns when the stream ends or ctx is done.
 func Watch(ctx context.Context, path string, ready func(), fn func(Event)) error {
-	cmd := exec.CommandContext(ctx, path, "events", "--all", "--json")
-	cmd.Env = serverEnv()
+	cmd := CLI{Path: path}.kit().Command(ctx, "events", "--all", "--json")
 	out, err := cmd.StdoutPipe()
 	if err != nil {
 		return err
@@ -96,17 +79,4 @@ func Watch(ctx context.Context, path string, ready func(), fn func(Event)) error
 		return err
 	}
 	return scanErr
-}
-
-// serverEnv is this process's environment without a pane's Rex identity.
-// Inside a pane, REX_SESSION scopes block lookups to that pane's session, and
-// blocks in other sessions read as not found.
-func serverEnv() []string {
-	var env []string
-	for _, kv := range os.Environ() {
-		if !strings.HasPrefix(kv, "REX_SESSION=") && !strings.HasPrefix(kv, "REX_BLOCK=") {
-			env = append(env, kv)
-		}
-	}
-	return env
 }

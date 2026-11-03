@@ -1,13 +1,9 @@
 package rex
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
 	"log"
-	"os/exec"
-	"strings"
 	"sync"
 	"time"
 )
@@ -18,52 +14,7 @@ type Pane struct {
 	Label   string
 }
 
-// Panes lists every block on this server. Any failure fails the whole list: a
-// partial one would call live panes dead.
-func (c CLI) Panes(ctx context.Context) (map[string]Pane, error) {
-	var sessions struct {
-		Sessions []struct {
-			ID    string `json:"session_id"`
-			Label string `json:"label"`
-		} `json:"sessions"`
-	}
-	if err := c.readJSON(ctx, &sessions, "session", "ls", "--json"); err != nil {
-		return nil, err
-	}
-	panes := map[string]Pane{}
-	for _, s := range sessions.Sessions {
-		var blocks struct {
-			Blocks []struct {
-				ID    string `json:"block_id"`
-				Label string `json:"label"`
-			} `json:"blocks"`
-		}
-		if err := c.readJSON(ctx, &blocks, "block", "ls", "-s", s.ID, "--json", "--short=false"); err != nil {
-			return nil, err
-		}
-		for _, b := range blocks.Blocks {
-			panes[b.ID] = Pane{Session: s.Label, Label: b.Label}
-		}
-	}
-	return panes, nil
-}
-
-func (c CLI) readJSON(ctx context.Context, v any, args ...string) error {
-	var stderr bytes.Buffer
-	cmd := exec.CommandContext(ctx, c.Path, args...)
-	cmd.Env, cmd.Stderr = serverEnv(), &stderr
-	out, err := cmd.Output()
-	if err != nil {
-		return fmt.Errorf("rex %s: %w: %s", strings.Join(args, " "), err, strings.TrimSpace(stderr.String()))
-	}
-	if err := json.Unmarshal(out, v); err != nil {
-		return fmt.Errorf("rex %s: %w", strings.Join(args, " "), err)
-	}
-	return nil
-}
-
-// PaneCache keeps the pane list in memory, so a reader costs no Rex calls: one
-// listing takes about 0.4 s and spawns a process per session.
+// PaneCache keeps the pane list in memory, so a reader costs no Rex calls.
 type PaneCache struct {
 	List   func(context.Context) (map[string]Pane, error)
 	Now    func() time.Time

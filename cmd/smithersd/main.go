@@ -27,6 +27,7 @@ import (
 	"github.com/vizkid/burns/internal/rex"
 	"github.com/vizkid/burns/internal/store"
 	"github.com/vizkid/burns/internal/usage"
+	"github.com/vizkid/rexkit/rexctl"
 )
 
 func main() {
@@ -106,7 +107,9 @@ func run() error {
 		Restart: func() { restarting.Store(true); stop() }}
 	if *rexPath != "" {
 		cli := rex.CLI{Path: *rexPath}
-		panes := &rex.PaneCache{List: cli.Panes, Now: time.Now, MaxAge: 2 * time.Minute}
+		userHome, _ := os.UserHomeDir()
+		ctl := rex.StartControl(ctx, rexctl.LocalEndpoint(os.Getenv, userHome), usage.Version)
+		panes := &rex.PaneCache{List: ctl.Panes, Now: time.Now, MaxAge: 2 * time.Minute}
 		server.Rex, server.Panes = cli, panes
 		go panes.Run(ctx, 15*time.Second, 10*time.Second)
 		go (&bindings.Tracker{Store: st, Rex: cli, Host: *host, Now: time.Now}).Run(ctx, *rexPath)

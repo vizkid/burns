@@ -48,7 +48,7 @@ func fakeRex(t *testing.T, script string) CLI {
 }
 
 func TestForeground(t *testing.T) {
-	rex := fakeRex(t, `[ "$1 $2 $3 $4 $5" = "block call --block block:b1 process" ] || exit 9
+	rex := fakeRex(t, `[ "$1 $2 $3 $4 $5" = "block call -b block:b1 process" ] || exit 9
 echo '{"child":{"pid":10},"foreground":{"pid":42,"name":"2.1.312"},"last_exit":null}'`)
 	pid, err := rex.Foreground(context.Background(), "block:b1")
 	if err != nil || pid != 42 {
