@@ -2,6 +2,8 @@ package store
 
 import (
 	"time"
+
+	"github.com/vizkid/burns/internal/price"
 )
 
 // HourRetention is how long hourly totals are kept: over a year, so a month can be compared with the last.
@@ -43,10 +45,10 @@ func (s *Store) RollUp(from, now time.Time) error {
 	_, err = tx.Exec(`INSERT INTO usage_hour
 		SELECT at / ?1 * ?1, provider, account, model, speed, band, count(*), sum(input), sum(cached_input),
 			sum(cache_write - min(cache_write_1h, cache_write)), sum(min(cache_write_1h, cache_write)), sum(output)
-		FROM (SELECT *, CASE WHEN input + cached_input + cache_write > 272000 THEN 2
-			WHEN input + cached_input + cache_write > 100000 THEN 1 ELSE 0 END AS band
+		FROM (SELECT *, CASE WHEN input + cached_input + cache_write > ?4 THEN 2
+			WHEN input + cached_input + cache_write > ?3 THEN 1 ELSE 0 END AS band
 			FROM request WHERE at >= ?2)
-		GROUP BY 1, 2, 3, 4, 5, 6`, hourNanos, start)
+		GROUP BY 1, 2, 3, 4, 5, 6`, hourNanos, start, price.BandMid, price.BandHigh)
 	if err != nil {
 		return err
 	}

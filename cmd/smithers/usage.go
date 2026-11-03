@@ -34,6 +34,7 @@ type window struct {
 type account struct {
 	Provider string `json:"provider"`
 	Account  string `json:"account"`
+	Kind     string `json:"kind"`
 	Limits   []struct {
 		Windows map[string]window `json:"windows"`
 	} `json:"limits"`

@@ -21,6 +21,7 @@ type fakeRex struct {
 	after    int                    // process reads before the agent shows
 	reads    int
 	ran      [][]string
+	fail     string // a command that fails, by its first word
 }
 
 func (f *fakeRex) Whoami(context.Context) (rex.Whoami, error) { return rex.Whoami{HostID: f.host}, nil }
@@ -32,6 +33,9 @@ func (f *fakeRex) Blocks(_ context.Context, session string) ([]rex.Block, error)
 }
 func (f *fakeRex) Run(_ context.Context, args ...string) ([]byte, error) {
 	f.ran = append(f.ran, args)
+	if args[0] == f.fail {
+		return nil, errors.New("rex " + args[0] + ": killed")
+	}
 	for _, key := range []string{strings.Join(args[:min(2, len(args))], " "), args[0]} {
 		if out, ok := f.out[key]; ok {
 			return []byte(out), nil
@@ -184,5 +188,46 @@ func TestSpawnNeedsTheCallersSession(t *testing.T) {
 	req.CallerSession = "session:gone"
 	if _, err := Spawn(t.Context(), l, l, req); err == nil {
 		t.Fatal("spawned without a caller session")
+	}
+}
+
+// Claude's folder-trust dialog waits for the operator. Claude is already the
+// foreground process, so only the screen shows it (Viz, 2026-11-03: spawn may
+// read the new pane's screen to verify this).
+func TestSpawnReportsTheFolderTrustDialog(t *testing.T) {
+	l := local()
+	l.out["capture -s"] = " ~/dev/proj\n Quick safety check: Is this a project you created or one you trust?\n\n ❯ No, exit\n   Yes, I trust this folder\n\n Enter to confirm · Esc to cancel\n"
+	req := request()
+	req.TrustWatch = 20 * time.Millisecond
+	res, err := Spawn(t.Context(), l, l, req)
+	if !errors.Is(err, ErrTrust) || res.Agent != "claude" || res.Block != "block:new" {
+		t.Fatalf("res %+v, err %v", res, err)
+	}
+}
+
+// A screen without the dialog is a running agent, after the watch.
+func TestSpawnWatchesTheScreenOnlyBriefly(t *testing.T) {
+	l := local()
+	l.out["capture -s"] = " Claude Code\n ❯ \n"
+	req := request()
+	req.TrustWatch = 20 * time.Millisecond
+	if _, err := Spawn(t.Context(), l, l, req); err != nil {
+		t.Fatal(err)
+	}
+	if !slices.ContainsFunc(l.ran, func(a []string) bool { return a[0] == "capture" }) {
+		t.Error("the screen was never read")
+	}
+}
+
+// Captures that fail throughout leave the dialog unchecked: spawn says so
+// rather than reporting a clean start (peer review, 2026-11-03).
+func TestSpawnSaysWhenTheTrustCheckCouldNotRun(t *testing.T) {
+	l := local()
+	l.fail = "capture"
+	req := request()
+	req.TrustWatch = 20 * time.Millisecond
+	res, err := Spawn(t.Context(), l, l, req)
+	if !errors.Is(err, ErrTrustUnchecked) || res.Agent != "claude" || res.Block != "block:new" {
+		t.Fatalf("res %+v, err %v", res, err)
 	}
 }

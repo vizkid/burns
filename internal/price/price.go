@@ -108,21 +108,12 @@ func (t Table) Cost(basis, model, speed string, at time.Time, n Tokens) (int64, 
 }
 
 // Bands sort requests by prompt size in the hourly totals, one for each limit a provider uses.
+// A prompt over BandMid is band 1, over BandHigh band 2. The store assigns bands in SQL with
+// these values, so the two cannot drift.
 const (
-	bandMid  = 100_000
-	bandHigh = 272_000
+	BandMid  = 100_000
+	BandHigh = 272_000
 )
-
-// Band is the prompt-size band of a request.
-func Band(prompt int64) int {
-	switch {
-	case prompt > bandHigh:
-		return 2
-	case prompt > bandMid:
-		return 1
-	}
-	return 0
-}
 
 // IsLong reports whether a band is over a model's long-context limit.
 func (t Table) IsLong(basis, model string, band int) bool {
@@ -130,9 +121,9 @@ func (t Table) IsLong(basis, model string, band int) bool {
 	if !ok || r.LongOver == 0 {
 		return false
 	}
-	limit := int64(bandHigh)
+	limit := int64(BandHigh)
 	if band == 1 {
-		limit = bandMid
+		limit = BandMid
 	}
 	return band > 0 && limit >= r.LongOver
 }

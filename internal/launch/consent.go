@@ -109,27 +109,40 @@ type Pane interface {
 }
 
 // WatchTiming sets a watch's clock. Wait is how long to look for the dialog,
-// Limit bounds the whole watch.
+// Limit bounds the whole watch, and Call bounds each capture or key press, so
+// a stalled `rex` cannot keep the watch past its limits.
 type WatchTiming struct {
-	Wait, Step, Limit time.Duration
-	Now               func() time.Time
-	Sleep             func(time.Duration)
+	Wait, Step, Limit, Call time.Duration
+	Now                     func() time.Time
+	Sleep                   func(time.Duration)
 }
 
 // Timing is a launch's watch: 60 seconds for the dialog, restarted while the
 // trust dialog waits for the operator, who may be asleep.
 func Timing() WatchTiming {
-	return WatchTiming{Wait: time.Minute, Step: time.Second, Limit: 24 * time.Hour, Now: time.Now, Sleep: time.Sleep}
+	return WatchTiming{Wait: time.Minute, Step: time.Second, Limit: 24 * time.Hour, Call: 10 * time.Second, Now: time.Now, Sleep: time.Sleep}
+}
+
+// call bounds one Rex call by Call and by the watch's own deadline.
+func (t WatchTiming) call(ctx context.Context) (context.Context, context.CancelFunc) {
+	if t.Call <= 0 {
+		return context.WithCancel(ctx)
+	}
+	return context.WithTimeout(ctx, t.Call)
 }
 
 // Watch looks at the pane until the channels dialog settles, presses Enter only
 // on an exact match, and returns one line for the log.
 func Watch(ctx context.Context, p Pane, block string, want []string, t WatchTiming) string {
 	start := t.Now()
+	ctx, cancel := context.WithTimeout(ctx, t.Limit)
+	defer cancel()
 	deadline := start.Add(t.Wait)
 	foreign := 0
-	for t.Now().Before(deadline) && t.Now().Before(start.Add(t.Limit)) {
-		screen, err := p.Capture(ctx, block)
+	for ctx.Err() == nil && t.Now().Before(deadline) && t.Now().Before(start.Add(t.Limit)) {
+		call, done := t.call(ctx)
+		screen, err := p.Capture(call, block)
+		done()
 		if err == nil {
 			state := Read(screen, want)
 			if state != Foreign {
@@ -137,7 +150,10 @@ func Watch(ctx context.Context, p Pane, block string, want []string, t WatchTimi
 			}
 			switch state {
 			case Answer:
-				if err := p.Enter(ctx, block); err != nil {
+				call, done := t.call(ctx)
+				err := p.Enter(call, block)
+				done()
+				if err != nil {
 					return fmt.Sprintf("%s: channels dialog: %v", block, err)
 				}
 				return fmt.Sprintf("%s: answered channels dialog for %s", block, strings.Join(want, " "))

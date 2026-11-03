@@ -11,11 +11,20 @@ import (
 	"strings"
 	"time"
 
+	"github.com/vizkid/burns/internal/launch"
 	"github.com/vizkid/rexkit/rex"
 )
 
 // ErrNotStarted means the pane exists but its agent did not start within the wait.
 var ErrNotStarted = errors.New("the agent did not start")
+
+// ErrTrust means Claude started and waits on its folder-trust dialog, which
+// only the operator answers.
+var ErrTrust = errors.New("Claude waits on its folder-trust dialog, which only the operator answers")
+
+// ErrTrustUnchecked means Claude started but no screen read worked, so
+// whether its folder-trust dialog waits is unknown.
+var ErrTrustUnchecked = errors.New("the pane's screen could not be read, so a waiting folder-trust dialog is unchecked")
 
 // Rex is one Rex server. rexkit's rex.Client satisfies it.
 type Rex interface {
@@ -36,6 +45,9 @@ type Request struct {
 	CallerSession            string
 	CallerBlock              string
 	Wait, Every              time.Duration
+	// TrustWatch is how long spawn reads a new Claude pane's screen for the
+	// folder-trust dialog once Claude runs. Zero skips the read.
+	TrustWatch time.Duration
 }
 
 // Result names the new pane. Agent is the provider once it runs, else empty.
@@ -70,8 +82,43 @@ func Spawn(ctx context.Context, local, target Rex, req Request) (Result, error) 
 	if err != nil {
 		return res, err
 	}
-	res.Agent, err = wait(ctx, target, res.SessionID, res.Block, req)
-	return res, err
+	if res.Agent, err = wait(ctx, target, res.SessionID, res.Block, req); err != nil {
+		return res, err
+	}
+	return res, watchTrust(ctx, target, res.SessionID, res.Block, req)
+}
+
+// watchTrust reads a new Claude pane's screen for TrustWatch. Claude is the
+// foreground process while its folder-trust dialog waits, so only the screen
+// shows it (Viz, 2026-11-03). The dialog comes first at startup. The watch's
+// own deadline bounds each capture, and a watch with no good capture is
+// unchecked, not clean.
+func watchTrust(ctx context.Context, r Rex, session, block string, req Request) error {
+	if req.Provider != "claude" || req.TrustWatch <= 0 {
+		return nil
+	}
+	watch, cancel := context.WithTimeout(ctx, req.TrustWatch)
+	defer cancel()
+	read := false
+	for {
+		screen, err := r.Run(watch, "capture", "-s", session, "-b", block, "--trim")
+		if err == nil {
+			if launch.Read(string(screen), nil) == launch.Trust {
+				return ErrTrust
+			}
+			read = true
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-watch.Done():
+			if !read {
+				return ErrTrustUnchecked
+			}
+			return nil
+		case <-time.After(req.Every):
+		}
+	}
 }
 
 // openTab adds a tab to the target's session with the caller's label, or

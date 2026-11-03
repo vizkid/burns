@@ -17,6 +17,10 @@ import (
 	"github.com/vizkid/rexkit/rex"
 )
 
+// trustWatch is how long spawn reads a new Claude pane for its folder-trust
+// dialog. The dialog is the first thing Claude shows, within about a second.
+const trustWatch = 5 * time.Second
+
 // spawnAgent starts an agent session in the caller's own Rex session, on this
 // host or another (docs/SPEC.md, "Agent-started launches").
 func spawnAgent(args []string, out, errOut io.Writer, getenv func(string) string) int {
@@ -66,7 +70,7 @@ func spawnAgent(args []string, out, errOut io.Writer, getenv func(string) string
 	}
 	req := spawn.Request{Provider: *provider, Account: *account, Model: *model, Label: *label, Dir: *dir,
 		Emoji: accountEmoji(home, *provider, *account), Beside: *beside, CallerSession: session, CallerBlock: block,
-		Wait: *wait, Every: time.Second}
+		Wait: *wait, Every: time.Second, TrustWatch: trustWatch}
 	ctx, cancel := context.WithTimeout(context.Background(), *wait+30*time.Second)
 	defer cancel()
 	res, err := spawn.Spawn(ctx, rex.Client{Bin: bin}, rex.Client{Bin: bin, Server: *host}, req)
@@ -87,9 +91,17 @@ func report(out, errOut io.Writer, host string, res spawn.Result, err error) int
 	}
 	addr := roarAddress(host, res.Label, res.SessionLabel)
 	if err != nil {
-		fmt.Fprintf(errOut, "spawn: pane %s (%s) opened on %s, but %v. Look at the pane: it may show why, or wait on a dialog.\n", addr, res.Block, where, err)
-		if errors.Is(err, spawn.ErrNotStarted) {
+		fmt.Fprintf(errOut, "spawn: pane %s (%s) opened on %s, but %v.\n", addr, res.Block, where, err)
+		switch {
+		case errors.Is(err, spawn.ErrTrust):
+			fmt.Fprintln(errOut, "Ask the operator to answer it in that pane. Roar messages wait until then.")
+			return 4
+		case errors.Is(err, spawn.ErrNotStarted):
+			fmt.Fprintln(errOut, "Look at the pane: it may show why.")
 			return 3
+		case errors.Is(err, spawn.ErrTrustUnchecked):
+			fmt.Fprintln(errOut, "The agent runs. Look at the pane before relying on it.")
+			return 5
 		}
 		return 1
 	}
@@ -151,6 +163,11 @@ func warnQuota(base, provider, name string, errOut io.Writer) {
 		if a.Provider != provider || a.Account != name {
 			continue
 		}
+		// Azure has no quota windows by design; a subscription without any is unread here.
+		if a.Kind != "azure" && !hasWindows(a) {
+			fmt.Fprintf(errOut, "warning: %s %s's quota is unknown on this host; launching anyway\n", provider, name)
+			return
+		}
 		for _, l := range a.Limits {
 			for m, w := range l.Windows {
 				if w.Percent == nil || *w.Percent >= 100 {
@@ -162,6 +179,15 @@ func warnQuota(base, provider, name string, errOut io.Writer) {
 		return
 	}
 	fmt.Fprintf(errOut, "warning: smithersd knows no %s account named %s\n", provider, name)
+}
+
+func hasWindows(a account) bool {
+	for _, l := range a.Limits {
+		if len(l.Windows) > 0 {
+			return true
+		}
+	}
+	return false
 }
 
 func state(p *float64) string {

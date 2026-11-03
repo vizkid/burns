@@ -3,6 +3,7 @@ package billing
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -173,7 +174,11 @@ func TestCodexReport(t *testing.T) {
 
 // A report in another shape is no reading, never zero.
 func TestCodexUnknownShape(t *testing.T) {
-	for _, body := range []string{`{}`, `{"units":"tokens","data_freshness_ts":"2026-11-02T02:00:00Z","data":[]}`, `{"units":"credits","data":[]}`, `nope`} {
+	// A row without credit_usage_credits says nothing about that day. A real idle day lists
+	// each surface at 0, so a missing or null map is an unknown shape, not a zero.
+	day := `{"units":"credits","data_freshness_ts":"2026-11-02T02:00:00Z","data":[{"date":"2026-11-01"%s}]}`
+	for _, body := range []string{`{}`, `{"units":"tokens","data_freshness_ts":"2026-11-02T02:00:00Z","data":[]}`, `{"units":"credits","data":[]}`, `nope`,
+		fmt.Sprintf(day, ``), fmt.Sprintf(day, `,"premium_usage_values":{}`), fmt.Sprintf(day, `,"premium_usage_values":{"credit_usage_credits":null}`)} {
 		if _, _, err := parseCodex([]byte(body)); err == nil {
 			t.Errorf("parsed %s", body)
 		}

@@ -18,7 +18,6 @@ type rateLimits struct {
 	Primary   *rateWindow `json:"primary"`
 	Secondary *rateWindow `json:"secondary"`
 	Credits   *Credits    `json:"credits"`
-	PlanType  *string     `json:"plan_type"`
 }
 
 // limit classifies windows by window_minutes, never by position.
@@ -28,9 +27,6 @@ func (rl rateLimits) limit(at time.Time) Limit {
 		Report: quota.Report{Provider: usage.Codex, At: at, Windows: quota.Windows{}}}
 	if l.LimitID == "" {
 		l.LimitID = "codex"
-	}
-	if rl.PlanType != nil {
-		l.Plan = *rl.PlanType
 	}
 	for _, w := range []*rateWindow{rl.Primary, rl.Secondary} {
 		if w == nil || w.UsedPercent == nil || w.WindowMinutes <= 0 || w.ResetsAt <= 0 {

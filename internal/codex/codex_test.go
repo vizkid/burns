@@ -72,7 +72,7 @@ func TestRateLimitsByWindowMinutes(t *testing.T) {
 		t.Fatalf("limits = %d; want 2", len(out.Limits))
 	}
 	l := out.Limits[0]
-	if l.LimitID != "codex" || l.Plan != "prolite" || l.Report.Provider != usage.Codex {
+	if l.LimitID != "codex" || l.Report.Provider != usage.Codex {
 		t.Fatalf("limit = %+v", l)
 	}
 	if w := l.Report.Windows[10080]; w.Percent == nil || *w.Percent != 28 || w.ResetsAt.Unix() != 1792909435 || w.ObservedAt.IsZero() {

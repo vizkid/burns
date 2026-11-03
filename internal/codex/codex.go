@@ -18,7 +18,6 @@ type Credits struct {
 // Limit is one rate_limits block, keyed by its limit_id.
 type Limit struct {
 	LimitID string
-	Plan    string
 	Report  quota.Report
 	Credits *Credits
 	At      time.Time

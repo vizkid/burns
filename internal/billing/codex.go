@@ -57,6 +57,10 @@ func parseCodex(body []byte) ([]CodexDay, time.Time, error) {
 		if err != nil {
 			return nil, time.Time{}, err
 		}
+		// A real idle day lists each surface at 0, so a missing map is no reading, not a zero.
+		if row.Premium.Credits == nil {
+			return nil, time.Time{}, fmt.Errorf("no credits for %s", row.Date)
+		}
 		total := 0.0
 		for _, v := range row.Premium.Credits {
 			total += v

@@ -1,9 +1,11 @@
 package store
 
 import (
+	"fmt"
 	"testing"
 	"time"
 
+	"github.com/vizkid/burns/internal/price"
 	"github.com/vizkid/burns/internal/usage"
 )
 
@@ -48,6 +50,30 @@ func TestRollUpBands(t *testing.T) {
 	got, _ := s.Hours(hourNow.Add(-time.Hour))
 	if len(got) != 2 || got[0].Band != 1 || got[1].Band != 2 {
 		t.Fatalf("hours = %+v", got)
+	}
+}
+
+// The stored band uses the price table's own thresholds, at their exact edges: a prompt
+// over the limit is in the higher band, one at it is not.
+func TestRollUpBandEdges(t *testing.T) {
+	s := open(t)
+	var rs []usage.Request
+	for i, prompt := range []int64{price.BandMid, price.BandMid + 1, price.BandHigh, price.BandHigh + 1} {
+		rs = append(rs, hourRequest(fmt.Sprint("r", i), fmt.Sprint("m", i), hourNow, prompt, 0, 0))
+	}
+	if err := s.AddRequests(rs); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.RollUp(hourNow.Add(-Retention), hourNow); err != nil {
+		t.Fatal(err)
+	}
+	got, _ := s.Hours(hourNow.Add(-time.Hour))
+	bands := map[string]int{}
+	for _, h := range got {
+		bands[h.Model] = h.Band
+	}
+	if len(bands) != 4 || bands["m0"] != 0 || bands["m1"] != 1 || bands["m2"] != 1 || bands["m3"] != 2 {
+		t.Fatalf("bands = %v", bands)
 	}
 }
 

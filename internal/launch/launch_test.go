@@ -224,3 +224,30 @@ func TestWatchGivesUpQuietly(t *testing.T) {
 		t.Fatalf("got %q", got)
 	}
 }
+
+// stuckPane is a capture that never returns unless its context ends, as a
+// stalled `rex capture` does.
+type stuckPane struct{}
+
+func (stuckPane) Capture(ctx context.Context, _ string) (string, error) {
+	<-ctx.Done()
+	return "", ctx.Err()
+}
+func (stuckPane) Enter(ctx context.Context, _ string) error { <-ctx.Done(); return ctx.Err() }
+
+// A stalled capture cannot keep the detached watcher alive: each call has its
+// own limit, and the watch its overall one (peer review, 2026-11-03).
+func TestWatchEndsWhenCapturesStall(t *testing.T) {
+	timing := WatchTiming{Wait: 50 * time.Millisecond, Step: time.Millisecond, Limit: 100 * time.Millisecond,
+		Call: 20 * time.Millisecond, Now: time.Now, Sleep: time.Sleep}
+	done := make(chan string, 1)
+	go func() { done <- Watch(context.Background(), stuckPane{}, "block:b", []string{"roar"}, timing) }()
+	select {
+	case line := <-done:
+		if !strings.Contains(line, "no dialog") {
+			t.Errorf("line = %q", line)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("Watch is still waiting on a stalled capture")
+	}
+}

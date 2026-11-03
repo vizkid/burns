@@ -78,16 +78,8 @@ func TestEveryRateHasItsSource(t *testing.T) {
 	}
 }
 
-// A request is long by its whole prompt, on the provider's own limit.
-func TestBands(t *testing.T) {
-	for _, c := range []struct {
-		prompt int64
-		band   int
-	}{{100_000, 0}, {100_001, 1}, {272_000, 1}, {272_001, 2}} {
-		if got := Band(c.prompt); got != c.band {
-			t.Errorf("Band(%d) = %d", c.prompt, got)
-		}
-	}
+// A band is long on the provider's own limit. The store assigns bands (store.TestRollUpBandEdges).
+func TestLongBands(t *testing.T) {
 	tb := Default()
 	if !tb.IsLong("anthropic", "claude-haiku-5-5", 1) || tb.IsLong("openai", "gpt-6.1-sol", 1) || !tb.IsLong("openai", "gpt-6.1-sol", 2) || tb.IsLong("anthropic", "claude-opus-5-5", 2) {
 		t.Fatal("long bands")

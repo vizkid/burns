@@ -2,6 +2,8 @@ package main
 
 import (
 	"bytes"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 )
@@ -55,6 +57,28 @@ func TestSpawnRefusesBeforeRex(t *testing.T) {
 		code := run(append([]string{"spawn"}, c.args...), strings.NewReader(""), &out, &errOut, env(c.env))
 		if code != 1 && code != 2 || !strings.Contains(errOut.String(), c.want) {
 			t.Errorf("%v: code %d, stderr %q; want it to mention %q", c.args, code, errOut.String(), c.want)
+		}
+	}
+}
+
+// A subscription with no quota windows is unknown, which warns like a spent one.
+// Azure has no windows by design and stays quiet (peer review, 2026-11-03).
+func TestSpawnWarnsOnUnknownQuota(t *testing.T) {
+	body := `{"host":"h1","accounts":[
+{"provider":"claude","account":"fresh","kind":"subscription","limits":[]},
+{"provider":"claude","account":"ok","kind":"subscription","limits":[{"limit_id":"claude","windows":{"10080":{"percent":40,"resets_at":"2026-11-02T10:00:00Z","observed_at":"2026-10-29T11:59:00Z"}}}]},
+{"provider":"claude","account":"spent","kind":"subscription","limits":[{"limit_id":"claude","windows":{"300":{"percent":100,"resets_at":"2026-11-02T10:00:00Z","observed_at":"2026-10-29T11:59:00Z"}}}]},
+{"provider":"codex","account":"azure","kind":"azure","limits":[]}]}`
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.Write([]byte(body)) }))
+	t.Cleanup(ts.Close)
+	for _, c := range []struct {
+		provider, name, want string
+	}{{"claude", "fresh", "unknown"}, {"claude", "ok", ""}, {"claude", "spent", "at 100%"}, {"codex", "azure", ""}} {
+		var errOut bytes.Buffer
+		warnQuota(ts.URL, c.provider, c.name, &errOut)
+		got := errOut.String()
+		if c.want == "" && got != "" || c.want != "" && !strings.Contains(got, c.want) {
+			t.Errorf("%s %s: warned %q; want %q", c.provider, c.name, got, c.want)
 		}
 	}
 }
