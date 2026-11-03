@@ -54,12 +54,19 @@ func startAgent(args []string, errOut io.Writer, getenv func(string) string) err
 	model := fl.String("model", "", "model, replacing the account's")
 	effort := fl.String("effort", "", "effort, replacing the account's")
 	permission := fl.String("permission-mode", "", "permission mode, replacing the account's")
+	start := fl.String("dir", "", "folder to start in, relative to this host's home")
 	if err := fl.Parse(args); err != nil {
 		return err
 	}
 	user, err := os.UserHomeDir()
 	if err != nil {
 		return err
+	}
+	// A spawn names the folder relative to home: each host has its own.
+	if *start != "" {
+		if err := os.Chdir(launchDir(user, *start)); err != nil {
+			return fmt.Errorf("folder %s: %w", *start, err)
+		}
 	}
 	dir := config.Dir(user)
 	cfg, err := config.Load(filepath.Join(dir, "accounts.json"), user)

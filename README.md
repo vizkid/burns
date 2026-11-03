@@ -30,7 +30,7 @@ make install
 `make install` copies `smithersd` and `smithers` to `~/.local/bin`.
 On macOS, it starts `smithersd` now and at every login.
 On Linux, it runs `smithersd` as a systemd user service.
-`smithers usage` prints each account's quota and its consumption over the last 24 hours. Add `--since 1h` for another window. `smithers panes` lists the live panes with their compactions; add `--url http://<host>:9766` for another host.
+`smithers usage` prints each account's quota and its consumption over the last 24 hours. Add `--since 1h` for another window. `smithers panes` lists the live panes with their compactions; add `--url http://<host>:9766` for another host. An agent can start another agent in its own Rex session with `smithers spawn --provider claude --account NAME --label helper`; add `--host H` for another host or `--beside` to split its own tab.
 
 To send usage from your agents, follow the [agent setup](docs/SPEC.md#installing).
 
