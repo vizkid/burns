@@ -9,19 +9,22 @@ import (
 
 // splits reports whether the new pane splits an existing tab instead of
 // opening one.
-func (r Request) splits() bool { return r.Beside || r.Anchor != "" }
+func (r Request) splits() bool { return r.Beside || r.Anchor != "" || r.anchorBlock != "" }
 
-// splitBeside splits beside the caller's pane, or beside the pane labelled
-// Anchor in the caller's session on target (docs/SPEC.md, "Anchor").
+// splitBeside splits beside a known block, the pane labelled Anchor in the
+// caller's session on target (docs/SPEC.md, "Anchor"), or the caller's pane.
 func splitBeside(ctx context.Context, local, target Rex, req Request, res Result) (Result, error) {
 	session, block := req.CallerSession, req.CallerBlock
-	if req.Anchor == "" {
-		if err := sameServer(ctx, local, target); err != nil {
-			return res, err
-		}
-	} else {
+	switch {
+	case req.anchorBlock != "":
+		session, block = req.anchorSession, req.anchorBlock
+	case req.Anchor != "":
 		var err error
 		if session, block, err = anchorPane(ctx, target, res.SessionLabel, req.Anchor); err != nil {
+			return res, err
+		}
+	default:
+		if err := sameServer(ctx, local, target); err != nil {
 			return res, err
 		}
 	}

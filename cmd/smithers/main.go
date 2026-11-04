@@ -17,7 +17,7 @@ const usageText = `usage:
   smithers hook session-start --provider claude|codex [--url URL]
   smithers usage [--since 24h] [--url URL]
   smithers panes [--url URL]
-  smithers spawn --provider claude|codex --account NAME --label L --tab T [--host H] [--beside] [--anchor P] [--model M] [--dir D] [--wait 60s]
+  smithers spawn --provider claude|codex --account NAME --label L --tab T [--host H] [--beside] [--anchor P] [--pair LIST] [--model M] [--dir D] [--wait 60s]
   smithers launch --provider claude|codex --account NAME [--model M] [--effort E] [--permission-mode P] [--dir D]
   smithers answer-channels --block BLOCK --servers a,b
   smithers bind-codex --home H --block B --session S --dir D --pid P

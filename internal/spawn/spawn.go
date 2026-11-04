@@ -44,9 +44,12 @@ type Request struct {
 	Dir                      string // passed to `smithers launch --dir`
 	Beside                   bool   // split the caller's tab instead of opening one
 	Anchor                   string // split beside this pane label instead; implies Beside
-	CallerSession            string
-	CallerBlock              string
-	Wait, Every              time.Duration
+	// anchorSession and anchorBlock split beside a known block on the target;
+	// Pair sets them to the cap's.
+	anchorSession, anchorBlock string
+	CallerSession              string
+	CallerBlock                string
+	Wait, Every                time.Duration
 	// TrustWatch is how long spawn reads a new Claude pane's screen for the
 	// folder-trust dialog once Claude runs. Zero skips the read.
 	TrustWatch time.Duration

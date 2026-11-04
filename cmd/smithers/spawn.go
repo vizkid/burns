@@ -22,7 +22,8 @@ import (
 const trustWatch = 5 * time.Second
 
 // spawnAgent starts an agent session in the caller's own Rex session, on this
-// host or another (docs/SPEC.md, "Agent-started launches").
+// host or another (docs/SPEC.md, "Agent-started launches"). --pair starts a
+// cap and a nav instead (pair.go).
 func spawnAgent(args []string, out, errOut io.Writer, getenv func(string) string) int {
 	fs := flag.NewFlagSet("spawn", flag.ContinueOnError)
 	fs.SetOutput(errOut)
@@ -33,18 +34,28 @@ func spawnAgent(args []string, out, errOut io.Writer, getenv func(string) string
 	host := fs.String("host", "", "Rex host label; empty is this host")
 	beside := fs.Bool("beside", false, "split the caller's own tab (this host only)")
 	anchor := fs.String("anchor", "", "split beside the pane with this label in the caller's session, on any host")
+	pair := fs.String("pair", "", "a cap and a nav, such as '[viz.claude@opus5.5, viz.codex@astra6]'; needs --tab")
 	model := fs.String("model", "", "model, replacing the account's")
 	dir := fs.String("dir", "", "folder, relative to the target host's home (default: this folder)")
 	wait := fs.Duration("wait", 60*time.Second, "how long to wait for the agent to start")
-	base := fs.String("url", DefaultURL, "smithersd address, for the quota warning")
+	base := fs.String("url", DefaultURL, "smithersd address, for the quota warning and model names")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
-	session, block := getenv("REX_SESSION"), getenv("REX_BLOCK")
-	switch {
-	case session == "" || block == "":
+	sp := spawner{host: *host, base: *base, dir: *dir, wait: *wait, session: getenv("REX_SESSION"), block: getenv("REX_BLOCK"),
+		out: out, errOut: errOut}
+	if sp.session == "" || sp.block == "" {
 		fmt.Fprintln(errOut, "smithers spawn runs inside a Rex pane: REX_SESSION and REX_BLOCK are not set")
 		return 1
+	}
+	if *pair != "" {
+		if *provider != "" || *account != "" || *model != "" || *label != "" || *beside || *anchor != "" {
+			fmt.Fprintln(errOut, "--pair names both panes: leave out --provider, --account, --model, --label, --beside and --anchor")
+			return 2
+		}
+		return sp.pair(*pair, *tab, getenv)
+	}
+	switch {
 	case *provider != "claude" && *provider != "codex":
 		fmt.Fprintln(errOut, "--provider must be claude or codex")
 		return 2
@@ -58,33 +69,57 @@ func spawnAgent(args []string, out, errOut io.Writer, getenv func(string) string
 		fmt.Fprintln(errOut, "--tab names a new tab, and --beside or --anchor opens none; use --anchor to choose the pane to split beside")
 		return 2
 	}
+	if code := sp.setUp(getenv); code != 0 {
+		return code
+	}
+	warnQuota(sp.base, *provider, *account, errOut)
+	req := sp.request(*provider, *account, *model, *label, *tab)
+	req.Beside, req.Anchor = *beside, *anchor
+	ctx, cancel := context.WithTimeout(context.Background(), sp.wait+30*time.Second)
+	defer cancel()
+	res, err := spawn.Spawn(ctx, sp.local(), sp.target(), req)
+	logSpawn(sp.home, req, sp.host, res, err)
+	return report(out, errOut, sp.host, res, err)
+}
+
+// spawner holds what every pane of one spawn shares.
+type spawner struct {
+	host, base, dir, home, bin, session, block string
+	wait                                       time.Duration
+	out, errOut                                io.Writer
+}
+
+// setUp finds the home, the folder and the rex binary. It returns an exit code.
+func (sp *spawner) setUp(getenv func(string) string) int {
 	home, err := os.UserHomeDir()
 	if err != nil {
-		fmt.Fprintln(errOut, err)
+		fmt.Fprintln(sp.errOut, err)
 		return 1
 	}
-	if *dir == "" {
+	sp.home = home
+	if sp.dir == "" {
 		cwd, err := os.Getwd()
 		if err != nil {
-			fmt.Fprintln(errOut, err)
+			fmt.Fprintln(sp.errOut, err)
 			return 1
 		}
-		*dir = homeRelative(home, cwd)
+		sp.dir = homeRelative(home, cwd)
 	}
-	warnQuota(*base, *provider, *account, errOut)
-	bin := "rex"
+	sp.bin = "rex"
 	if d := getenv("REX_BIN_DIR"); d != "" {
-		bin = filepath.Join(d, "rex")
+		sp.bin = filepath.Join(d, "rex")
 	}
-	req := spawn.Request{Provider: *provider, Account: *account, Model: *model, Label: *label, Tab: *tab, Dir: *dir,
-		Emoji: accountEmoji(home, *provider, *account), Beside: *beside, Anchor: *anchor, CallerSession: session, CallerBlock: block,
-		Wait: *wait, Every: time.Second, TrustWatch: trustWatch}
-	ctx, cancel := context.WithTimeout(context.Background(), *wait+30*time.Second)
-	defer cancel()
-	res, err := spawn.Spawn(ctx, rex.Client{Bin: bin}, rex.Client{Bin: bin, Server: *host}, req)
-	logSpawn(home, req, *host, res, err)
-	return report(out, errOut, *host, res, err)
+	return 0
 }
+
+func (sp *spawner) request(provider, account, model, label, tab string) spawn.Request {
+	return spawn.Request{Provider: provider, Account: account, Model: model, Label: label, Tab: tab, Dir: sp.dir,
+		Emoji: accountEmoji(sp.home, provider, account), CallerSession: sp.session, CallerBlock: sp.block,
+		Wait: sp.wait, Every: time.Second, TrustWatch: trustWatch}
+}
+
+func (sp *spawner) local() rex.Client  { return rex.Client{Bin: sp.bin} }
+func (sp *spawner) target() rex.Client { return rex.Client{Bin: sp.bin, Server: sp.host} }
 
 // report prints the new pane, or why there is none. Exit 3 means the pane
 // exists and its agent has not started yet.
