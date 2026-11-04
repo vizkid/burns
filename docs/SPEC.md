@@ -593,7 +593,7 @@ Per-session, per-turn, per-block, and per-minute views are queries over `request
 One connection writes. A pool of 4 read-only connections serves queries, so WAL lets reads run during a write.
 Writes are skipped when nothing changed: a repeated request or compaction, and a batch of quota reports that folds to the stored windows. A batch of reports for one limit is folded in memory and written once.
 Compaction lookups by `request_key` and by `key` use exact indexes, checked by a query-plan test.
-`smithersd` sweeps at startup and then hourly. `since` on read routes is clamped to 7 days.
+`smithersd` sweeps and rolls up all hours at startup, then sweeps hourly. The startup pass runs in the background after the listeners open. On 2026-11-04 on Baroni, at load 55, the full roll-up of 96,481 requests ran for minutes on slow disk reads. While it ran before the listeners opened, the API refused every caller, including Claude's telemetry. Writes queue behind the roll-up on the single writer, and reads continue through WAL. `since` on read routes is clamped to 7 days.
 The planned `minute` and `hour` tables were dropped during phase 1: a week of requests is about 50,000 rows, and indexed queries over them are fast enough.
 The file is created owner-only (mode 600) at `$XDG_STATE_HOME/burns/smithers.db`, or `~/.local/state/burns/smithers.db`.
 A Codex report older than a stored window never clears that window, so backfill can replay files in any order.

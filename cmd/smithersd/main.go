@@ -87,12 +87,6 @@ func run() error {
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	if err := st.Sweep(time.Now()); err != nil {
-		log.Printf("WARN sweep: %v", err)
-	}
-	if err := st.RollUp(time.Time{}, time.Now()); err != nil {
-		log.Printf("WARN roll up: %v", err)
-	}
 	go loop(ctx, &collect.Collector{Store: st, Config: cfg, Now: time.Now}, st)
 	if home, err := os.UserHomeDir(); err == nil {
 		go (&billing.Poller{Store: st, Config: cfg, Client: http.DefaultClient, URL: billing.UsageURL,
@@ -151,9 +145,30 @@ func run() error {
 // recentHours is how far back the minute's roll-up reaches.
 const recentHours = 3 * time.Hour
 
-// loop scans agent homes at the collector's adaptive interval and sweeps old
-// rows once an hour.
-func loop(ctx context.Context, c *collect.Collector, st *store.Store) {
+// scanner reads agent homes; *collect.Collector is one.
+type scanner interface {
+	Scan() error
+	Interval() time.Duration
+}
+
+// upkeep sweeps and rolls up the store; *store.Store is one.
+type upkeep interface {
+	Sweep(now time.Time) error
+	RollUp(from, now time.Time) error
+}
+
+// loop sweeps and rolls up everything once, then scans agent homes at the
+// collector's adaptive interval and sweeps old rows once an hour. The startup
+// pass runs here, not before the listener: on a loaded host the full roll-up
+// takes minutes, and smithersd must answer meanwhile. The single writer queues
+// other writes behind it, and reads continue through WAL.
+func loop(ctx context.Context, c scanner, st upkeep) {
+	if err := st.Sweep(time.Now()); err != nil {
+		log.Printf("WARN sweep: %v", err)
+	}
+	if err := st.RollUp(time.Time{}, time.Now()); err != nil {
+		log.Printf("WARN roll up: %v", err)
+	}
 	sweep := time.NewTicker(time.Hour)
 	defer sweep.Stop()
 	rollup := time.NewTicker(time.Minute)
