@@ -43,6 +43,7 @@ type Request struct {
 	Emoji                    string // the account's emoji, which starts the tab's label
 	Dir                      string // passed to `smithers launch --dir`
 	Beside                   bool   // split the caller's tab instead of opening one
+	Anchor                   string // split beside this pane label instead; implies Beside
 	CallerSession            string
 	CallerBlock              string
 	Wait, Every              time.Duration
@@ -66,20 +67,12 @@ func Spawn(ctx context.Context, local, target Rex, req Request) (Result, error) 
 	if err != nil {
 		return Result{}, err
 	}
-	if !req.Beside && req.Tab == "" {
+	if !req.splits() && req.Tab == "" {
 		return Result{}, errors.New("a new tab needs a label")
 	}
 	res := Result{SessionLabel: label, Label: req.Label}
-	if req.Beside {
-		if err := sameServer(ctx, local, target); err != nil {
-			return Result{}, err
-		}
-		if err := labelFree(ctx, target, req.CallerSession, req.Label); err != nil {
-			return Result{}, err
-		}
-		res.SessionID = req.CallerSession
-		res.Block, err = created(target.Run(ctx, append([]string{"split", "-s", req.CallerSession, "-b", req.CallerBlock,
-			"--label", req.Label, "--focus=false", "--json"}, command(req)...)...))
+	if req.splits() {
+		res, err = splitBeside(ctx, local, target, req, res)
 	} else {
 		res, err = openTab(ctx, target, req, res)
 	}
@@ -128,15 +121,9 @@ func watchTrust(ctx context.Context, r Rex, session, block string, req Request) 
 // openTab adds a tab to the target's session with the caller's label, or
 // creates that session, then labels the new block.
 func openTab(ctx context.Context, target Rex, req Request, res Result) (Result, error) {
-	sessions, err := target.Sessions(ctx)
+	ids, err := sessionsLabelled(ctx, target, res.SessionLabel)
 	if err != nil {
 		return res, err
-	}
-	var ids []string
-	for _, s := range sessions {
-		if s.Label == res.SessionLabel {
-			ids = append(ids, s.ID)
-		}
 	}
 	switch len(ids) {
 	case 0:
@@ -214,19 +201,19 @@ func sessionLabel(ctx context.Context, r Rex, id string) (string, error) {
 	return "", fmt.Errorf("the caller's session %s has no label on this host", id)
 }
 
-func sameServer(ctx context.Context, local, target Rex) error {
-	a, err := local.Whoami(ctx)
+// sessionsLabelled lists the IDs of target's sessions with that label.
+func sessionsLabelled(ctx context.Context, target Rex, label string) ([]string, error) {
+	sessions, err := target.Sessions(ctx)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	b, err := target.Whoami(ctx)
-	if err != nil {
-		return err
+	var ids []string
+	for _, s := range sessions {
+		if s.Label == label {
+			ids = append(ids, s.ID)
+		}
 	}
-	if a.HostID != b.HostID {
-		return errors.New("--beside splits the caller's own tab, which exists only on the caller's host")
-	}
-	return nil
+	return ids, nil
 }
 
 func labelFree(ctx context.Context, r Rex, session, label string) error {

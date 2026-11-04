@@ -724,18 +724,19 @@ Model catalogs port from Penfold's `internal/models` with their tests.
 
 An agent session can start another agent session without the Mac app. Viz, 2026-11-03: "Burns should launch it for the caller."
 
-`smithers spawn --provider P --account NAME --label L --tab T [--host H] [--beside] [--model M] [--dir D] [--wait 60s]`, run by the agent from its own pane. There is no prompt option: the caller sends the task through roar once spawn prints the address. A prompt after Claude's channel flag could be read as one more channel value.
+`smithers spawn --provider P --account NAME --label L --tab T [--host H] [--beside] [--anchor P] [--model M] [--dir D] [--wait 60s]`, run by the agent from its own pane. There is no prompt option: the caller sends the task through roar once spawn prints the address. A prompt after Claude's channel flag could be read as one more channel value.
 
 | Rule | Detail | Why |
 |---|---|---|
 | Scope | The new pane joins the caller's own Rex session, found by its label from `REX_SESSION`. It can be on any host. | Viz, 2026-11-03: a caller can only spawn panes in its own project or session. Cop's project is the session label, so credentials follow. |
 | Missing session | When `--host` has no session with that label, spawn creates one there in the same folder path. The folder must exist on that host. | Viz, 2026-11-03. The Mac panel already does this for a missing local session. |
 | Two sessions with one label | Spawn refuses and names both. | Colonelk had two `stance` sessions on 2026-11-02. Picking one would be a guess. |
-| Placement | A new tab by default. `--beside` splits the caller's own tab and puts the new block next to it. `--beside` works only on the caller's own host. | Viz, 2026-11-03. The caller's block exists only on its own host. |
+| Placement | A new tab by default. `--beside` splits the caller's own tab and puts the new block next to it. `--beside` alone works only on the caller's own host. | Viz, 2026-11-03. The caller's block exists only on its own host. |
+| Anchor | `--anchor P` splits beside the pane labelled P in the caller's session, on the target host, and implies `--beside`. It works on any host where that session exists. Spawn refuses when no pane or more than one pane has that label, and names the panes it found. Spawn refuses `--tab` with `--beside` or `--anchor`, since neither opens a tab. |  Viz, 2026-11-04: a comm spawning helpers beside a lane's tab landed them in its own tab (issue #1). The pane label is what roar addresses and is unique in a session; a tab label starts with an emoji and can repeat. |
 | Who runs it | The `smithers` CLI in the caller's pane. It runs `rex`, and the new pane runs `smithers launch` as the panel's tabs do. | `smithersd` launches nothing. |
 | Folder | The new pane runs `smithers launch --dir D`, which changes into D before it starts the agent. A relative D is relative to the home folder of the host it runs on. D defaults to the caller's folder, relative to the caller's home. A missing folder holds the tab open with the reason. | The same project sits under different homes, such as `/Users/<user>` and `/home/<user>`. Rex's `-c` needs an absolute path, and only the target host knows its home. |
 | Label | `--label` is required, and spawn refuses a label already used in that session. | Roar finds a pane by label, so the address must name exactly one pane. |
-| Tab | A new tab is named with the account's emoji, then `--tab`, such as `🎱 editor-cap`. `--tab` is required unless `--beside`, which opens no tab. | Viz, 2026-11-03: the lanes' tabs carry a name after the emoji. Roar also resolves a window label. |
+| Tab | A new tab is named with the account's emoji, then `--tab`, such as `🎱 editor-cap`. `--tab` is required unless `--beside` or `--anchor`, which open no tab. | Viz, 2026-11-03: the lanes' tabs carry a name after the emoji. Roar also resolves a window label. |
 | Spent accounts | Spawn warns, and still launches, when the account's live window is at 100% or unknown, or when a subscription has no quota windows on this host at all. Azure has none by design and gets no warning. It never refuses on quota. | Viz, 2026-11-03: a reset may be in hand, and an account on credits may be meant to spend. |
 | Result | Spawn waits until Rex reports the agent as the new block's foreground process, up to 60 seconds. It prints the host, block, label and roar address, or says what it is waiting on. Exit 0 when the agent runs, 1 when spawn or Rex refused, 3 when the wait ran out, 4 when Claude waits on its folder-trust dialog, 5 when no screen read worked. | A caller must be able to message what it started. Burns reports only "Rex took the command" today. A pane appears in `smithersd` only once it has made a request, so a binding is not a usable signal. |
 | Waiting dialogs | Claude's channels dialog is answered as for any launch. A folder-trust dialog waits for the operator. Claude is already the foreground process while it shows, so for 5 seconds after Claude starts, spawn reads the new pane's screen with `rex capture`. If the dialog shows, spawn names the pane, says the operator must answer it, and exits 4. Roar messages wait until then. | As for the panel's launches. Seen live on 2026-11-03: a folder trusted on one host had never been trusted by that account on another, and spawn reported a running agent. Viz, 2026-11-03, allowed spawn to read the new pane's screen for this. |
@@ -754,6 +755,15 @@ Tested live on 2026-11-03 from a Claude pane on Stiletto, with Haiku:
 | A label already in the session | Refused before Rex ran anything. |
 | `--beside` with `--host` | Refused before Rex ran anything. |
 | Another host with no session of that label | Spawn created the session on Baroni. That host's `smithers` predated `--dir`, so the tab held open with "flag provided but not defined: -dir", and spawn exited 3 after 60 seconds. With `a0564d9` deployed there, the agent ran in 1.5 seconds. It then stopped at Claude's folder-trust dialog, because that account had never trusted the folder on that host, and a roar request stayed queued. After the screen check was added, the same case exited 4 and named the dialog. |
+
+`--anchor` was tested live on 2026-11-04 from a Claude pane on Stiletto, in a session with two panes in one tab:
+
+| Case | Result |
+|---|---|
+| `--anchor` naming the other pane | Claude ran in the new pane. Rex's layout tree showed the new split inside the anchor pane's slot, and the caller's pane kept its own. |
+| `--anchor` naming no pane | Refused, naming the session and the missing label. |
+| `--anchor` with `--tab` | Refused before Rex ran anything, exit 2. |
+| `--anchor` with `--host` where the session does not exist | Refused: that host has no session with the caller's label. |
 
 Roar drives Rex through a Go client of its own: Rex's server API over a WebSocket, plus wrappers for the `rex` CLI. It also resolves names such as `label@session` and `host:` addresses. Burns starts a `rex` process for each call, and on 2026-11-02 those calls were killed under load 24 times. A shared module would give Burns roar's addressing and one connection instead of a process per call.
 
@@ -839,7 +849,7 @@ Agents call `smithers`. Its agent-side commands never fail the agent. It waits a
 | `smithers answer-channels --block B --servers a,b` | The detached watcher `smithers launch` leaves behind. |
 | `smithers usage [--since 24h]` | Prints, for each configured account, its quota windows and its requests, tokens and cost over `--since`. Reads `GET /usage` and `GET /usage/sessions`. Unknown quota prints `unknown`; requests with no cost print as an unknown count, never as $0. Rows with no account print as `<provider> unattributed`, and an account no longer in the file prints under its name. A `--since` past retention prints the 7-day window it covers. Exits 1 if `smithersd` does not answer. |
 | `smithers panes [--url URL]` | Prints one line per live pane of one `smithersd`: Rex session, label (or block), provider and account, the model its own thread ran most with its subagent count, compactions since the pane took its session, and how long ago the last was. Reads `GET /usage/panes`; `--url` reads another host over the tailnet. A `smithersd` too old to send the count prints `unknown`, never 0. With no answer from Rex it says the panes are unconfirmed. |
-| `smithers spawn --provider P --account NAME --label L --tab T [--host H] [--beside] [--model M] [--dir D] [--wait 60s]` | Starts an agent in the caller's own Rex session. See "Agent-started launches". Exits 0 when the agent runs, 1 on a refusal, 2 on bad arguments, 3 when the pane opened but the agent did not start in time, 4 when Claude waits on its folder-trust dialog, and 5 when the agent runs but no screen read worked, so the dialog is unchecked. Appends each spawn to `spawn.log` in the state folder. |
+| `smithers spawn --provider P --account NAME --label L --tab T [--host H] [--beside] [--anchor P] [--model M] [--dir D] [--wait 60s]` | Starts an agent in the caller's own Rex session. See "Agent-started launches". Exits 0 when the agent runs, 1 on a refusal, 2 on bad arguments, 3 when the pane opened but the agent did not start in time, 4 when Claude waits on its folder-trust dialog, and 5 when the agent runs but no screen read worked, so the dialog is unchecked. Appends each spawn to `spawn.log` in the state folder. |
 
 Both run beside Penfold's forwarder and hooks. Adding them does not wait for the cutover.
 
