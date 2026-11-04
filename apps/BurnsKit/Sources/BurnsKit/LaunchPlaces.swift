@@ -56,7 +56,9 @@ extension LaunchSentence {
     func rows(_ p: LaunchProject, typed: String = "") -> [LaunchHost] {
         var out: [LaunchHost] = []
         if let pane, let path = p.path == pane.relative ? pane.path : p.hosts.first(where: { $0.rex == pane.rex })?.path {
-            var beside = LaunchHost(rex: pane.rex, shown: pane.shown, path: path, session: pane.session)
+            // The pane's host's models, not the account-wide fallback, which is another host's.
+            let entries = (p.hosts + base.flatMap(\.hosts)).first { $0.rex == pane.rex }?.entries ?? [:]
+            var beside = LaunchHost(rex: pane.rex, shown: pane.shown, path: path, session: pane.session, entries: entries)
             beside.block = pane.block
             out.append(beside)
         }
@@ -76,7 +78,8 @@ extension LaunchSentence {
     /// read `word`: the words depend on the place's efforts.
     var place: LaunchHost? {
         guard let p = chosenProject else { return nil }
-        let all = rows(p)
+        let typed = pending.flatMap { $0.path == p.path ? [$0.row] : nil } ?? []
+        let all = rows(p) + typed
         return all.first { $0.id == hostID } ?? all.first
     }
 
@@ -109,10 +112,13 @@ extension LaunchSentence {
             if found.contains(where: { $0.path == id }) { kept = LaunchProject.merged(kept, [p]) }
             projectPath = id
             hostID = nil
+            pending = nil
+            target = nil
             touched.remove(.host)
         } else if word == .host, let p = chosenProject, let h = rows(p, typed: query).first(where: { $0.id == id }) {
-            if h.create != nil, !(made[p.path] ?? []).contains(h) { made[p.path, default: []].append(h) }
+            pending = h.create != nil && !(made[p.path] ?? []).contains(h) ? Pending(path: p.path, row: h) : nil
             hostID = id
+            target = nil
         }
     }
 

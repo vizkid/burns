@@ -702,7 +702,10 @@ Viz, 2026-11-03: "I should be able to launch beside with a different shortcut th
 | A folder's hosts | A typed folder offers each host that has it, with "new session". | The host's `smithersd` saw the folder there. |
 | Typed session | In the host word, a typed name that no session on that host has adds "new session NAME" for each host the project lists. Its launch is `rex new NAME`. | Viz: a typed session creates a new one. |
 | Letters | Typing keeps its case, and takes `/`, `_` and `~` too, because folders and session names are typed. | |
-| `GET /dirs?prefix=P` | Read-only. Answers `{"host","home","dirs"}`: up to 50 folders under the home folder whose last part starts with P's last part, sorted, with no case. Hidden folders only when that part starts with `.`. A P that is absolute or has `..` is refused with 400. | The panel can reach a remote filesystem only through `smithersd`. It lists names, never contents. |
+| Waiting target | While the session or pane the panel opened for is not in the lists, Return launches nothing and the panel says "Finding S…", then "Cannot find S. Choose a project or host." once a read has missed it. Choosing a project or host drops the target. | Peer review, 2026-11-04: without this, Cmd+Return before the read, or after a pane that could not be read, opened an ordinary tab, possibly on another host. |
+| Typing and Backspace | The typed session stays pending while its name is typed, and joins the host's rows only when the operator leaves the word on it. Backspace picks again, as typing does, and erasing the whole name returns to the default row. Typing that matches nothing launches nothing: "Nothing matches “Q”." | Peer review, 2026-11-04: typing Fresh then Backspace showed Fres but created Fresh, and every prefix stayed as a row. |
+| Beside models | The beside row uses the model catalog of the pane's own host. | Peer review, 2026-11-04: it used the account-wide catalog, which comes from the first host that answers. |
+| `GET /dirs?prefix=P` | Read-only. Answers `{"host","home","dirs"}`: up to 50 folders under the home folder whose last part starts with P's last part, sorted, with no case. Hidden folders only when that part starts with `.`. A P that is absolute or has `..` is refused with 400. | The panel can reach a remote filesystem only through `smithersd`. It lists names, never contents. A link whose real path leaves the home folder is never read or listed (peer review, 2026-11-04). |
 
 Built 2026-11-03. The panel asks every host of the last read for `GET /dirs` 120 ms after the last key, and a newer key cancels the request. A host whose `smithersd` lacks the route offers no folders. A chosen typed folder or session stays in the lists after the query clears. The beside target lands on the pane's own folder first. Tested: Swift, Go and Lua tests; `GET /dirs` live on this Mac over loopback and the tailnet; `burns_beside` from this Mac's pane named its block. Not yet seen by Viz: the panel itself, and either key pressed in a remote host's tab. `GET /dirs` was deployed to both remote hosts the same day and answered there.
 
@@ -764,9 +767,11 @@ A daemon-backed Codex runs its SessionStart hook inside the shared daemon. So th
 |---|---|---|
 | 1 | `smithers launch` | After `codex app-server daemon start`, start a detached watcher. The watcher connects to `<home>/app-server-control/app-server-control.sock` (WebSocket, JSON-RPC) and reports back once it is connected. |
 | 2 | `smithers launch` | `exec codex`. Codex keeps the launch's process ID. |
-| 3 | watcher | Wait 10 s for `thread/started` with the launch folder as `cwd`, no `parentThreadId`, and `originator` `codex-tui`. |
+| 3 | watcher | Wait 10 s for `thread/started` with the launch folder as `cwd`, no `parentThreadId`, and `originator` `codex-tui`. A connection that ends before the 10 s binds nothing: a second thread could have started unseen. |
 | 4 | watcher | If exactly one thread matches, ask Rex for the pane's foreground. It must be the launch's PID or run under it, as Codex does under cop. Then run `roar bind codex --thread <id> --pid <pid> --codex-home <home>`, and post the same claim to `smithersd` `/bind` with that PID and `source` `launch`. The watcher inherited the pane's `REX_SESSION` and `REX_BLOCK`. Roar's `pid_not_foreground` is retried once after 1 s, and roar's other refusals are logged. |
 | 5 | watcher | If no thread or several threads match, bind nothing and write the reason to `launch.log`. The old paths still apply. |
+| 6 | watcher | Before roar runs, check every Codex pane on the host that roar has not bound (`roar panes --json`). If one has its foreground in the launch folder, bind nothing: that pane could have started the thread. A pane roar has bound is no rival, because roar refuses its thread with `thread_bound_elsewhere`. |
+| 7 | watcher | If roar refuses the thread itself (`thread_bound_elsewhere`, `invalid_thread`) or another refusal, send no claim to `smithersd`, so another pane's tokens never move here. A refusal about the pane, `not_codex_pane` under a wrapper, still sends the claim. Without roar, nothing is bound. |
 
 Burns opens the Codex daemon socket only for this watcher. It sends no turn and creates no thread.
 
@@ -781,6 +786,10 @@ Tested 2026-11-04 on Codex 0.165.0. The TUI banner showed 0.166.0, the version o
 | Closing the session without a prompt | No rollout file was written for either thread. |
 
 `/new` is not covered. Several panes often share one home and one folder, and a `thread/started` does not name its client.
+
+Step 6 is broader than needed: Rex does not say which Codex home a pane uses, so an unbound Codex in another home and the same folder also blocks the binding. That costs a binding, never a wrong one.
+
+Peer review, 2026-11-04 (Codex, of `767bd90`): steps 3, 6 and 7 came from it. Tested live the same day: a launch beside a hand-started Codex in the same folder logged "could be another pane's: unbound Codex pane …", and a launch with no rival still bound.
 
 Built 2026-11-04: `smithers bind-codex`, started by `smithers launch`, with the daemon client in `internal/codexd`. The launch waits at most 3 s for the watcher to connect, and the watcher tells it over fd 3. Every outcome goes to `launch.log`. Roar's side is `roar bind codex`, from roar commit `8a2ad77`.
 

@@ -113,7 +113,12 @@ public struct LaunchPanel: View {
     /// One launch at a time: a second Return while `rex` runs would start a second agent.
     private func go() {
         guard !launching else { return }
-        guard let request = sentence.request else { note = reading ? "" : sentence.problem ?? ""; return }
+        // During a read most problems may clear by themselves, but a waiting target is why
+        // nothing launched, so it is said at once.
+        guard let request = sentence.request else {
+            note = reading && sentence.target == nil ? "" : sentence.problem ?? ""
+            return
+        }
         launching = true
         Task {
             if let error = await launch(request) { note = error } else { close() }

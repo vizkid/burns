@@ -39,6 +39,21 @@ func (c CLI) Foreground(ctx context.Context, block string) (int, error) {
 	return p.Foreground.PID, nil
 }
 
+// ForegroundIn returns the agent the block's foreground runs ("" for none) and its folder.
+func (c CLI) ForegroundIn(ctx context.Context, block string) (agent, cwd string, err error) {
+	p, err := c.kit().Process(ctx, "", block)
+	if err != nil {
+		if errors.Is(err, kit.ErrNotFound) {
+			return "", "", ErrNoBlock
+		}
+		return "", "", fmt.Errorf("rex process %s: %w", block, err)
+	}
+	if p.Foreground == nil {
+		return "", "", nil
+	}
+	return p.Foreground.Agent(), p.Foreground.Cwd, nil
+}
+
 // Capture returns the block's screen and scrollback as text.
 func (c CLI) Capture(ctx context.Context, block string) (string, error) {
 	out, err := c.kit().Run(ctx, "capture", "-b", block, "--trim")

@@ -39,8 +39,17 @@ public struct LaunchSentence: Equatable, Sendable {
     var kept: [LaunchProject] = []
     /// The hosts' folders for the query typed now.
     var found: [LaunchProject] = []
-    /// Typed sessions the operator chose, by project path.
+    /// Typed sessions the operator confirmed, by project path.
     var made: [String: [LaunchHost]] = [:]
+    /// The typed session selected while its name is still being typed. It joins `made` only when
+    /// the operator leaves the word on it, so Backspace never leaves a longer name behind.
+    var pending: Pending?
+    struct Pending: Equatable, Sendable {
+        var path: String
+        var row: LaunchHost
+    }
+    /// True once a read has arrived, so a target it did not list can be told from one not read yet.
+    var hasRead = false
     /// The chosen project and host row, by identity. Nil is the first.
     var projectPath: String?
     var hostID: String?
@@ -65,6 +74,7 @@ public struct LaunchSentence: Equatable, Sendable {
         accounts = fresh.accounts
         base = fresh.base
         pane = fresh.pane ?? pane
+        hasRead = true
         reason = fresh.reason
         unreachable = fresh.unreachable
         if !touched.contains(.agent) { agent = fresh.agent }
@@ -213,7 +223,11 @@ public struct LaunchSentence: Equatable, Sendable {
     /// Tab wraps.
     public mutating func cycle(_ by: Int) { move(to: (slot + by + words.count) % words.count) }
     public mutating func focus(_ w: Word) { if let i = words.firstIndex(of: w) { move(to: i) } }
-    private mutating func move(to i: Int) { slot = i; query = ""; found = [] }
+    private mutating func move(to i: Int) {
+        if let p = pending, hostID == p.row.id { made[p.path, default: []].append(p.row) }
+        pending = nil
+        slot = i; query = ""; found = []
+    }
 
     /// Case stays: paths and session names keep what was typed.
     public mutating func type(_ text: String) {
@@ -221,11 +235,29 @@ public struct LaunchSentence: Equatable, Sendable {
         if let first = options.first { pick(first.id) }
     }
 
-    public mutating func erase() { if !query.isEmpty { query.removeLast() } }
+    /// Backspace picks again, as typing does: the selection must be what the query now says.
+    public mutating func erase() {
+        guard !query.isEmpty else { return }
+        query.removeLast()
+        guard word == .project || word == .host else { return }
+        if !query.isEmpty, let first = options.first {
+            pick(first.id)
+        } else if query.isEmpty, word == .host, let p = pending, hostID == p.row.id {
+            hostID = nil
+            pending = nil
+        }
+    }
 
     /// Why this sentence cannot launch, or nil when it can.
     public var problem: String? {
         if current == nil { return "\(Self.agents[agent].1) has no account in Burns yet." }
+        // The panel opened for a session or pane. Until it lands, Return would launch somewhere else.
+        if let t = target {
+            let named = t.host.isEmpty ? t.session : "\(t.session) on \(t.host)"
+            return hasRead ? "Cannot find \(named). Choose a project or host." : "Finding \(named)…"
+        }
+        // Typing that matches nothing must not launch the place chosen before it, out of sight.
+        if word == .project || word == .host, !query.isEmpty, options.isEmpty { return "Nothing matches “\(query)”." }
         if place == nil { return "No project: no Rex session has a folder yet." }
         return nil
     }

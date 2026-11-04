@@ -86,3 +86,26 @@ func TestDirsCapsTheList(t *testing.T) {
 		t.Fatalf("len = %d; want 50", len(doc.Dirs))
 	}
 }
+
+// A link inside home that points outside it offers nothing, either as a folder or as a parent:
+// the lexical checks alone let `outside/` list another tree's folders.
+func TestDirsRefusesLinksThatLeaveHome(t *testing.T) {
+	ts, s := server(t)
+	home := dirsHome(t, s)
+	outside := t.TempDir()
+	os.MkdirAll(filepath.Join(outside, "secret"), 0o755)
+	os.Symlink(outside, filepath.Join(home, "outside"))
+	var doc dirsDoc
+	getJSON(t, ts.URL+"/dirs?prefix=outside/", &doc)
+	if len(doc.Dirs) != 0 {
+		t.Fatalf("through an outside link = %v", doc.Dirs)
+	}
+	getJSON(t, ts.URL+"/dirs?prefix=ou", &doc)
+	if slices.Contains(doc.Dirs, "outside") {
+		t.Fatalf("an outside link was offered: %v", doc.Dirs)
+	}
+	getJSON(t, ts.URL+"/dirs?prefix=dev/sty", &doc)
+	if !slices.Equal(doc.Dirs, []string{"dev/styles"}) {
+		t.Fatalf("a link inside home must still count: %v", doc.Dirs)
+	}
+}

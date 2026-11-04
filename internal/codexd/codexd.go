@@ -53,7 +53,7 @@ const tuiOriginator = "codex-tui"
 func Pick(threads []Thread, dir string) (Thread, string) {
 	var found []Thread
 	for _, t := range threads {
-		if t.Parent != "" || t.Originator != tuiOriginator || !sameDir(t.Cwd, dir) {
+		if t.Parent != "" || t.Originator != tuiOriginator || !SameDir(t.Cwd, dir) {
 			continue
 		}
 		if len(found) == 0 || found[0].ID != t.ID {
@@ -70,8 +70,8 @@ func Pick(threads []Thread, dir string) (Thread, string) {
 	}
 }
 
-// sameDir compares folders through their links: /tmp is /private/tmp on macOS.
-func sameDir(a, b string) bool {
+// SameDir compares folders through their links: /tmp is /private/tmp on macOS.
+func SameDir(a, b string) bool {
 	if a == b {
 		return true
 	}
@@ -147,15 +147,16 @@ func (c *Conn) initialize(ctx context.Context) error {
 	}
 }
 
-// Started collects every thread/started for the window, or until the daemon
-// closes the connection.
-func (c *Conn) Started(ctx context.Context, window time.Duration) []Thread {
+// Started collects every thread/started for the window. complete is false when the
+// connection failed before the window ended: a thread may then have started unseen, so the
+// caller must not treat the list as everything that started.
+func (c *Conn) Started(ctx context.Context, window time.Duration) (threads []Thread, complete bool) {
 	end := time.Now().Add(window)
+	cut := false
 	if d, ok := ctx.Deadline(); ok && d.Before(end) {
-		end = d
+		end, cut = d, true
 	}
 	c.ws.SetReadDeadline(end)
-	var out []Thread
 	for {
 		var m struct {
 			Method string `json:"method"`
@@ -164,17 +165,18 @@ func (c *Conn) Started(ctx context.Context, window time.Duration) []Thread {
 			} `json:"params"`
 		}
 		if err := c.ws.ReadJSON(&m); err != nil {
-			// A frame of another shape is skipped. Any other error, the window's
-			// end included, ends the wait: the connection reads nothing more.
+			// A frame of another shape is skipped. Any other error ends the wait: the
+			// connection reads nothing more. Only the window's own deadline completes it.
 			var syntax *json.SyntaxError
 			var shape *json.UnmarshalTypeError
 			if errors.As(err, &syntax) || errors.As(err, &shape) {
 				continue
 			}
-			return out
+			var ne net.Error
+			return threads, !cut && errors.As(err, &ne) && ne.Timeout() && !time.Now().Before(end)
 		}
 		if m.Method == "thread/started" && m.Params.Thread != nil {
-			out = append(out, *m.Params.Thread)
+			threads = append(threads, *m.Params.Thread)
 		}
 	}
 }

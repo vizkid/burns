@@ -34,18 +34,39 @@ func (s *Server) dirs(w http.ResponseWriter, r *http.Request) {
 		parent, part = prefix[:i], prefix[i+1:]
 	}
 	found := []string{}
-	entries, _ := os.ReadDir(filepath.Join(home, parent)) // a missing folder has nothing to offer
+	// The lexical checks above do not see links: a link in home can point anywhere. Only a
+	// folder whose real path is inside home's real path is read or offered.
+	root, err := filepath.EvalSymlinks(home)
+	if err != nil {
+		writeJSON(w, http.StatusOK, map[string]any{"host": s.Host, "home": home, "dirs": found})
+		return
+	}
+	var entries []os.DirEntry
+	if inside(root, filepath.Join(home, parent)) {
+		entries, _ = os.ReadDir(filepath.Join(home, parent)) // a missing folder has nothing to offer
+	}
 	for _, e := range entries {
 		name := e.Name()
 		if !strings.HasPrefix(strings.ToLower(name), strings.ToLower(part)) || (strings.HasPrefix(name, ".") && !strings.HasPrefix(part, ".")) {
 			continue
 		}
-		// Stat follows a link, so a link to a folder counts.
-		if info, err := os.Stat(filepath.Join(home, parent, name)); err != nil || !info.IsDir() {
+		// Stat follows a link, so a link to a folder inside home counts.
+		path := filepath.Join(home, parent, name)
+		if info, err := os.Stat(path); err != nil || !info.IsDir() || !inside(root, path) {
 			continue
 		}
 		found = append(found, strings.TrimPrefix(parent+"/"+name, "/"))
 	}
 	slices.SortFunc(found, func(a, b string) int { return strings.Compare(strings.ToLower(a), strings.ToLower(b)) })
 	writeJSON(w, http.StatusOK, map[string]any{"host": s.Host, "home": home, "dirs": found[:min(len(found), maxDirs)]})
+}
+
+// inside reports whether path's real location is root or under it.
+func inside(root, path string) bool {
+	real, err := filepath.EvalSymlinks(path)
+	if err != nil {
+		return false
+	}
+	rel, err := filepath.Rel(root, real)
+	return err == nil && rel != ".." && !strings.HasPrefix(rel, "../")
 }

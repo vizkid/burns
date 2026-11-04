@@ -100,47 +100,91 @@ func bindCodex(args []string, errOut io.Writer) int {
 	}
 	ready.WriteString("ready\n")
 	ready.Close()
-	threads := conn.Started(ctx, codexWindow)
+	threads, complete := conn.Started(ctx, codexWindow)
 	conn.Close()
-	logLaunch(l.Block + ": " + bindThread(ctx, l, threads))
+	logLaunch(l.Block + ": " + liveBinder().bind(ctx, l, threads, complete))
 	return 0
 }
 
-// bindThread tells roar and smithersd which thread runs in the pane, and says
-// what happened. It binds nothing on a guess.
-func bindThread(ctx context.Context, l codexLaunch, threads []codexd.Thread) string {
+// binder holds what a binding asks of the host, so tests can stand in for each part.
+type binder struct {
+	foreground func(ctx context.Context, block string) (int, error)
+	ps         func() ([]byte, error)
+	// rivals names another pane that could own the thread, or returns "".
+	rivals func(ctx context.Context, l codexLaunch) (string, error)
+	roar   func(args []string) (string, int) // nil when roar is not installed
+	claim  func(body []byte)
+}
+
+func liveBinder() binder {
+	b := binder{
+		ps:    func() ([]byte, error) { return exec.Command("ps", "-A", "-o", "pid=,ppid=").Output() },
+		claim: func(body []byte) { post(DefaultURL+"/bind", body, claimTimeout) },
+	}
+	rexPath, _, rexErr := find("rex", os.Environ())
+	b.foreground = func(ctx context.Context, block string) (int, error) {
+		if rexErr != nil {
+			return 0, errors.New("rex not found")
+		}
+		return rex.CLI{Path: rexPath}.Foreground(ctx, block)
+	}
+	if path, _, err := find("roar", os.Environ()); err == nil {
+		b.roar = runner(path)
+		b.rivals = func(ctx context.Context, l codexLaunch) (string, error) {
+			if rexErr != nil {
+				return "", errors.New("rex not found")
+			}
+			return rivalPane(ctx, l, b.roar, rex.CLI{Path: rexPath})
+		}
+	}
+	return b
+}
+
+// bind tells roar and smithersd which thread runs in the pane, and says what happened. It
+// binds nothing on a guess: the daemon does not say which client started a thread, so the
+// match rests on the window, the folder, and no other unbound Codex pane in that folder.
+func (b binder) bind(ctx context.Context, l codexLaunch, threads []codexd.Thread, complete bool) string {
+	const left = "codex binding left to roar's first message: "
+	if !complete {
+		return left + "the daemon connection ended before the window did"
+	}
 	t, why := codexd.Pick(threads, l.Dir)
 	if why != "" {
-		return "codex binding left to roar's first message: " + why
+		return left + why
 	}
-	pid, why := codexPid(ctx, l)
+	if b.roar == nil {
+		return left + "roar not found"
+	}
+	ctx, cancel := context.WithTimeout(ctx, claimTimeout)
+	defer cancel()
+	if rival, err := b.rivals(ctx, l); err != nil || rival != "" {
+		if err != nil {
+			rival = "cannot check other panes: " + err.Error()
+		}
+		return left + "thread " + t.ID + " could be another pane's: " + rival
+	}
+	pid, why := b.codexPid(ctx, l)
 	if why != "" {
 		return "codex thread " + t.ID + " not bound: " + why
 	}
-	said := "roar not found"
-	if path, _, err := find("roar", os.Environ()); err == nil {
-		said = roarBind(runner(path), t.ID, pid, l.Home, roarRetry)
+	said, claimable := roarBind(b.roar, t.ID, pid, l.Home, roarRetry)
+	if !claimable {
+		return fmt.Sprintf("codex thread %s, pid %d: %s; no claim sent", t.ID, pid, said)
 	}
 	body, _ := json.Marshal(map[string]any{"provider": "codex", "session": t.Session(), "source": "launch",
 		"rex_block": l.Block, "rex_session": l.Session, "pids": []int{pid}})
-	post(DefaultURL+"/bind", body, claimTimeout)
+	b.claim(body)
 	return fmt.Sprintf("codex thread %s, pid %d: %s; claim sent to smithersd", t.ID, pid, said)
 }
 
 // codexPid is the pane's foreground, which must be the launch itself (exec kept
-// its pid) or run under it, as Codex does under cop.
-func codexPid(ctx context.Context, l codexLaunch) (int, string) {
-	path, _, err := find("rex", os.Environ())
-	if err != nil {
-		return 0, "rex not found"
-	}
-	ctx, cancel := context.WithTimeout(ctx, claimTimeout)
-	defer cancel()
-	fg, err := rex.CLI{Path: path}.Foreground(ctx, l.Block)
+// its pid) or run under it, as Codex does under a wrapper.
+func (b binder) codexPid(ctx context.Context, l codexLaunch) (int, string) {
+	fg, err := b.foreground(ctx, l.Block)
 	if err != nil {
 		return 0, "rex: " + err.Error()
 	}
-	ps, err := exec.Command("ps", "-A", "-o", "pid=,ppid=").Output()
+	ps, err := b.ps()
 	if err != nil {
 		return 0, "ps: " + err.Error()
 	}
@@ -170,8 +214,11 @@ func runner(path string) func([]string) (string, int) {
 }
 
 // roarBind runs `roar bind codex`. Only pid_not_foreground is retried, once: it
-// can mean Codex has not yet replaced its launcher.
-func roarBind(run func([]string) (string, int), thread string, pid int, home string, wait time.Duration) string {
+// can mean Codex has not yet replaced its launcher. claimable is false when roar
+// refused the thread itself, for example as bound in another pane: then the thread
+// may not be this pane's, and smithersd must not move its tokens here. A refusal
+// about the pane, not_codex_pane under a wrapper, leaves the claim standing.
+func roarBind(run func([]string) (string, int), thread string, pid int, home string, wait time.Duration) (said string, claimable bool) {
 	args := []string{"bind", "codex", "--thread", thread, "--pid", strconv.Itoa(pid), "--codex-home", home}
 	out, code := run(args)
 	if code != 0 && strings.Contains(out, "pid_not_foreground") {
@@ -180,7 +227,7 @@ func roarBind(run func([]string) (string, int), thread string, pid int, home str
 	}
 	out = strings.TrimSpace(out)
 	if code != 0 {
-		return "roar refused: " + out
+		return "roar refused: " + out, strings.Contains(out, "not_codex_pane")
 	}
-	return "roar " + out
+	return "roar " + out, true
 }

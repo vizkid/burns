@@ -106,7 +106,10 @@ func TestStartedCollectsThreadsUntilTheWindowEnds(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer conn.Close()
-	threads := conn.Started(ctx, 300*time.Millisecond)
+	threads, complete := conn.Started(ctx, 300*time.Millisecond)
+	if !complete {
+		t.Fatal("a window that ran to its end is complete")
+	}
 	if len(threads) != 2 || threads[0].ID != "t1" || threads[1].Cwd != "/w/b" || threads[0].Originator != "codex-tui" {
 		t.Fatalf("threads %+v", threads)
 	}
@@ -124,9 +127,13 @@ func TestStartedEndsWhenTheDaemonGoes(t *testing.T) {
 	}
 	defer conn.Close()
 	begin := time.Now()
-	threads := conn.Started(context.Background(), 5*time.Second)
+	threads, complete := conn.Started(context.Background(), 5*time.Second)
 	if len(threads) != 1 || time.Since(begin) > 3*time.Second {
 		t.Fatalf("threads %+v after %v", threads, time.Since(begin))
+	}
+	// The rest of the window went unseen, so a second thread could have started then.
+	if complete {
+		t.Fatal("a window cut short by the daemon is not complete")
 	}
 }
 

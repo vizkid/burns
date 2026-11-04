@@ -115,4 +115,71 @@ struct LaunchPlacesTests {
         s.type("x")
         #expect(!s.options.contains { $0.note == "new session x" })
     }
+
+    /// Review finding 3: Backspace re-picks, as typing does. "Fresh" then Backspace must start
+    /// "Fres", never the name no longer on screen.
+    @Test func backspaceRepicksTheTypedSession() {
+        var s = sentence()
+        s.focus(.host)
+        s.type("Fresh")
+        s.erase()
+        #expect(s.query == "Fres")
+        #expect(s.request?.host.create == "Fres")
+        // Erasing it all goes back to the default place, and no typed row stays behind.
+        for _ in 0..<4 { s.erase() }
+        #expect(s.request?.host.create == nil)
+        #expect(!s.options.contains { $0.note.hasPrefix("new session") })
+    }
+
+    /// Typing does not keep every prefix: only the name Return took stays.
+    @Test func onlyTheConfirmedNameStays() {
+        var s = sentence()
+        s.focus(.host)
+        s.type("F"); s.type("r"); s.type("e")
+        s.confirm()
+        s.focus(.host)
+        #expect(s.options.filter { $0.note.hasPrefix("new session") }.map(\.note) == ["new session Fre"])
+    }
+
+    /// A typed folder that nothing matches must not launch the folder chosen before it.
+    @Test func aTypedFolderWithNoMatchDoesNotLaunch() {
+        var s = sentence()
+        s.focus(.project)
+        s.type("zz")
+        #expect(s.options.isEmpty)
+        #expect(s.request == nil)
+        #expect(s.problem?.contains("zz") == true)
+    }
+
+    /// Review finding 2: until the beside target lands, Return launches nothing. A read that
+    /// cannot find the pane says so, and the operator's own pick still launches.
+    @Test func anUnresolvedTargetDoesNotLaunchElsewhere() {
+        var s = sentence()
+        s.aim(LaunchTarget(host: "Two", session: "why", block: "block:b"))
+        #expect(s.request == nil, "no read yet")
+        #expect(s.problem?.contains("why") == true)
+        s.adopt(sentence()) // the read could not read the pane
+        #expect(s.request == nil)
+        #expect(s.problem?.contains("why") == true)
+        s.focus(.project); s.pick("dev/x")
+        #expect(s.request != nil)
+    }
+
+    /// Review finding 4: a row beside a pane uses the models of the pane's own host.
+    @Test func besideUsesThePaneHostsModels() {
+        let id = AccountID(provider: "codex", name: "alpha")
+        let local = ModelEntry(provider: "codex", account: "alpha", defaultId: "m-local", default: "Local", defaultEffort: "high",
+                               models: [CatalogModel(id: "m-local", display: "Local", efforts: ["high"])])
+        let remote = ModelEntry(provider: "codex", account: "alpha", defaultId: "m-remote", default: "Remote", defaultEffort: "low",
+                                models: [CatalogModel(id: "m-remote", display: "Remote", efforts: ["low"])])
+        let account = LaunchAccount(id: id, emoji: "🎱", left: "72% left", entry: local)
+        let y = LaunchProject(name: "y", path: "dev/y", hosts: [LaunchHost(rex: "Two", shown: "Two", path: "/home/b/dev/y", session: "why", entries: [id: remote])])
+        var s = LaunchSentence(accounts: [account], projects: [y])
+        s.aim(LaunchTarget(host: "Two", session: "why", block: "block:b"))
+        var fresh = LaunchSentence(accounts: [account], projects: [y])
+        fresh.pane = pane
+        s.adopt(fresh)
+        #expect(s.text(.host) == "Two beside this pane")
+        #expect(s.text(.model) == "Remote")
+    }
 }
