@@ -9,15 +9,19 @@ public struct LaunchPanel: View {
     @State private var launching = false
     @FocusState private var focused: Bool
     private let refresh: (() async -> LaunchSentence)?
+    private let complete: ((String) async -> [LaunchProject])?
     private let launch: (LaunchRequest) async -> String?
     private let close: () -> Void
 
-    /// `refresh` reads the hosts after the panel shows. `launch` answers an error to show, or nil
-    /// when the launch started.
-    public init(sentence: LaunchSentence, note: String = "", refresh: (() async -> LaunchSentence)? = nil, launch: @escaping (LaunchRequest) async -> String?, close: @escaping () -> Void) {
+    /// `refresh` reads the hosts after the panel shows. `complete` asks the hosts for the folders
+    /// under a typed path. `launch` answers an error to show, or nil when the launch started.
+    public init(sentence: LaunchSentence, note: String = "", refresh: (() async -> LaunchSentence)? = nil,
+                complete: ((String) async -> [LaunchProject])? = nil,
+                launch: @escaping (LaunchRequest) async -> String?, close: @escaping () -> Void) {
         _sentence = State(initialValue: sentence)
         _note = State(initialValue: note)
         self.refresh = refresh
+        self.complete = complete
         self.launch = launch
         self.close = close
     }
@@ -60,6 +64,15 @@ public struct LaunchPanel: View {
             sentence.adopt(await refresh())
             reading = false
         }
+        // A new query cancels the last one's request, so a slow host cannot answer a stale query.
+        .task(id: sentence.completing) {
+            guard let prefix = sentence.completing, let complete else { return }
+            try? await Task.sleep(for: .milliseconds(120))
+            guard !Task.isCancelled else { return }
+            let folders = await complete(prefix)
+            guard !Task.isCancelled else { return }
+            sentence.found(folders, for: prefix)
+        }
     }
 
     /// An error first. With no projects yet, "no project" would read as an answer.
@@ -70,7 +83,8 @@ public struct LaunchPanel: View {
 
     private func press(_ k: KeyPress) -> KeyPress.Result {
         switch k.key {
-        case .tab: sentence.cycle(k.modifiers.contains(.shift) ? -1 : 1)
+        case .tab:
+            if k.modifiers.contains(.shift) { sentence.cycle(-1) } else if !sentence.complete() { sentence.cycle(1) }
         case KeyEquivalent("\u{19}"): sentence.cycle(-1) // macOS sends Shift+Tab as back-tab
         case .leftArrow: sentence.step(-1)
         case .rightArrow: sentence.step(1)
@@ -86,7 +100,7 @@ public struct LaunchPanel: View {
     }
 
     private func typed(_ text: String) -> KeyPress.Result {
-        guard let c = text.first, text.count == 1, c.isLetter || c.isNumber || c == " " || c == "." || c == "-" else { return .ignored }
+        guard let c = text.first, text.count == 1, c.isLetter || c.isNumber || " .-_/~".contains(c) else { return .ignored }
         if let n = c.wholeNumberValue, n >= 1, sentence.query.isEmpty, n <= sentence.options.count {
             sentence.pick(sentence.options[n - 1].id)
             if !sentence.onLast { sentence.step(1) }

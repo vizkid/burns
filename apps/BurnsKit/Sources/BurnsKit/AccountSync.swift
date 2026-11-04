@@ -48,6 +48,26 @@ public enum AccountSync {
         host.contains { h in !h.extra.isEmpty && central.contains { $0.id == h.id && $0.extra != h.extra } }
     }
 
+    /// Adds to each listed account the fields its host copies have and it lacks, when every host
+    /// that has a field agrees on its value. The apps never edit those fields, so the list missing
+    /// one means it was added on a host, by hand or by an agent. Taking it loses nothing, and
+    /// otherwise every host stays held: overwrite would drop the field, and import would undo the
+    /// list's own edits. Hosts that disagree keep the field out, and stay held for the operator.
+    static func adopting(_ central: [CentralAccount], from hosts: [[CentralAccount]]) -> [CentralAccount] {
+        central.map { account in
+            var found: [String: JSONValue] = [:], disputed: Set<String> = []
+            for copy in hosts.joined() where copy.id == account.id {
+                for (field, value) in copy.extra where account.extra[field] == nil {
+                    if let seen = found[field], seen != value { disputed.insert(field) }
+                    found[field] = found[field] ?? value
+                }
+            }
+            var out = account
+            for (field, value) in found where !disputed.contains(field) { out.extra[field] = value }
+            return out
+        }
+    }
+
     /// First use: every host's accounts, matched by provider and name, in the order first seen. The
     /// first home wins here. The host with the other one then differs, so it comes up for review.
     public static func importing(_ hosts: [[CentralAccount]]) -> (accounts: [CentralAccount], conflicts: [Conflict]) {
@@ -72,19 +92,21 @@ public enum AccountSync {
     /// hosts' accounts over a list it has not downloaded, and a part of a list must not be copied.
     public static func run(hosts: [String], store: CentralStore, client: some AccountHosts, settled: Bool = true) async -> [HostSync] {
         let read = await reads(hosts, client)
-        let central: [CentralAccount]
+        let stored: [CentralAccount]
         switch store.stored() {
-        case .ready(let list): central = list
+        case .ready(let list): stored = list
         case .arriving:
             guard settled, let list = store.settle() else { return hosts.map { HostSync(host: $0, state: .waiting) } }
-            central = list
+            stored = list
         case .never:
             guard settled else { return hosts.map { HostSync(host: $0, state: .waiting) } }
             let answered = hosts.compactMap { host in (try? read[host]?.get())?.accounts }
             guard !answered.isEmpty else { return hosts.map { HostSync(host: $0, state: failure(read[$0])) } }
-            central = importing(answered).accounts
-            store.save(central)
+            stored = importing(answered).accounts
+            store.save(stored)
         }
+        let central = adopting(stored, from: hosts.compactMap { (try? read[$0]?.get())?.accounts })
+        if central != stored { store.save(central) }
         let states = await withTaskGroup(of: (String, State).self) { group in
             for host in hosts {
                 let answer = read[host]

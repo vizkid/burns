@@ -230,10 +230,9 @@ struct LaunchRankTests {
 struct HostCacheOrderTests {
     let usage = Fixture.usage(host: "h", alpha5: 1, alpha7: 1, beta7: 1)
 
-    func cache() -> HostCache {
-        let suite = "burns.test.\(UUID().uuidString)"
-        return HostCache(defaults: UserDefaults(suiteName: suite)!)
-    }
+    let scratch = ScratchDefaults()
+
+    func cache() -> HostCache { HostCache(defaults: scratch.defaults) }
 
     /// F38: a host removed while a slow pass runs stays removed.
     @Test func aSlowOlderRefreshCannotOverwriteANewerOne() async throws {

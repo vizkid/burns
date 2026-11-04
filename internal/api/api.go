@@ -40,6 +40,8 @@ type Server struct {
 	Restart func()
 	// HomeExists reports whether a home is on this host; nil checks the disk.
 	HomeExists func(dir string) bool
+	// Home is the folder GET /dirs lists under; empty means this user's.
+	Home       string
 	accountsMu sync.Mutex
 }
 
@@ -106,6 +108,7 @@ func (s *Server) reads(mux *http.ServeMux) {
 	mux.HandleFunc("GET /usage/panes", s.panes)
 	mux.HandleFunc("GET /usage/cost", s.cost)
 	mux.HandleFunc("GET /models", s.models)
+	mux.HandleFunc("GET /dirs", s.dirs)
 	mux.HandleFunc("GET /accounts", s.getAccounts)
 	mux.HandleFunc("PUT /accounts", s.putAccounts)
 }

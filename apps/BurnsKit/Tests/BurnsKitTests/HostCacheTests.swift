@@ -6,13 +6,9 @@ import Testing
 /// answer, so a host that does not answer shows its cached readings marked with their time.
 struct HostCacheTests {
     let now = Fixture.now, h = Fixture.h
+    let scratch = ScratchDefaults()
 
-    func defaults() -> UserDefaults {
-        let name = "burnskit-test-\(UUID().uuidString)"
-        let d = UserDefaults(suiteName: name)!
-        d.removePersistentDomain(forName: name)
-        return d
-    }
+    func defaults() -> UserDefaults { scratch.defaults }
 
     struct Down: Error {}
 

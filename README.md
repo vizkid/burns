@@ -30,7 +30,7 @@ make install
 `make install` copies `smithersd` and `smithers` to `~/.local/bin`.
 On macOS, it starts `smithersd` now and at every login.
 On Linux, it runs `smithersd` as a systemd user service.
-`smithers usage` prints each account's quota and its consumption over the last 24 hours. Add `--since 1h` for another window. `smithers panes` lists the live panes with their compactions; add `--url http://<host>:9766` for another host. An agent can start another agent in its own Rex session with `smithers spawn --provider claude --account NAME --label helper`; add `--host H` for another host or `--beside` to split its own tab.
+`smithers usage` prints each account's quota and its consumption over the last 24 hours. Add `--since 1h` for another window. `smithers panes` lists the live panes with their compactions; add `--url http://<host>:9766` for another host. An agent can start another agent in its own Rex session with `smithers spawn --provider claude --account NAME --label helper --tab helper-cap`; add `--host H` for another host or `--beside` to split its own tab.
 
 To send usage from your agents, follow the [agent setup](docs/SPEC.md#installing).
 
@@ -71,6 +71,16 @@ scripts/build-apps.sh ios        # installs on a connected iPhone
 ```
 
 Add each host's Tailscale name in the app's settings. See [Apps and widgets](docs/SPEC.md#apps-and-widgets-viz-2026-10-29).
+
+To open the Mac app's launch panel from a Rex key, load the New Agent Session action in the Mac's `~/.config/rex/init.lua`, then run `rex config reload`:
+
+```lua
+dofile(os.getenv("HOME") .. "/path/to/burns/scripts/rex/new-agent-session.lua")
+rex.bind("shift+cmd+a", "burns_new")
+rex.bind("alt+shift+cmd+a", "burns_beside")
+```
+
+The panel opens on the session the key was pressed in. The beside key starts it beside the focused pane, in that pane's folder. In the panel, type a folder (Tab completes it) or a new session name. `open burns://new` opens it from anywhere.
 
 Run `make check` before you commit. It also runs the apps' Swift tests on macOS.
 

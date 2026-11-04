@@ -12,8 +12,6 @@ enum LaunchData {
         struct Row: Decodable { let block_id: String }
         let blocks: [Row]
     }
-    private struct Pwd: Decodable { let pwd: String }
-
     private struct Folder: Sendable {
         let session: String
         let path: String
@@ -26,21 +24,26 @@ enum LaunchData {
     }
 
     @MainActor private static var known: [String: HostRead] = [:]
+    /// The hosts of the last read, for completing a typed folder.
+    @MainActor private static var lastHosts: [Place] = []
     /// Rex's last answer, so that one timeout does not drop every remote host.
     @MainActor private static var rexHosts: RexHosts?
 
-    /// One host's sessions and their folders, or nil when Rex did not answer. Rex reports a pane's
-    /// folder as a file URL.
+    /// One host's sessions and their folders, or nil when Rex did not answer.
     private static func folders(rex: String) async -> [Folder]? {
         let server = rex.isEmpty ? [] : ["-S", rex]
         guard let sessions = await Rex.json(Sessions.self, server + ["session", "ls", "--json"])?.sessions else { return nil }
         return await withTaskGroup(of: (Int, Folder?).self) { group in
             for (i, s) in sessions.enumerated() {
                 group.addTask {
-                    guard let block = await Rex.json(Blocks.self, server + ["block", "ls", "-s", s.label, "--json"])?.blocks.first,
-                          let pwd = await Rex.json(Pwd.self, server + ["block", "call", "--block", block.block_id, "pwd"]),
-                          let path = URL(string: pwd.pwd)?.path else { return (i, nil) }
-                    return (i, Folder(session: s.label, path: path))
+                    guard let blocks = await Rex.json(Blocks.self, server + ["block", "ls", "-s", s.label, "--json"])?.blocks else { return (i, nil) }
+                    // The first pane that answers names the session's folder.
+                    for b in blocks {
+                        guard case .success(let data) = await Rex.run(server + ["block", "call", "--block", b.block_id, "process"], limit: 5),
+                              let path = RexFolder.path(process: data) else { continue }
+                        return (i, Folder(session: s.label, path: path))
+                    }
+                    return (i, nil)
                 }
             }
             var out: [(Int, Folder?)] = []
@@ -85,6 +88,7 @@ enum LaunchData {
     static func sentence(store: UsageStore) async -> LaunchSentence {
         let names = store.hostNames
         let (hosts, unreachable) = await places(store: store)
+        lastHosts = hosts
         let answers = await read(hosts.map { (address: $0.address, rex: $0.rex) })
         var found: [(host: LaunchHost, relative: String)] = []
         var entries: [AccountID: ModelEntry] = [:]
@@ -94,11 +98,9 @@ enum LaunchData {
             known[h.address] = here
             entries.merge(here.entries) { first, _ in first }
             for f in here.folders {
-                let parts = f.path.split(separator: "/").map(String.init)
-                // /Users/<name>/... and /home/<name>/... are the same place on each host.
-                guard parts.count > 2, parts[0] == "Users" || parts[0] == "home" else { continue }
+                guard let relative = LaunchProject.relative(f.path) else { continue }
                 let host = LaunchHost(rex: h.rex, shown: names[h.name] ?? h.name, path: f.path, session: f.session, entries: here.entries)
-                found.append((host, parts[2...].joined(separator: "/")))
+                found.append((host, relative))
             }
         }
         var projects = LaunchProject.group(found)
@@ -107,6 +109,41 @@ enum LaunchData {
             projects = LaunchProject.offer(local, home: NSHomeDirectory(), to: projects) { FileManager.default.fileExists(atPath: $0) }
         }
         return store.launchSentence(entries, projects: projects, unreachable: unreachable)
+    }
+
+    /// Each host's folders under a typed path, from its smithersd, as projects with a new-session
+    /// row on each host that has the folder.
+    @MainActor
+    static func folders(under prefix: String, store: UsageStore) async -> [LaunchProject] {
+        let hosts = lastHosts, names = store.hostNames
+        let answers = await withTaskGroup(of: (Int, DirsAnswer?).self) { group in
+            for (i, h) in hosts.enumerated() { group.addTask { (i, await HostFetcher().dirs(h.address, prefix: prefix)) } }
+            var out: [(Int, DirsAnswer?)] = []
+            for await row in group { out.append(row) }
+            return out.sorted { $0.0 < $1.0 }.map(\.1)
+        }
+        var found: [(host: LaunchHost, relative: String)] = []
+        for (h, answer) in zip(hosts, answers) {
+            for dir in answer?.dirs ?? [] {
+                let host = LaunchHost(rex: h.rex, shown: names[h.name] ?? h.name, path: answer!.home + "/" + dir, session: nil,
+                                      entries: known[h.address]?.entries ?? [:])
+                found.append((host, dir))
+            }
+        }
+        return LaunchProject.group(found)
+    }
+
+    /// The pane the beside key was pressed in, with its folder from `process`. Nil without a block,
+    /// or when its host is not in the last read.
+    @MainActor
+    static func pane(_ target: LaunchTarget?, store: UsageStore) async -> LaunchPane? {
+        guard let target, let block = target.block,
+              let h = lastHosts.first(where: { $0.rex.isEmpty ? target.host.isEmpty : RexHosts.short($0.rex) == RexHosts.short(target.host) })
+        else { return nil }
+        let server = h.rex.isEmpty ? [] : ["-S", h.rex]
+        guard case .success(let data) = await Rex.run(server + ["block", "call", "--block", block, "process"], limit: 5),
+              let path = RexFolder.path(process: data), let relative = LaunchProject.relative(path), !relative.isEmpty else { return nil }
+        return LaunchPane(rex: h.rex, shown: store.hostNames[h.name] ?? h.name, session: target.session, block: block, path: path, relative: relative)
     }
 
     private struct Place: Sendable {
@@ -141,17 +178,26 @@ enum LaunchWindow {
     /// Opens at once: a read takes seconds, and longer with a host asleep. The panel starts from the
     /// last read's projects and models, ranked by what the store knows now, and takes the new read
     /// when it arrives.
-    static func show() {
+    /// A target starts the panel on that session. A panel already open for another target opens anew.
+    static func show(at target: LaunchTarget? = nil) {
+        if target != nil { close() }
         guard panel == nil else { panel?.makeKeyAndOrderFront(nil); return }
         let entries = (last?.accounts ?? []).reduce(into: [AccountID: ModelEntry]()) { $0[$1.id] = $1.entry }
-        let sentence = UsageStore.shared.launchSentence(entries, projects: last?.projects ?? [], unreachable: last?.unreachable ?? [])
+        var sentence = UsageStore.shared.launchSentence(entries, projects: last?.projects ?? [], unreachable: last?.unreachable ?? [])
+        if let target { sentence.aim(target) }
         let w = KeyPanel(contentRect: NSRect(x: 0, y: 0, width: 820, height: 400), styleMask: [.borderless, .nonactivatingPanel],
                          backing: .buffered, defer: false)
         w.isOpaque = false
         w.backgroundColor = .clear
         w.hasShadow = true
         w.level = .floating
-        w.contentView = NSHostingView(rootView: LaunchPanel(sentence: sentence, refresh: read, launch: start, close: close))
+        let refresh = {
+            var fresh = await read()
+            fresh.pane = await LaunchData.pane(target, store: .shared)
+            return fresh
+        }
+        let complete = { (prefix: String) in await LaunchData.folders(under: prefix, store: .shared) }
+        w.contentView = NSHostingView(rootView: LaunchPanel(sentence: sentence, refresh: refresh, complete: complete, launch: start, close: close))
         w.center()
         panel = w
         NSApp.activate()
@@ -185,9 +231,11 @@ enum LaunchWindow {
     }
 }
 
-/// `burns://new` opens the panel, from a Rex action or a script.
+/// `burns://new` opens the panel, from a Rex action or a script. `?host=H&session=S` starts it on
+/// that session.
 final class BurnsDelegate: NSObject, NSApplicationDelegate {
     func application(_ application: NSApplication, open urls: [URL]) {
-        if urls.contains(where: { $0.scheme == "burns" }) { LaunchWindow.show() }
+        guard let url = urls.last(where: { $0.scheme == "burns" }) else { return }
+        LaunchWindow.show(at: LaunchTarget(url: url, here: RexHosts.thisMachine))
     }
 }

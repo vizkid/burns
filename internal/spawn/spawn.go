@@ -39,7 +39,8 @@ type Rex interface {
 type Request struct {
 	Provider, Account, Model string
 	Label                    string // the new pane's label, which roar addresses
-	Emoji                    string // the new tab's label: the account's emoji
+	Tab                      string // the new tab's label after the emoji; unused with Beside
+	Emoji                    string // the account's emoji, which starts the tab's label
 	Dir                      string // passed to `smithers launch --dir`
 	Beside                   bool   // split the caller's tab instead of opening one
 	CallerSession            string
@@ -64,6 +65,9 @@ func Spawn(ctx context.Context, local, target Rex, req Request) (Result, error) 
 	label, err := sessionLabel(ctx, local, req.CallerSession)
 	if err != nil {
 		return Result{}, err
+	}
+	if !req.Beside && req.Tab == "" {
+		return Result{}, errors.New("a new tab needs a label")
 	}
 	res := Result{SessionLabel: label, Label: req.Label}
 	if req.Beside {
@@ -137,9 +141,7 @@ func openTab(ctx context.Context, target Rex, req Request, res Result) (Result, 
 	switch len(ids) {
 	case 0:
 		args := []string{"new", res.SessionLabel}
-		if req.Emoji != "" {
-			args = append(args, "--window", req.Emoji)
-		}
+		args = append(args, "--window", tabLabel(req))
 		out, err := target.Run(ctx, append(append(args, "--json"), command(req)...)...)
 		if err != nil {
 			return res, err
@@ -160,9 +162,7 @@ func openTab(ctx context.Context, target Rex, req Request, res Result) (Result, 
 			return res, err
 		}
 		args := []string{"window", "new", "-s", res.SessionID, "--focus=false", "--json"}
-		if req.Emoji != "" {
-			args = append(args, req.Emoji)
-		}
+		args = append(args, tabLabel(req))
 		if res.Block, err = created(target.Run(ctx, append(args, command(req)...)...)); err != nil {
 			return res, err
 		}
@@ -171,6 +171,11 @@ func openTab(ctx context.Context, target Rex, req Request, res Result) (Result, 
 	}
 	_, err = target.Run(ctx, "block", "rename", "-s", res.SessionID, res.Block, req.Label)
 	return res, err
+}
+
+// tabLabel names a new tab like the lanes' own tabs: "🎱 editor-cap".
+func tabLabel(req Request) string {
+	return strings.TrimSpace(req.Emoji + " " + req.Tab)
 }
 
 // command is what the new pane runs.

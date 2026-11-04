@@ -17,26 +17,40 @@ public struct LaunchSentence: Equatable, Sendable {
     public static let joins: [Word: String] = [.model: "with", .effort: "at", .account: "billed to", .project: "in", .host: "on"]
 
     public private(set) var accounts: [LaunchAccount]
-    public private(set) var projects: [LaunchProject]
     public private(set) var slot = 0
     public private(set) var agent: Int
     public private(set) var account = 0
     public private(set) var model: CatalogModel?
     public private(set) var effort: String?
-    public private(set) var project = 0
-    public private(set) var host = 0
-    public private(set) var query = ""
+    public internal(set) var query = ""
     /// Why the first account is the default.
     public private(set) var reason: String
     /// Hosts left out of the lists, each with why: "two: no Rex entry".
     public private(set) var unreachable: [String]
     /// Words the operator chose or confirmed. A newer read keeps these and moves all others.
-    private var touched: Set<Word> = []
+    var touched: Set<Word> = []
+    /// The session the panel was opened for, until a read lists it.
+    var target: LaunchTarget?
+    // The places, kept apart so a read replaces only its own (LaunchPlaces.swift). Internal for
+    // that file: the operator's choices go through `pick`.
+    /// The reads' projects.
+    var base: [LaunchProject]
+    /// Typed folders the operator chose; they stay after the query clears.
+    var kept: [LaunchProject] = []
+    /// The hosts' folders for the query typed now.
+    var found: [LaunchProject] = []
+    /// Typed sessions the operator chose, by project path.
+    var made: [String: [LaunchHost]] = [:]
+    /// The chosen project and host row, by identity. Nil is the first.
+    var projectPath: String?
+    var hostID: String?
+    /// The pane the beside key was pressed in.
+    public var pane: LaunchPane?
 
     /// `accounts` come best first, so the first is what the default rule picked.
     public init(accounts: [LaunchAccount], projects: [LaunchProject], reason: String = "", unreachable: [String] = []) {
         self.accounts = accounts
-        self.projects = projects
+        base = projects
         self.reason = reason
         self.unreachable = unreachable
         let first = accounts.first?.id.provider ?? "codex"
@@ -47,18 +61,27 @@ public struct LaunchSentence: Equatable, Sendable {
     /// because a read can reorder the lists. Anything untouched takes the new read's default: the
     /// read the panel opened from can be hours old, and Return must launch the best account now.
     public mutating func adopt(_ fresh: LaunchSentence) {
-        let shown = word, chosen = current?.id, at = place?.rex
-        let folder = projects.indices.contains(project) ? projects[project].path : nil
+        let shown = word, chosen = current?.id
         accounts = fresh.accounts
-        projects = fresh.projects
+        base = fresh.base
+        pane = fresh.pane ?? pane
         reason = fresh.reason
         unreachable = fresh.unreachable
         if !touched.contains(.agent) { agent = fresh.agent }
         account = touched.contains(.account) ? billing.firstIndex { $0.id == chosen } ?? 0 : 0
-        project = touched.contains(.project) ? projects.firstIndex { $0.path == folder } ?? 0 : 0
-        host = touched.contains(.host) && projects.indices.contains(project) ? projects[project].hosts.firstIndex { $0.rex == at } ?? 0 : 0
+        if !touched.contains(.project) { projectPath = nil }
+        if !touched.contains(.host) { hostID = nil }
+        land()
         revalidate()
         slot = words.firstIndex(of: shown) ?? min(slot, words.count - 1)
+    }
+
+    /// Starts on the session that `burns://new` named. The panel opens before the read that lists
+    /// it, so the target waits for a read that does.
+    public mutating func aim(_ t: LaunchTarget) {
+        target = t
+        land()
+        revalidate()
     }
 
     /// A choice also holds what it was chosen from: a model comes from an account's catalog, and a
@@ -94,7 +117,6 @@ public struct LaunchSentence: Equatable, Sendable {
     /// Efforts Burns can set: Codex's stay the home's, so its models list none.
     var efforts: [String] { shownModel?.efforts ?? [] }
     var shownEffort: String { effort ?? entry?.defaultEffort ?? "" }
-    var place: LaunchHost? { projects.indices.contains(project) && projects[project].hosts.indices.contains(host) ? projects[project].hosts[host] : nil }
 
     public var words: [Word] { efforts.isEmpty ? [.agent, .model, .account, .project, .host] : [.agent, .model, .effort, .account, .project, .host] }
     public var word: Word { words[min(slot, words.count - 1)] }
@@ -109,8 +131,8 @@ public struct LaunchSentence: Equatable, Sendable {
             return fixed.isEmpty ? (name.isEmpty ? "Own default" : name) : "\(name) \(fixed)"
         case .effort: return shownEffort.isEmpty ? "default" : shownEffort
         case .account: return current.map { "\($0.emoji) \($0.id.name)" } ?? "no account"
-        case .project: return projects.indices.contains(project) ? projects[project].name : "no project"
-        case .host: return place?.shown ?? "no host"
+        case .project: return chosenProject?.name ?? "no project"
+        case .host: return place.map { $0.block == nil ? $0.shown : "\($0.shown) beside this pane" } ?? "no host"
         }
     }
 
@@ -123,11 +145,13 @@ public struct LaunchSentence: Equatable, Sendable {
         case .effort: all = efforts.map { Option(id: $0, title: $0, note: $0 == entry?.defaultEffort ? "Default" : "") }
         case .account: all = billing.map { Option(id: $0.id.name, mark: $0.emoji, title: $0.id.name, note: $0.left) }
         case .project: all = projects.map { Option(id: $0.path, title: $0.name, note: $0.path) }
-        case .host: all = projects.indices.contains(project) ? projects[project].hosts.map {
-            Option(id: $0.rex, title: $0.shown, note: $0.session == nil ? "new session" : "open session") } : []
+        case .host:
+            let rows = chosenProject.map { rows($0, typed: query) } ?? []
+            all = rows.map { Option(id: $0.id, title: $0.shown, note: Self.note($0)) }
         }
-        let q = query.lowercased()
-        return q.isEmpty ? all : all.filter { "\($0.title) \($0.note)".lowercased().contains(q) }
+        let q = (completing ?? query).lowercased()
+        // A typed session's own row matches whatever was typed.
+        return q.isEmpty ? all : all.filter { "\($0.title) \($0.note)".lowercased().contains(q) || $0.note == "new session \(query)" }
     }
 
     /// The selected option's `id`.
@@ -137,8 +161,8 @@ public struct LaunchSentence: Equatable, Sendable {
         case .model: return shownModel?.id ?? ""
         case .effort: return shownEffort
         case .account: return current?.id.name ?? ""
-        case .project: return projects.indices.contains(project) ? projects[project].path : ""
-        case .host: return place?.rex ?? ""
+        case .project: return chosenProject?.path ?? ""
+        case .host: return place?.id ?? ""
         }
     }
 
@@ -156,12 +180,10 @@ public struct LaunchSentence: Equatable, Sendable {
         case .effort: effort = id == entry?.defaultEffort ? nil : id
         case .account:
             if let i = billing.firstIndex(where: { $0.id.name == id }) { account = i } // an untouched model follows the account
-        case .project:
-            if let i = projects.firstIndex(where: { $0.path == id }) { project = i; host = 0; touched.remove(.host) }
-        case .host:
-            if projects.indices.contains(project), let i = projects[project].hosts.firstIndex(where: { $0.rex == id }) { host = i }
+        case .project, .host: choosePlace(id)
         }
         touched.formUnion(holds(word))
+        pin()
         revalidate()
     }
 
@@ -175,6 +197,7 @@ public struct LaunchSentence: Equatable, Sendable {
     /// Return on a word: the operator saw it and took it, so a newer read must not change it.
     public mutating func confirm() {
         touched.formUnion(holds(word))
+        pin()
         step(1)
     }
 
@@ -186,13 +209,15 @@ public struct LaunchSentence: Equatable, Sendable {
     }
 
     /// Left and right stop at the ends.
-    public mutating func step(_ by: Int) { slot = max(0, min(words.count - 1, slot + by)); query = "" }
+    public mutating func step(_ by: Int) { move(to: max(0, min(words.count - 1, slot + by))) }
     /// Tab wraps.
-    public mutating func cycle(_ by: Int) { slot = (slot + by + words.count) % words.count; query = "" }
-    public mutating func focus(_ w: Word) { if let i = words.firstIndex(of: w) { slot = i; query = "" } }
+    public mutating func cycle(_ by: Int) { move(to: (slot + by + words.count) % words.count) }
+    public mutating func focus(_ w: Word) { if let i = words.firstIndex(of: w) { move(to: i) } }
+    private mutating func move(to i: Int) { slot = i; query = ""; found = [] }
 
+    /// Case stays: paths and session names keep what was typed.
     public mutating func type(_ text: String) {
-        query += text.lowercased()
+        query += text
         if let first = options.first { pick(first.id) }
     }
 
@@ -215,7 +240,7 @@ public struct LaunchSentence: Equatable, Sendable {
     /// Only what differs from the account's defaults becomes a flag.
     public var request: LaunchRequest? {
         guard problem == nil, let current, let place else { return nil }
-        return LaunchRequest(host: place, project: projects[project].name, provider: provider, account: current.id.name,
+        return LaunchRequest(host: place, project: chosenProject?.name ?? "", provider: provider, account: current.id.name,
                              model: model?.id, effort: efforts.isEmpty ? nil : effort, emoji: current.emoji)
     }
 }

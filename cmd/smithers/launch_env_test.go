@@ -68,7 +68,7 @@ func TestADaemonHoldingThePipeDoesNotStopTheLaunch(t *testing.T) {
 	var errOut bytes.Buffer
 	start := time.Now()
 	plan := launch.Plan{Provider: "tool", Program: "tool", Env: map[string]string{}, Daemon: []string{"daemon"}}
-	if err := startPlan(plan, &errOut, ""); err != nil || !ran {
+	if err := startPlan(plan, &errOut, "", ""); err != nil || !ran {
 		t.Fatalf("err %v, ran %v", err, ran)
 	}
 	if took := time.Since(start); took > 5*time.Second || errOut.Len() != 0 {

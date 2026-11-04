@@ -152,6 +152,14 @@ public struct HostFetcher: Sendable {
         return Dictionary(list.map { (AccountID(provider: $0.provider, name: $0.account), $0) }) { first, _ in first }
     }
 
+    /// `GET /dirs`: the host's folders whose path starts with `prefix`, relative to its home folder.
+    /// Nil when the host did not answer, or runs a smithersd without the route.
+    public func dirs(_ address: String, prefix: String) async -> DirsAnswer? {
+        var q = URLComponents()
+        q.queryItems = [URLQueryItem(name: "prefix", value: prefix)]
+        return try? await get(address, "/dirs?" + (q.percentEncodedQuery ?? ""), as: DirsAnswer.self)
+    }
+
     func get<T: Decodable>(_ address: String, _ path: String, as: T.Type) async throws -> T {
         guard let url = URL(string: "http://\(address):\(Self.port)\(path)") else { throw URLError(.badURL) }
         let (data, response) = try await session.data(from: url)

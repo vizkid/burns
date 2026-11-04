@@ -90,7 +90,7 @@ struct LaunchTests {
         var s = sentence()
         s.focus(.account); s.pick("alpha")
         s.focus(.model); s.pick("m1")
-        s.focus(.host); s.pick("Two")
+        s.focus(.host); s.pickHost("Two")
         var fresh = sentence()
         fresh = LaunchSentence(accounts: Array(fresh.accounts.reversed()), projects: [LaunchProject(name: "y", path: "dev/y", hosts: [])] + fresh.projects)
         s.adopt(fresh)
@@ -152,14 +152,14 @@ struct LaunchTests {
         s = LaunchSentence(accounts: s.accounts, projects: [LaunchProject(name: "x", path: "dev/x", hosts: hosts)])
         #expect(s.text(.model) == "M1 low")
         s.focus(.host)
-        s.pick("Two")
+        s.pickHost("Two")
         #expect(s.text(.model) == "M2 high" && s.request?.model == nil)
     }
 
     @Test func aHostWithNoSessionStartsOne() {
         var s = sentence()
         s.focus(.host)
-        s.pick("Two")
+        s.pickHost("Two")
         #expect(s.request?.arguments.prefix(8) == ["-S", "Two", "new", "x", "-c", "/home/b/dev/x", "--window", "💎"])
     }
 
@@ -187,8 +187,31 @@ struct LaunchTests {
     @Test func oneCheckoutOnTwoHostsIsOneProject() {
         let a = LaunchHost(rex: "", shown: "One", path: "/home/a/dev/x", session: "x")
         let b = LaunchHost(rex: "Two", shown: "Two", path: "/home/b/dev/x", session: "x")
-        let found = [(host: a, relative: "dev/x"), (host: b, relative: "dev/x"), (host: a, relative: "")]
+        let found = [(host: a, relative: "dev/x"), (host: b, relative: "dev/x"), (host: a, relative: ""), (host: a, relative: "dev/x")]
         let projects = LaunchProject.group(found)
         #expect(projects.count == 1 && projects[0].hosts.count == 2 && projects[0].name == "x")
+    }
+
+    /// Several sessions often share one checkout on one host. Each is its own row, so the operator
+    /// can choose which session the tab joins.
+    @Test func everySessionInAFolderIsOffered() {
+        let a = LaunchHost(rex: "Two", shown: "Two", path: "/home/b/dev/x", session: "x")
+        var b = a
+        b.session = "x review"
+        let projects = LaunchProject.group([(host: a, relative: "dev/x"), (host: b, relative: "dev/x")])
+        var s = LaunchSentence(accounts: sentence().accounts, projects: projects)
+        s.focus(.host)
+        #expect(s.options.map(\.note) == ["session x", "session x review"])
+        s.pick(s.options[1].id)
+        #expect(s.text(.host) == "Two" && s.request?.host.session == "x review")
+        s.adopt(LaunchSentence(accounts: s.accounts, projects: projects))
+        #expect(s.request?.host.session == "x review")
+    }
+}
+
+extension LaunchSentence {
+    /// Picks the first host row shown with this name.
+    mutating func pickHost(_ shown: String) {
+        if let o = options.first(where: { $0.title == shown }) { pick(o.id) }
     }
 }

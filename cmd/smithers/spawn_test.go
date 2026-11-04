@@ -49,9 +49,10 @@ func TestSpawnRefusesBeforeRex(t *testing.T) {
 		env  map[string]string
 		want string
 	}{
-		{[]string{"--provider", "claude", "--account", "a", "--label", "x"}, nil, "Rex pane"},
+		{[]string{"--provider", "claude", "--account", "a", "--label", "x", "--tab", "t"}, nil, "Rex pane"},
+		{[]string{"--provider", "claude", "--account", "a", "--label", "x"}, map[string]string{"REX_SESSION": "session:s", "REX_BLOCK": "block:b"}, "--tab"},
 		{[]string{"--provider", "claude", "--account", "a"}, map[string]string{"REX_SESSION": "session:s", "REX_BLOCK": "block:b"}, "--label"},
-		{[]string{"--provider", "gemini", "--account", "a", "--label", "x"}, map[string]string{"REX_SESSION": "session:s", "REX_BLOCK": "block:b"}, "provider"},
+		{[]string{"--provider", "gemini", "--account", "a", "--label", "x", "--tab", "t"}, map[string]string{"REX_SESSION": "session:s", "REX_BLOCK": "block:b"}, "provider"},
 	} {
 		var out, errOut bytes.Buffer
 		code := run(append([]string{"spawn"}, c.args...), strings.NewReader(""), &out, &errOut, env(c.env))

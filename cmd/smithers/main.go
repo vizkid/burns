@@ -17,9 +17,10 @@ const usageText = `usage:
   smithers hook session-start --provider claude|codex [--url URL]
   smithers usage [--since 24h] [--url URL]
   smithers panes [--url URL]
-  smithers spawn --provider claude|codex --account NAME --label L [--host H] [--beside] [--model M] [--dir D] [--wait 60s]
+  smithers spawn --provider claude|codex --account NAME --label L --tab T [--host H] [--beside] [--model M] [--dir D] [--wait 60s]
   smithers launch --provider claude|codex --account NAME [--model M] [--effort E] [--permission-mode P] [--dir D]
   smithers answer-channels --block BLOCK --servers a,b
+  smithers bind-codex --home H --block B --session S --dir D --pid P
   smithers version`
 
 func run(args []string, in io.Reader, out, errOut io.Writer, getenv func(string) string) int {
@@ -44,6 +45,8 @@ func run(args []string, in io.Reader, out, errOut io.Writer, getenv func(string)
 		return launchAgent(args[1:], in, errOut, getenv)
 	case "answer-channels":
 		return answerChannels(args[1:], errOut)
+	case "bind-codex":
+		return bindCodex(args[1:], errOut)
 	case "version":
 		fmt.Fprintln(out, version())
 		return 0

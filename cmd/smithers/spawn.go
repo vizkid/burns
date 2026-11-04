@@ -29,6 +29,7 @@ func spawnAgent(args []string, out, errOut io.Writer, getenv func(string) string
 	provider := fs.String("provider", "", "claude or codex")
 	account := fs.String("account", "", "account name")
 	label := fs.String("label", "", "the new pane's label, which roar addresses")
+	tab := fs.String("tab", "", "the new tab's label, after the account's emoji (not with --beside)")
 	host := fs.String("host", "", "Rex host label; empty is this host")
 	beside := fs.Bool("beside", false, "split the caller's own tab (this host only)")
 	model := fs.String("model", "", "model, replacing the account's")
@@ -49,6 +50,9 @@ func spawnAgent(args []string, out, errOut io.Writer, getenv func(string) string
 	case *account == "" || *label == "":
 		fmt.Fprintln(errOut, "--account and --label are required")
 		return 2
+	case *tab == "" && !*beside:
+		fmt.Fprintln(errOut, "--tab is required for a new tab: it names the tab after the account's emoji")
+		return 2
 	}
 	home, err := os.UserHomeDir()
 	if err != nil {
@@ -68,7 +72,7 @@ func spawnAgent(args []string, out, errOut io.Writer, getenv func(string) string
 	if d := getenv("REX_BIN_DIR"); d != "" {
 		bin = filepath.Join(d, "rex")
 	}
-	req := spawn.Request{Provider: *provider, Account: *account, Model: *model, Label: *label, Dir: *dir,
+	req := spawn.Request{Provider: *provider, Account: *account, Model: *model, Label: *label, Tab: *tab, Dir: *dir,
 		Emoji: accountEmoji(home, *provider, *account), Beside: *beside, CallerSession: session, CallerBlock: block,
 		Wait: *wait, Every: time.Second, TrustWatch: trustWatch}
 	ctx, cancel := context.WithTimeout(context.Background(), *wait+30*time.Second)

@@ -72,16 +72,49 @@ struct AccountFieldsTests {
         #expect(AccountSync.importing([host, [bare]]).accounts == host)
     }
 
-    /// The held host's way out: choosing to overwrite does write, and says it lost the field.
-    @Test func overwriteWritesAHeldHost() async throws {
-        let hosts = FakeHosts(), values = FakeValues(), store = CentralStore(values: values)
-        hosts.files = ["a": withLaunch]
+    /// A field added on a host by hand joins the list, so no host waits for review over it.
+    @Test func aFieldOnlyTheHostsHaveJoinsTheList() async throws {
+        let hosts = FakeHosts(), store = CentralStore(values: FakeValues())
+        hosts.files = ["a": withLaunch, "b": withLaunch]
         store.save([bare])
-        #expect(await AccountSync.run(hosts: ["a"], store: store, client: hosts).map(\.state) == [.review(try decode(withLaunch))])
+        #expect(await AccountSync.run(hosts: ["a", "b"], store: store, client: hosts).map(\.state) == [.inStep, .inStep])
+        #expect(store.load() == (try decode(withLaunch)))
+        #expect(hosts.puts.isEmpty)
+    }
+
+    /// 2026-11-04: `credit_price` was added to every host by hand, and then an emoji was changed
+    /// in the app. Every host was held, and both ways out lost something: import put back the old
+    /// emoji, and overwrite dropped the price. Now the price joins the list, so overwrite keeps both.
+    @Test func anEditAfterAHandAddedFieldKeepsBoth() async throws {
+        let hosts = FakeHosts(), store = CentralStore(values: FakeValues())
+        hosts.files = ["a": AccountsFile(accounts: [bare]).encoded()]
+        _ = await AccountSync.run(hosts: ["a"], store: store, client: hosts)
+        hosts.files["a"] = withLaunch
+        var edited = bare
+        edited.emoji = "🚀"
+        store.save([edited])
+        let held = await AccountSync.run(hosts: ["a"], store: store, client: hosts)
+        #expect(held.map(\.state) == [.review(try decode(withLaunch))], "the host's own edit may be the newer one")
+        #expect(await AccountSync.overwrite(host: "a", store: store, client: hosts) == .written)
+        let written = try #require(try decode(hosts.files["a"] ?? Data()).first)
+        #expect(written.emoji == "🚀")
+        #expect(written.extra == (try decode(withLaunch))[0].extra)
+    }
+
+    /// Hosts that disagree on a field's value keep it out of the list, and are held for review.
+    /// Overwrite is then the operator's choice, and it drops the field.
+    @Test func hostsThatDisagreeOnAFieldAreHeld() async throws {
+        let hosts = FakeHosts(), store = CentralStore(values: FakeValues())
+        let other = Data(String(decoding: withLaunch, as: UTF8.self).replacingOccurrences(of: "gpt-x", with: "gpt-y").utf8)
+        hosts.files = ["a": withLaunch, "b": other]
+        store.save([bare])
+        let out = await AccountSync.run(hosts: ["a", "b"], store: store, client: hosts)
+        #expect(out.map(\.state) == [.review(try decode(withLaunch)), .review(try decode(other))])
+        #expect(store.load()?.first?.extra["launch"] == nil)
+        #expect(store.load()?.first?.extra["note"] != nil, "a field the hosts agree on still joins")
         #expect(hosts.puts.isEmpty)
         #expect(await AccountSync.overwrite(host: "a", store: store, client: hosts) == .written)
-        #expect(try decode(hosts.files["a"] ?? Data()) == [bare])
-        #expect(await AccountSync.run(hosts: ["a"], store: store, client: hosts).map(\.state) == [.inStep])
+        #expect(try decode(hosts.files["a"] ?? Data()).first?.extra["launch"] == nil)
     }
 
     /// The review names the field, never its value: a credential is a reference, but stays out.

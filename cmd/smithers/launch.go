@@ -92,7 +92,7 @@ func startAgent(args []string, errOut io.Writer, getenv func(string) string) err
 		Account: a, Home: home, UserHome: user, Channels: launch.Channels(tools, a.Provider),
 		Block: getenv("REX_BLOCK"), Session: getenv("REX_SESSION"),
 	})
-	return startPlan(plan, errOut, getenv("REX_BLOCK"))
+	return startPlan(plan, errOut, getenv("REX_BLOCK"), getenv("REX_SESSION"))
 }
 
 // override applies the launch window's choices, then checks them as the accounts
@@ -117,7 +117,7 @@ func override(a *config.Account, model, effort, permission string) error {
 	return nil
 }
 
-func startPlan(plan launch.Plan, errOut io.Writer, block string) error {
+func startPlan(plan launch.Plan, errOut io.Writer, block, session string) error {
 	env := plan.Environ(os.Environ())
 	// The CLI may sit where only the interactive shell looks, even under cop.
 	if _, full, err := find(plan.Provider, env); err == nil {
@@ -140,6 +140,13 @@ func startPlan(plan launch.Plan, errOut io.Writer, block string) error {
 	if len(plan.Channels) > 0 && block != "" {
 		if err := startWatch(block, plan.Channels, env); err != nil {
 			fmt.Fprintln(errOut, "burns: channels dialog will wait for you:", err)
+		}
+	}
+	if plan.Provider == "codex" && block != "" {
+		dir, _ := os.Getwd()
+		l := codexLaunch{Home: plan.Env["CODEX_HOME"], Block: block, Session: session, Dir: dir, Pid: os.Getpid()}
+		if err := startCodexWatch(l, env); err != nil {
+			logLaunch(block + ": codex binding left to roar's first message: " + err.Error())
 		}
 	}
 	return replace(path, append([]string{plan.Program}, plan.Args...), env)

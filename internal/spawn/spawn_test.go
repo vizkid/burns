@@ -64,7 +64,7 @@ func local() *fakeRex {
 }
 
 func request() Request {
-	return Request{Provider: "claude", Account: "alpha", Label: "helper", Emoji: "🟢", Dir: "dev/proj",
+	return Request{Provider: "claude", Account: "alpha", Label: "helper", Tab: "helper-cap", Emoji: "🟢", Dir: "dev/proj",
 		CallerSession: "session:mine", CallerBlock: "block:caller", Wait: time.Second, Every: time.Millisecond}
 }
 
@@ -78,7 +78,7 @@ func TestSpawnOpensATabInTheCallersSession(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := append([]string{"window", "new", "-s", "session:mine", "--focus=false", "--json", "🟢"}, launchCmd...)
+	want := append([]string{"window", "new", "-s", "session:mine", "--focus=false", "--json", "🟢 helper-cap"}, launchCmd...)
 	if !slices.Equal(l.ran[0], want) {
 		t.Errorf("ran %q\nwant %q", l.ran[0], want)
 	}
@@ -98,7 +98,7 @@ func TestSpawnCreatesTheSessionOnAHostWithoutIt(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := append([]string{"new", "proj", "--window", "🟢", "--json"}, launchCmd...)
+	want := append([]string{"new", "proj", "--window", "🟢 helper-cap", "--json"}, launchCmd...)
 	if !slices.Equal(other.ran[0], want) {
 		t.Errorf("ran %q\nwant %q", other.ran[0], want)
 	}
@@ -229,5 +229,33 @@ func TestSpawnSaysWhenTheTrustCheckCouldNotRun(t *testing.T) {
 	res, err := Spawn(t.Context(), l, l, req)
 	if !errors.Is(err, ErrTrustUnchecked) || res.Agent != "claude" || res.Block != "block:new" {
 		t.Fatalf("res %+v, err %v", res, err)
+	}
+}
+
+// A new tab is named like the lanes' own: the account's emoji, then the tab
+// label (Viz, 2026-11-03). With no emoji, the label alone.
+func TestSpawnNamesTheTabWithoutAnEmoji(t *testing.T) {
+	l := local()
+	req := request()
+	req.Emoji = ""
+	if _, err := Spawn(t.Context(), l, l, req); err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Contains(l.ran[0], "helper-cap") || slices.Contains(l.ran[0], " helper-cap") {
+		t.Errorf("ran %q", l.ran[0])
+	}
+}
+
+// A new tab needs its label; --beside opens none.
+func TestSpawnNeedsATabLabelForANewTab(t *testing.T) {
+	l := local()
+	req := request()
+	req.Tab = ""
+	if _, err := Spawn(t.Context(), l, l, req); err == nil || len(l.ran) != 0 {
+		t.Fatalf("err %v, ran %q", err, l.ran)
+	}
+	req.Beside = true
+	if _, err := Spawn(t.Context(), l, l, req); err != nil {
+		t.Fatalf("beside: %v", err)
 	}
 }

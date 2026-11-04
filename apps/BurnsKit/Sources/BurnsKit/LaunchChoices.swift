@@ -72,9 +72,17 @@ public struct LaunchHost: Equatable, Sendable {
     public var session: String?
     /// What each account runs on this host: a default is a fact of the host's home.
     public var entries: [AccountID: ModelEntry]
+    /// The block a beside launch splits, or nil for a tab.
+    public var block: String?
+    /// The name of a session the operator typed, which the launch creates.
+    public var create: String?
     public init(rex: String, shown: String, path: String, session: String?, entries: [AccountID: ModelEntry] = [:]) {
         self.rex = rex; self.shown = shown; self.path = path; self.session = session; self.entries = entries
     }
+
+    /// One row of a project's host list: a host and the session a launch joins. Several sessions
+    /// often share one checkout on one host.
+    public var id: String { [rex, session ?? "", create ?? "", block ?? ""].joined(separator: "\u{1F}") }
 }
 
 public struct LaunchProject: Equatable, Sendable {
@@ -84,12 +92,13 @@ public struct LaunchProject: Equatable, Sendable {
     public init(name: String, path: String, hosts: [LaunchHost]) { self.name = name; self.path = path; self.hosts = hosts }
 
     /// Folders from each host's sessions, one project per folder relative to the user's home, so
-    /// the same checkout on two hosts is one project. A home folder is no project.
+    /// the same checkout on two hosts is one project. Each session in it is a row. A home folder is
+    /// no project.
     public static func group(_ found: [(host: LaunchHost, relative: String)]) -> [LaunchProject] {
         var out: [LaunchProject] = []
         for item in found where !item.relative.isEmpty {
             if let i = out.firstIndex(where: { $0.path == item.relative }) {
-                if !out[i].hosts.contains(where: { $0.rex == item.host.rex }) { out[i].hosts.append(item.host) }
+                if !out[i].hosts.contains(where: { $0.id == item.host.id }) { out[i].hosts.append(item.host) }
             } else {
                 let name = item.relative.split(separator: "/").last.map(String.init) ?? item.relative
                 out.append(LaunchProject(name: name, path: item.relative, hosts: [item.host]))
@@ -127,6 +136,12 @@ public struct LaunchRequest: Equatable, Sendable {
         if let model { smithers += ["--model", model] }
         if let effort { smithers += ["--effort", effort] }
         let server = host.rex.isEmpty ? [] : ["-S", host.rex]
+        if let block = host.block, let session = host.session {
+            return server + ["split", "-s", session, "-b", block, "-c", host.path, "--label", emoji, "--"] + smithers
+        }
+        if let name = host.create {
+            return server + ["new", name, "-c", host.path, "--window", emoji, "--"] + smithers
+        }
         if let session = host.session {
             return server + ["window", "new", "-s", session, "-c", host.path, emoji, "--"] + smithers
         }
