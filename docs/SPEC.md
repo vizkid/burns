@@ -593,7 +593,7 @@ Per-session, per-turn, per-block, and per-minute views are queries over `request
 One connection writes. A pool of 4 read-only connections serves queries, so WAL lets reads run during a write.
 Writes are skipped when nothing changed: a repeated request or compaction, and a batch of quota reports that folds to the stored windows. A batch of reports for one limit is folded in memory and written once.
 Compaction lookups by `request_key` and by `key` use exact indexes, checked by a query-plan test.
-`smithersd` sweeps and rolls up all hours at startup, then sweeps hourly. The startup pass runs in the background after the listeners open. On 2026-11-04 on Baroni, at load 55, the full roll-up of 96,481 requests ran for minutes on slow disk reads. While it ran before the listeners opened, the API refused every caller, including Claude's telemetry. Writes queue behind the roll-up on the single writer, and reads continue through WAL. `since` on read routes is clamped to 7 days.
+`smithersd` sweeps and rolls up all hours at startup, then sweeps hourly. The startup pass runs in the background after the listeners open. On 2026-11-04 on Baroni, at load 55, the full roll-up of 96,481 requests ran for minutes on disk reads that macOS throttled (see `ProcessType` under "Installing"). While it ran before the listeners opened, the API refused every caller, including Claude's telemetry. Writes queue behind the roll-up on the single writer, and reads continue through WAL. `since` on read routes is clamped to 7 days.
 The planned `minute` and `hour` tables were dropped during phase 1: a week of requests is about 50,000 rows, and indexed queries over them are fast enough.
 The file is created owner-only (mode 600) at `$XDG_STATE_HOME/burns/smithers.db`, or `~/.local/state/burns/smithers.db`.
 A Codex report older than a stored window never clears that window, so backfill can replay files in any order.
@@ -862,7 +862,7 @@ Both run beside Penfold's forwarder and hooks. Adding them does not wait for the
 | Accounts | `$XDG_CONFIG_HOME/burns/accounts.json`, or `~/.config/burns/accounts.json`. The install does not create it, because it holds personal names. `smithersd` does not start without it. |
 | Database | `~/.local/state/burns/smithers.db`, mode 0600. A fresh database backfills the last 7 days of transcripts and rollouts in a few seconds. |
 | Log | macOS: `~/Library/Logs/burns/smithersd.log`. Linux: `journalctl --user -u burns-smithersd`. |
-| Agent | `RunAtLoad` and `KeepAlive`, `ProcessType` `Background`, restart throttled to 10 s |
+| Agent | `RunAtLoad` and `KeepAlive`, `ProcessType` `Standard`, restart throttled to 10 s. On 2026-11-04 on Baroni, at load 100, `Background` starved `smithersd`. macOS throttled its CPU and disk, and its `tailscale` children inherited that. The startup roll-up crawled, `tailscale whois` hit its timeouts, and the tailnet listener did not open, so the apps saw no answer. A `tailscale whois` run from a shell took 0.1 s at the same moment. |
 | Rex | The install passes `--rex` with the path of `rex` on its own PATH, because launchd's PATH lacks it. Without it, claims stay unverified and bindings stay open. |
 | Tailscale | The install passes `--tailscale` with the path of `tailscale` on its own PATH. Without it, `smithersd` serves no tailnet listener and the apps cannot read this host. |
 

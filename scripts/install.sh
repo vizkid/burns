@@ -59,6 +59,9 @@ fi
 logs="$HOME/Library/Logs/burns"
 plist="$HOME/Library/LaunchAgents/$label.plist"
 mkdir -p "$logs" "$(dirname "$plist")"
+# ProcessType Standard, not Background: macOS throttles a Background agent's CPU
+# and disk, and its children inherit that. On a busy host smithersd then answered
+# nobody for minutes (docs/SPEC.md, Installing).
 cat >"$plist" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -81,7 +84,7 @@ cat >"$plist" <<EOF
 	<key>KeepAlive</key>
 	<true/>
 	<key>ProcessType</key>
-	<string>Background</string>
+	<string>Standard</string>
 	<key>ThrottleInterval</key>
 	<integer>10</integer>
 	<key>StandardOutPath</key>
