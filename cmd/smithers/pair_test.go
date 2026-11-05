@@ -2,6 +2,8 @@ package main
 
 import (
 	"bytes"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 )
@@ -55,6 +57,28 @@ func TestResolveModel(t *testing.T) {
 		if err == nil || !strings.Contains(err.Error(), "gpt-6.1-sol") {
 			t.Errorf("%q: err %v; want a refusal listing the models", bad, err)
 		}
+	}
+}
+
+// A single pane's --model takes short names too, and a bad one is refused
+// before any pane opens. Seen live on 2026-11-06: opus5.5 reached Claude as is.
+func TestSpawnResolvesModel(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`{"accounts":[{"provider":"claude","account":"nfx","models":[{"id":"opus","display":"Opus 5.5"},{"id":"fable","display":"Fable 5.1"}]}]}`))
+	}))
+	defer ts.Close()
+	sp := spawner{base: ts.URL}
+	if got, err := sp.modelID("claude", "nfx", "opus5.5"); err != nil || got != "opus" {
+		t.Errorf("got %q, %v; want opus", got, err)
+	}
+	if got, err := sp.modelID("claude", "nfx", ""); err != nil || got != "" {
+		t.Errorf("no model: got %q, %v; want the account's default", got, err)
+	}
+	pane := map[string]string{"REX_SESSION": "session:s", "REX_BLOCK": "block:b"}
+	var out, errOut bytes.Buffer
+	args := []string{"spawn", "--provider", "claude", "--account", "nfx", "--model", "opus6", "--label", "x", "--tab", "t", "--url", ts.URL}
+	if code := run(args, strings.NewReader(""), &out, &errOut, env(pane)); code != 1 || !strings.Contains(errOut.String(), "opus, fable") {
+		t.Errorf("code %d, stderr %q; want 1 and the account's models", code, errOut.String())
 	}
 }
 

@@ -149,6 +149,22 @@ func (sp *spawner) pair(list, tab string, getenv func(string) string) int {
 
 // resolveModels turns each member's model name into one of its account's IDs.
 func (sp *spawner) resolveModels(members [2]member) ([2]member, error) {
+	for i, m := range members {
+		id, err := sp.modelID(m.Provider, m.Account, m.Model)
+		if err != nil {
+			return members, err
+		}
+		members[i].Model = id
+	}
+	return members, nil
+}
+
+// modelID turns a model name into one of the account's IDs. An empty name
+// stays empty: the account's default.
+func (sp *spawner) modelID(provider, account, name string) (string, error) {
+	if name == "" {
+		return "", nil
+	}
 	var lists struct {
 		Accounts []struct {
 			Provider string  `json:"provider"`
@@ -157,26 +173,16 @@ func (sp *spawner) resolveModels(members [2]member) ([2]member, error) {
 		} `json:"accounts"`
 	}
 	if err := getJSON(sp.base+"/models", &lists); err != nil {
-		return members, fmt.Errorf("model names need smithersd's model list: %w", err)
+		return "", fmt.Errorf("model names need smithersd's model list: %w", err)
 	}
-	for i, m := range members {
-		if m.Model == "" {
-			continue
-		}
-		known := false
-		for _, a := range lists.Accounts {
-			if a.Provider == m.Provider && a.Account == m.Account {
-				known = true
-				id, err := resolveModel(m.Model, a.Models)
-				if err != nil {
-					return members, fmt.Errorf("%s.%s: %w", m.Account, m.Provider, err)
-				}
-				members[i].Model = id
+	for _, a := range lists.Accounts {
+		if a.Provider == provider && a.Account == account {
+			id, err := resolveModel(name, a.Models)
+			if err != nil {
+				return "", fmt.Errorf("%s.%s: %w", account, provider, err)
 			}
-		}
-		if !known {
-			return members, fmt.Errorf("smithersd lists no models for %s.%s", m.Account, m.Provider)
+			return id, nil
 		}
 	}
-	return members, nil
+	return "", fmt.Errorf("smithersd lists no models for %s.%s", account, provider)
 }

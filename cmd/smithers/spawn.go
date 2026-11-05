@@ -69,6 +69,12 @@ func spawnAgent(args []string, out, errOut io.Writer, getenv func(string) string
 		fmt.Fprintln(errOut, "--tab names a new tab, and --beside or --anchor opens none; use --anchor to choose the pane to split beside")
 		return 2
 	}
+	id, err := sp.modelID(*provider, *account, *model)
+	if err != nil {
+		fmt.Fprintln(errOut, "spawn:", err)
+		return 1
+	}
+	*model = id
 	if code := sp.setUp(getenv); code != 0 {
 		return code
 	}
