@@ -70,6 +70,26 @@ func TestUnverifiedClaimEndsOtherBindings(t *testing.T) {
 	want(t, openSessions(t, s), "new")
 }
 
+// A Codex daemon resumes its threads after an update, and the resume hook
+// claims the daemon's stale block. Seen live on 2026-11-06: Rex timed out on
+// the burst, and the unverified claims moved verified panes away.
+func TestUnverifiedClaimKeepsVerifiedSessionElsewhere(t *testing.T) {
+	s := open(t)
+	stale := claim("thread", 0, "resume", time.Minute)
+	stale.Block = "block:daemon"
+	bind(t, s, claim("thread", 100, "launch", 0), stale)
+	bs, err := s.Bindings("h")
+	if err != nil || len(bs) != 1 || bs[0].Block != "block:b1" || bs[0].End != nil {
+		t.Fatalf("bindings = %+v, %v; want only the open verified one in block:b1", bs, err)
+	}
+	moved := claim("thread", 200, "resume", 2*time.Minute)
+	moved.Block = "block:b2"
+	bind(t, s, moved)
+	if bs, _ := s.Bindings("h"); len(bs) != 2 || bs[0].End == nil || bs[1].Block != "block:b2" {
+		t.Fatalf("bindings = %+v; a verified resume elsewhere still moves the session", bs)
+	}
+}
+
 func TestClearEndsSameProcessSession(t *testing.T) {
 	s := open(t)
 	bind(t, s, claim("before", 100, "startup", 0), claim("after", 100, "clear", time.Minute))

@@ -12,8 +12,9 @@ import (
 // foreground pid: that is a nested agent, such as `claude -p` run by the outer
 // agent's shell tool, and both stay open. A `clear` claim also ends the same
 // process's previous session. A claim ends the session's open binding in
-// another block. A repeat of an open binding (Claude fires SessionStart again
-// on compact) only records a newly verified foreground.
+// another block, unless the claim is unverified and that binding is verified:
+// then the claim is dropped. A repeat of an open binding (Claude fires
+// SessionStart again on compact) only records a newly verified foreground.
 func (s *Store) Bind(b usage.Binding) error {
 	tx, err := s.db.Begin()
 	if err != nil {
@@ -21,6 +22,18 @@ func (s *Store) Bind(b usage.Binding) error {
 	}
 	defer tx.Rollback()
 	start := nanos(b.Start)
+	if !b.Verified {
+		// A claim Rex could not check never outranks one it did: a Codex daemon's
+		// resume hook claims the block the daemon was started from.
+		var verified int
+		if err := tx.QueryRow(`SELECT count(*) FROM binding WHERE "end" IS NULL AND provider = ? AND session = ?
+			AND verified = 1 AND NOT (host = ? AND block = ?)`, b.Provider, b.Session, b.Host, b.Block).Scan(&verified); err != nil {
+			return err
+		}
+		if verified > 0 {
+			return nil
+		}
+	}
 	if _, err := tx.Exec(`UPDATE binding SET "end" = ? WHERE "end" IS NULL AND host = ? AND block = ?
 		AND NOT (provider = ? AND session = ?) AND NOT (? != 0 AND coalesce(fg_pid, 0) = ?)`,
 		start, b.Host, b.Block, b.Provider, b.Session, b.FgPid, b.FgPid); err != nil {

@@ -482,7 +482,7 @@ Ending a binding:
 |---|---|
 | A new claim in the block | Open bindings for other sessions in the block, unless both have the same known foreground pid. Same foreground means a nested agent, and both stay open. |
 | A new claim with `source` `clear` | Also open bindings for the same provider and foreground pid in the block, because `/clear` replaces the session in the same process |
-| A claim for the same session in another block | That session's open binding elsewhere (a resume moved it) |
+| A claim for the same session in another block | That session's open binding elsewhere (a resume moved it). An unverified claim is dropped instead when that binding is verified. A Codex daemon resumes its threads after an update, and the resume hook claims the block the daemon was started from. Seen live on 2026-11-06: Rex timed out on that burst, and the unverified claims took verified panes out of `smithers panes`. |
 | `block_closed` | Every open binding in the block |
 | `session_destroyed` | Every open binding in the Rex session |
 | `terminal.process_changed` | With no foreground: every open binding in the block. Otherwise, open bindings whose known foreground pid is neither the new foreground nor one of its `ancestors`. An editor the agent opens (Claude's Ctrl-G) has the agent as an ancestor, so the binding stays. |
