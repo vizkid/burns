@@ -42,6 +42,7 @@ func (s *Store) Sweep(now time.Time) error {
 		`DELETE FROM request WHERE at < ?`,
 		`DELETE FROM compaction WHERE at < ?`,
 		`DELETE FROM binding WHERE "end" IS NOT NULL AND "end" < ?`,
+		`DELETE FROM context WHERE at < ?`,
 	} {
 		if _, err := s.db.Exec(q, cut); err != nil {
 			return err

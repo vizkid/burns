@@ -28,6 +28,7 @@ type Output struct {
 	Requests    []usage.Request
 	Compactions []usage.Compaction
 	Limits      []Limit
+	Context     *usage.Context
 }
 
 // Decoder holds the per-file state needed between lines.

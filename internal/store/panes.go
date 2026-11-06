@@ -24,6 +24,10 @@ type Pane struct {
 	// subagent's. LastCompaction is nil when there were none.
 	Compactions    int        `json:"compactions"`
 	LastCompaction *time.Time `json:"last_compaction"`
+	// ContextUsed of ContextSize tokens is the own session's newest context
+	// reading. Both are nil when there is none: unknown, never empty.
+	ContextUsed *int64 `json:"context_used"`
+	ContextSize *int64 `json:"context_size"`
 }
 
 // openBindings ranks each block's open bindings, oldest first. The oldest is the
@@ -48,6 +52,10 @@ func (s *Store) Panes() ([]Pane, error) {
 	if err != nil {
 		return nil, err
 	}
+	ctxs, err := s.paneContexts()
+	if err != nil {
+		return nil, err
+	}
 	rows, err := s.rdb.Query(openBindings + `SELECT r.provider, r.account, o.block, r.model,
 		sum(r.input + r.cache_write + r.output),
 		sum(CASE WHEN o.rank = 1 AND r.agent = '' THEN r.input + r.cache_write + r.output ELSE 0 END), max(r.at)` +
@@ -66,6 +74,9 @@ func (s *Store) Panes() ([]Pane, error) {
 		p.Agents, p.Last = agents[p.Block], fromNanos(last)
 		if c, ok := comps[p.Block]; ok {
 			p.Compactions, p.LastCompaction = c.n, &c.last
+		}
+		if c, ok := ctxs[p.Block]; ok {
+			p.ContextUsed, p.ContextSize = &c.used, &c.size
 		}
 		out = append(out, p)
 	}

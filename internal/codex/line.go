@@ -146,8 +146,9 @@ func (d *Decoder) event(l line) Output {
 	var p struct {
 		Type string `json:"type"`
 		Info *struct {
-			Total tokens `json:"total_token_usage"`
-			Last  tokens `json:"last_token_usage"`
+			Total  tokens `json:"total_token_usage"`
+			Last   tokens `json:"last_token_usage"`
+			Window int64  `json:"model_context_window"`
 		} `json:"info"`
 		RateLimits *rateLimits `json:"rate_limits"`
 		Settings   struct {
@@ -170,6 +171,11 @@ func (d *Decoder) event(l line) Output {
 	}
 	if p.Info != nil && !d.Records {
 		out.Requests = d.fallback(p.Info.Total, p.Info.Last, l.Timestamp)
+	}
+	// input_tokens counts cached input too, so it is the whole prompt.
+	if p.Info != nil && p.Info.Window > 0 && d.Session != "" {
+		out.Context = &usage.Context{Provider: usage.Codex, Session: d.Session, Used: p.Info.Last.Input,
+			Size: p.Info.Window, At: l.Timestamp}
 	}
 	return out
 }

@@ -20,6 +20,8 @@ type paneRow struct {
 	Agents         int        `json:"agents"`
 	Compactions    *int       `json:"compactions"`
 	LastCompaction *time.Time `json:"last_compaction"`
+	ContextUsed    *int64     `json:"context_used"`
+	ContextSize    *int64     `json:"context_size"`
 	Session        string     `json:"session"`
 	Label          string     `json:"label"`
 }
@@ -50,7 +52,7 @@ func printPanes(args []string, out, errOut io.Writer) int {
 		// Rule 9: an open binding can outlive its pane, so these are unconfirmed.
 		fmt.Fprintln(tw, "Rex did not answer: these panes are unconfirmed and may be closed.")
 	}
-	fmt.Fprintln(tw, "Session\tPane\tAgent\tModel\tCompactions\tLast")
+	fmt.Fprintln(tw, "Session\tPane\tAgent\tModel\tContext\tCompactions\tLast")
 	for _, p := range mainRows(doc.Panes) {
 		name, model, count, last := cmp.Or(p.Label, p.Block), p.Model, "unknown", "unknown"
 		if p.Agents > 0 {
@@ -63,7 +65,7 @@ func printPanes(args []string, out, errOut io.Writer) int {
 		if p.LastCompaction != nil {
 			last = age(t.Sub(*p.LastCompaction)) + " ago"
 		}
-		fmt.Fprintf(tw, "%s\t%s\t%s %s\t%s\t%s\t%s\n", p.Session, name, p.Provider, p.Account, model, count, last)
+		fmt.Fprintf(tw, "%s\t%s\t%s %s\t%s\t%s\t%s\t%s\n", p.Session, name, p.Provider, p.Account, model, contextUsed(p), count, last)
 	}
 	tw.Flush()
 	return 0
@@ -96,4 +98,13 @@ func unlabelled(p paneRow) int {
 		return 1
 	}
 	return 0
+}
+
+// contextUsed is the share of the context window the pane's last request
+// filled. With no reading it is unknown, never 0%.
+func contextUsed(p paneRow) string {
+	if p.ContextUsed == nil || p.ContextSize == nil || *p.ContextSize <= 0 {
+		return "unknown"
+	}
+	return fmt.Sprintf("%.0f%%", 100*float64(*p.ContextUsed)/float64(*p.ContextSize))
 }

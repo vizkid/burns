@@ -96,3 +96,13 @@ type Binding struct {
 	Start      time.Time  `json:"start"`
 	End        *time.Time `json:"end"`
 }
+
+// Context is how much of a session's context window its last request filled:
+// Used tokens of a Size-token window, all input including cached.
+type Context struct {
+	Provider string
+	Session  string
+	Used     int64
+	Size     int64
+	At       time.Time
+}

@@ -77,6 +77,10 @@ CREATE TABLE billed (
 CREATE TABLE billed_point (
 	provider TEXT NOT NULL, account TEXT NOT NULL, used_minor INTEGER NOT NULL, observed_at INTEGER NOT NULL,
 	PRIMARY KEY (provider, account, observed_at)) WITHOUT ROWID;
+`, `
+CREATE TABLE context (
+	provider TEXT NOT NULL, session TEXT NOT NULL, used INTEGER NOT NULL, size INTEGER NOT NULL,
+	at INTEGER NOT NULL, PRIMARY KEY (provider, session)) WITHOUT ROWID;
 `}
 
 // Open opens or creates the store and applies migrations.

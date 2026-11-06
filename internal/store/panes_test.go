@@ -176,3 +176,41 @@ func TestPanesWithoutCompactionsHaveNoLastTime(t *testing.T) {
 		t.Fatalf("panes = %+v, err %v", panes, err)
 	}
 }
+
+// A pane shows the newest context reading of its own session. An older
+// reading that arrives late does not replace it, and a pane with none has nil.
+func TestPanesReportContextOfOwnSession(t *testing.T) {
+	s := open(t)
+	bind(t, s, claim("s1", 100, "startup", 0))
+	other := claim("s2", 200, "startup", 0)
+	other.Block = "block:b2"
+	bind(t, s, other)
+	if err := s.AddRequests([]usage.Request{paneReq("a", "s1", "m", 1, 0, 0, 1, t0.Add(time.Minute)),
+		paneReq("b", "s2", "m", 1, 0, 0, 1, t0.Add(time.Minute))}); err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range []usage.Context{
+		{Provider: usage.Claude, Session: "s1", Used: 300, Size: 1000, At: t0.Add(2 * time.Minute)},
+		{Provider: usage.Claude, Session: "s1", Used: 100, Size: 1000, At: t0.Add(time.Minute)},
+	} {
+		if err := s.SetContext(c); err != nil {
+			t.Fatal(err)
+		}
+	}
+	panes, err := s.Panes()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, p := range panes {
+		switch p.Block {
+		case "block:b1":
+			if p.ContextUsed == nil || *p.ContextUsed != 300 || p.ContextSize == nil || *p.ContextSize != 1000 {
+				t.Errorf("b1 context = %v/%v; want 300/1000", p.ContextUsed, p.ContextSize)
+			}
+		case "block:b2":
+			if p.ContextUsed != nil || p.ContextSize != nil {
+				t.Errorf("b2 has no reading: got %v/%v", p.ContextUsed, p.ContextSize)
+			}
+		}
+	}
+}

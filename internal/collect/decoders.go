@@ -1,6 +1,7 @@
 package collect
 
 import (
+	"cmp"
 	"time"
 
 	"github.com/vizkid/burns/internal/claude"
@@ -22,9 +23,11 @@ func (f *codexFile) ingest(st *store.Store, lines [][]byte, now time.Time) error
 	reports := map[string][]quota.Report{}
 	credits := map[string]codex.Limit{}
 	var order []string
+	var context *usage.Context
 	for _, l := range lines {
 		out := f.Line(l)
 		reqs = append(reqs, out.Requests...)
+		context = cmp.Or(out.Context, context)
 		comps = append(comps, out.Compactions...)
 		for _, lim := range out.Limits {
 			if _, seen := reports[lim.LimitID]; !seen {
@@ -46,6 +49,11 @@ func (f *codexFile) ingest(st *store.Store, lines [][]byte, now time.Time) error
 		err := st.SetCredits(usage.Codex, f.Account, id, store.Credits{HasCredits: c.HasCredits,
 			Unlimited: c.Unlimited, Balance: c.Balance, ObservedAt: lim.At})
 		if err != nil {
+			return err
+		}
+	}
+	if context != nil {
+		if err := st.SetContext(*context); err != nil {
 			return err
 		}
 	}

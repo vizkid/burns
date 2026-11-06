@@ -3,6 +3,7 @@ package codex
 import (
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/vizkid/burns/internal/usage"
 )
@@ -14,6 +15,7 @@ func run(d *Decoder, lines string) Output {
 		all.Requests = append(all.Requests, o.Requests...)
 		all.Compactions = append(all.Compactions, o.Compactions...)
 		all.Limits = append(all.Limits, o.Limits...)
+		all.Context = o.Context
 	}
 	return all
 }
@@ -170,5 +172,20 @@ func TestServiceTierReachesRequests(t *testing.T) {
 	out := run(d, meta+"\n"+settings("fast")+"\n"+record("r1")+"\n"+settings("default")+"\n"+record("r2"))
 	if len(out.Requests) != 2 || out.Requests[0].Speed != "fast" || out.Requests[1].Speed != "" {
 		t.Fatalf("requests = %+v", out.Requests)
+	}
+}
+
+// A token_count's last request input is what the context holds now.
+func TestTokenCountReportsContext(t *testing.T) {
+	d := &Decoder{Account: "work", Thread: "t1", Session: "t1", Records: true}
+	out := run(d, `{"timestamp":"2026-11-06T03:00:00Z","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":50000,"cached_input_tokens":12032,"output_tokens":300,"total_tokens":50300},"last_token_usage":{"input_tokens":22101,"cached_input_tokens":12032,"output_tokens":134,"total_tokens":22235},"model_context_window":475000},"rate_limits":null}}`)
+	c := out.Context
+	if c == nil || c.Provider != usage.Codex || c.Session != "t1" || c.Used != 22101 || c.Size != 475000 ||
+		!c.At.Equal(time.Date(2026, 11, 6, 3, 0, 0, 0, time.UTC)) {
+		t.Fatalf("context = %+v", c)
+	}
+	out = run(d, `{"timestamp":"2026-11-06T03:00:01Z","type":"event_msg","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":5}},"rate_limits":null}}`)
+	if out.Context != nil {
+		t.Fatalf("no window size must give no context: %+v", out.Context)
 	}
 }

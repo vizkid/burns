@@ -45,7 +45,7 @@ func (s *Server) metrics(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// statusline stores Claude quota windows. The account comes from the
+// statusline stores Claude quota windows and the session's context. The account comes from the
 // transcript path; a post from an unconfigured home is accepted and dropped.
 func (s *Server) statusline(w http.ResponseWriter, r *http.Request) {
 	body, ok := readBody(w, r, MaxStatusline)
@@ -59,7 +59,17 @@ func (s *Server) statusline(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	acct, ok := s.Config.ForPath(st.TranscriptPath)
-	if !ok || acct.Provider != usage.Claude || len(st.Windows) == 0 {
+	if !ok || acct.Provider != usage.Claude {
+		w.WriteHeader(http.StatusAccepted)
+		return
+	}
+	if st.Context != nil {
+		if err := s.Store.SetContext(*st.Context); err != nil {
+			fail(w, "store context", err)
+			return
+		}
+	}
+	if len(st.Windows) == 0 {
 		w.WriteHeader(http.StatusAccepted)
 		return
 	}

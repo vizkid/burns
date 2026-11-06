@@ -179,3 +179,22 @@ func TestTranscriptCarriesCacheLifetimeAndSpeed(t *testing.T) {
 		t.Fatalf("requests = %+v", reqs)
 	}
 }
+
+// The statusline's context_window gives the session's context now.
+func TestStatuslineReportsContext(t *testing.T) {
+	now := time.Date(2026, 11, 6, 4, 0, 0, 0, time.UTC)
+	body := `{"session_id":"s1","transcript_path":"/h/.claude-x/projects/p/s1.jsonl",
+	 "context_window":{"total_input_tokens":124000,"context_window_size":1000000,"used_percentage":12}}`
+	st, err := ParseStatusline([]byte(body), now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	c := st.Context
+	if c == nil || c.Provider != usage.Claude || c.Session != "s1" || c.Used != 124000 || c.Size != 1000000 || !c.At.Equal(now) {
+		t.Fatalf("context = %+v", c)
+	}
+	st, _ = ParseStatusline([]byte(`{"session_id":"s1","context_window":{"total_input_tokens":0,"context_window_size":0}}`), now)
+	if st.Context != nil {
+		t.Fatalf("no window size must give no context: %+v", st.Context)
+	}
+}

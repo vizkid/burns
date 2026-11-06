@@ -7,12 +7,14 @@ import (
 	"time"
 
 	"github.com/vizkid/burns/internal/quota"
+	"github.com/vizkid/burns/internal/usage"
 )
 
 // Status is one statusline post.
 type Status struct {
 	TranscriptPath string
 	Windows        quota.Windows
+	Context        *usage.Context // nil when the post has no window size
 }
 
 // Window lengths of Claude's statusline windows.
@@ -27,8 +29,13 @@ type statusWindow struct {
 }
 
 type statusPayload struct {
+	SessionID      string `json:"session_id"`
 	TranscriptPath string `json:"transcript_path"`
-	RateLimits     *struct {
+	ContextWindow  *struct {
+		Used int64 `json:"total_input_tokens"`
+		Size int64 `json:"context_window_size"`
+	} `json:"context_window"`
+	RateLimits *struct {
 		FiveHour *statusWindow `json:"five_hour"`
 		SevenDay *statusWindow `json:"seven_day"`
 	} `json:"rate_limits"`
@@ -41,6 +48,9 @@ func ParseStatusline(body []byte, now time.Time) (Status, error) {
 		return Status{}, err
 	}
 	st := Status{TranscriptPath: p.TranscriptPath, Windows: quota.Windows{}}
+	if c := p.ContextWindow; c != nil && c.Size > 0 && p.SessionID != "" {
+		st.Context = &usage.Context{Provider: usage.Claude, Session: p.SessionID, Used: c.Used, Size: c.Size, At: now}
+	}
 	if p.RateLimits == nil {
 		return st, nil
 	}

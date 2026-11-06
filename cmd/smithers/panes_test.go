@@ -12,8 +12,8 @@ import (
 // The shape of smithersd's GET /usage/panes, with synthetic names: one pane on two
 // models, and one pane that never compacted.
 const panesBody = `{"host":"h1","checked":true,"panes":[
-{"provider":"claude","account":"alpha","block":"block:1","model":"claude-haiku-5-5","tokens":900,"main_tokens":0,"agents":3,"compactions":2,"last_compaction":"2026-10-29T10:00:00Z","session":"work","label":"cap"},
-{"provider":"claude","account":"alpha","block":"block:1","model":"claude-fable-5-1","tokens":50,"main_tokens":50,"agents":3,"compactions":2,"last_compaction":"2026-10-29T10:00:00Z","session":"work","label":"cap"},
+{"provider":"claude","account":"alpha","block":"block:1","model":"claude-haiku-5-5","tokens":900,"main_tokens":0,"agents":3,"compactions":2,"last_compaction":"2026-10-29T10:00:00Z","session":"work","label":"cap","context_used":124000,"context_size":1000000},
+{"provider":"claude","account":"alpha","block":"block:1","model":"claude-fable-5-1","tokens":50,"main_tokens":50,"agents":3,"compactions":2,"last_compaction":"2026-10-29T10:00:00Z","session":"work","label":"cap","context_used":124000,"context_size":1000000},
 {"provider":"codex","account":"beta","block":"block:2","model":"gpt-6-astra","tokens":40,"main_tokens":40,"agents":0,"compactions":0,"last_compaction":null,"session":"work","label":""}]}`
 
 func runPanes(t *testing.T, body string) (string, int) {
@@ -45,17 +45,17 @@ func TestPanesPrintsOneLinePerPaneWithCompactions(t *testing.T) {
 	if len(lines) != 4 {
 		t.Fatalf("want heading, header and 2 panes:\n%s", out)
 	}
-	for _, want := range []string{"h1", "Compactions"} {
+	for _, want := range []string{"h1", "Context", "Compactions"} {
 		if !strings.Contains(lines[0]+lines[1], want) {
 			t.Errorf("heading lacks %q:\n%s", want, out)
 		}
 	}
 	cap := strings.Fields(lines[2])
-	if strings.Join(cap, " ") != "work cap claude alpha claude-fable-5-1 +3 2 2h ago" {
+	if strings.Join(cap, " ") != "work cap claude alpha claude-fable-5-1 +3 12% 2 2h ago" {
 		t.Errorf("cap line = %q", lines[2])
 	}
 	bare := strings.Fields(lines[3])
-	if strings.Join(bare, " ") != "work block:2 codex beta gpt-6-astra 0 never" {
+	if strings.Join(bare, " ") != "work block:2 codex beta gpt-6-astra unknown 0 never" {
 		t.Errorf("unlabelled line = %q", lines[3])
 	}
 }
@@ -75,7 +75,7 @@ func TestPanesFromAnOlderSmithersdSayUnknown(t *testing.T) {
 {"provider":"codex","account":"beta","block":"block:2","model":"gpt-6-astra","tokens":40,"main_tokens":40,"agents":0,"session":"work","label":"nav"}]}`
 	out, code := runPanes(t, old)
 	lines := strings.Split(strings.TrimSpace(out), "\n")
-	if code != 0 || strings.Join(strings.Fields(lines[len(lines)-1]), " ") != "work nav codex beta gpt-6-astra unknown unknown" {
+	if code != 0 || strings.Join(strings.Fields(lines[len(lines)-1]), " ") != "work nav codex beta gpt-6-astra unknown unknown unknown" {
 		t.Fatalf("code %d:\n%s", code, out)
 	}
 }
