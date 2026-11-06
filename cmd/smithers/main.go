@@ -18,6 +18,7 @@ const usageText = `usage:
   smithers usage [--since 24h] [--url URL]
   smithers panes [--url URL]
   smithers spawn --provider claude|codex --account NAME --label L --tab T [--host H] [--beside] [--anchor P] [--pair LIST] [--model M] [--dir D] [--wait 60s]
+  smithers reset PANE --checkpoint PATH --task TEXT [--account NAME] [--wait 120s]
   smithers launch --provider claude|codex --account NAME [--model M] [--effort E] [--permission-mode P] [--dir D]
   smithers answer-channels --block BLOCK --servers a,b
   smithers bind-codex --home H --block B --session S --dir D --pid P
@@ -39,6 +40,8 @@ func run(args []string, in io.Reader, out, errOut io.Writer, getenv func(string)
 		return printUsage(args[1:], out, errOut)
 	case "spawn":
 		return spawnAgent(args[1:], out, errOut, getenv)
+	case "reset":
+		return resetPane(args[1:], out, errOut, getenv)
 	case "panes":
 		return printPanes(args[1:], out, errOut)
 	case "launch":

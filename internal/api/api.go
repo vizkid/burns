@@ -53,6 +53,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /v1/metrics", s.metrics)
 	mux.HandleFunc("POST /statusline", s.statusline)
 	mux.HandleFunc("POST /bind", s.bind)
+	mux.HandleFunc("GET /block-sessions", s.blockSessions)
+	mux.HandleFunc("GET /session-last", s.sessionLast)
 	s.reads(mux)
 	return loopbackOnly(noBrowser(mux))
 }

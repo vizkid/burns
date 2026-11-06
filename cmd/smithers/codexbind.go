@@ -1,6 +1,7 @@
 package main
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -38,6 +39,7 @@ const (
 type codexLaunch struct {
 	Home, Block, Session, Dir string
 	Pid                       int
+	Source                    string // the claim's source; empty is "launch"
 }
 
 // startCodexWatch leaves a watcher connected to the daemon, then returns, so
@@ -163,6 +165,16 @@ func (b binder) bind(ctx context.Context, l codexLaunch, threads []codexd.Thread
 		}
 		return left + "thread " + t.ID + " could be another pane's: " + rival
 	}
+	return b.bindThread(ctx, l, t)
+}
+
+// bindThread binds a thread already matched to the pane: roar first, then smithersd.
+func (b binder) bindThread(ctx context.Context, l codexLaunch, t codexd.Thread) string {
+	if b.roar == nil {
+		return "codex thread " + t.ID + " not bound: roar not found"
+	}
+	ctx, cancel := context.WithTimeout(ctx, claimTimeout)
+	defer cancel()
 	pid, why := b.codexPid(ctx, l)
 	if why != "" {
 		return "codex thread " + t.ID + " not bound: " + why
@@ -171,7 +183,7 @@ func (b binder) bind(ctx context.Context, l codexLaunch, threads []codexd.Thread
 	if !claimable {
 		return fmt.Sprintf("codex thread %s, pid %d: %s; no claim sent", t.ID, pid, said)
 	}
-	body, _ := json.Marshal(map[string]any{"provider": "codex", "session": t.Session(), "source": "launch",
+	body, _ := json.Marshal(map[string]any{"provider": "codex", "session": t.Session(), "source": cmp.Or(l.Source, "launch"),
 		"rex_block": l.Block, "rex_session": l.Session, "pids": []int{pid}})
 	b.claim(body)
 	return fmt.Sprintf("codex thread %s, pid %d: %s; claim sent to smithersd", t.ID, pid, said)

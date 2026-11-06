@@ -785,6 +785,37 @@ Tested live on 2026-11-03 from a Claude pane on Stiletto, with Haiku:
 
 Roar drives Rex through a Go client of its own: Rex's server API over a WebSocket, plus wrappers for the `rex` CLI. It also resolves names such as `label@session` and `host:` addresses. Burns starts a `rex` process for each call, and on 2026-11-02 those calls were killed under load 24 times. A shared module would give Burns roar's addressing and one connection instead of a process per call.
 
+### Resetting a pane (Viz, 2026-11-06)
+
+A coordinator resets a pane's context before the agent compacts, and the pane keeps its assignment. The pane writes a checkpoint first; that procedure is the `reset-context` skill's, not Burns'. Burns clears the context, sends the resume prompt, and reports whether the agent took it up.
+
+```
+smithers reset PANE --checkpoint PATH --task TEXT [--account NAME] [--wait 120s]
+```
+
+| Rule | Behaviour | Why |
+|---|---|---|
+| Scope | `PANE` is a label in the caller's own Rex session on this host. None, or more than one, refuses. | As for spawn: a caller acts only in its own session. Viz, 2026-11-06, allowed reset to type into such a pane. |
+| Agent | Rex's `process` names the pane's foreground. It must be `claude` or `codex`; anything else refuses. | A shell or editor would take `/clear` as text. |
+| Clear | Rex types `/clear` (Claude) or `/new` (Codex), then Enter. For Codex, Rex presses Enter once more after 1 second. | The agents' own commands. In a git folder, Codex 0.166 asks "Where should the new conversation run?", and Enter takes the default, the current folder. Without the dialog, Codex ignores an Enter on an empty input. |
+| Cleared | Claude: `smithersd` holds an open binding for a session the block did not have before, from Claude's SessionStart hook with source `clear`. Codex: reset listens on the home's daemon socket before it types `/new`, and one TUI thread starts in the pane's folder within 10 seconds. Reset then binds that thread as a launch does, without the check for other unbound panes. | No screen read. A Codex hook runs in the daemon and names the wrong pane. A reset knows when it typed `/new`, so another pane's thread in the same window shows as a second thread, and two threads refuse. |
+| Codex home | The account of the block's open binding, else `--account`. Neither refuses. | The daemon socket is per home. |
+| Resume | Rex types `Context reset. Load the reset-context skill and run its Resume steps on PATH. Task: TEXT`, then Enter. | The prompt the skill's stand-in script sends. |
+| Working | `smithersd` records a request from the new session after the prompt. | The agent took the prompt up. |
+| Result | Exit 0 when the agent works, 1 when reset refused, 2 for bad arguments, 3 when a wait ran out. The message names the step that ran out. | As for spawn. |
+
+The pane must be idle. Typed into a turn in progress, `/clear` waits as the next message.
+
+Built 2026-11-06 and tested live on the Mac, each in a scratch pane:
+
+| Case | Result |
+|---|---|
+| Claude (Haiku 5.5) | Exit 0 in 6 s. The new session bound to the same block from the `clear` hook, the old one closed, and the agent loaded the reset-context skill and read the checkpoint. |
+| Codex 0.166 (GPT-6-Astra), first try | Exit 3: "no Codex thread started". `/new` had opened the worktree dialog, which led to the second Enter. |
+| Codex, with the second Enter | Exit 0 in 18 s. One TUI thread started in the pane's folder, the claim reached `smithersd`, and the agent read the checkpoint. Roar refused its own rebind with `not_codex_pane`, as it does for some launches, so roar addresses that pane by typed messages until the pane runs `roar` itself. |
+
+`smithersd` answers two loopback routes for reset: `GET /block-sessions?block=B`, the block's open bindings with each session's provider, account and start, and `GET /session-last?provider=P&session=S`, the time of the session's last request or null.
+
 ### Binding a Codex launch to its pane (Viz, 2026-11-04; built)
 
 A daemon-backed Codex runs its SessionStart hook inside the shared daemon. So the hook's `REX_BLOCK` names the wrong pane, and `smithersd` drops the claim. Roar has the same gap: it learns the pane only when the thread receives its first typed message.
