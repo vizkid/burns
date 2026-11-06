@@ -785,6 +785,19 @@ Tested live on 2026-11-03 from a Claude pane on Stiletto, with Haiku:
 
 Roar drives Rex through a Go client of its own: Rex's server API over a WebSocket, plus wrappers for the `rex` CLI. It also resolves names such as `label@session` and `host:` addresses. Burns starts a `rex` process for each call, and on 2026-11-02 those calls were killed under load 24 times. A shared module would give Burns roar's addressing and one connection instead of a process per call.
 
+### Bindings from roar (Viz, 2026-11-06)
+
+A Codex launch cannot bind its thread when another unbound Codex pane runs in the same folder, as a cap and nav do. Roar binds such a pane when its thread first runs `roar`, and records the binding in its store as `codex/<block>.json`, with `thread`, `session`, `codex_home`, `pid` and `at` (roar's `docs/SPEC.md`, "Binding"). `smithersd` reads those files.
+
+| Rule | Behaviour | Why |
+|---|---|---|
+| Where | `$ROAR_HOME/codex/*.json`, else `$XDG_STATE_HOME/roar/codex`, else `~/.local/state/roar/codex`. | Roar's documented store. |
+| When | At start, then every 60 seconds. | A pane binds in roar at its first message, at any time. |
+| Check | A file is a claim of session `thread` in the block its name gives, with `pid` as the only pid. Rex must report that pid as the block's foreground. Otherwise the file is skipped, and nothing is logged. | The same check as a hook's claim. A file outlives its Codex until roar deletes it. |
+| Unchecked | When Rex fails, the file is skipped, never stored as unverified. | An unverified claim cannot be told from a stale file. |
+| Newer only | A file older than the block's newest open binding is skipped. | After a `/new`, roar's file can still name the old thread for the same pid. Without this, each pass would move the pane back. |
+| Source | `roar`, verified, with the foreground pid. | |
+
 ### Resetting a pane (Viz, 2026-11-06)
 
 A coordinator resets a pane's context before the agent compacts, and the pane keeps its assignment. The pane writes a checkpoint first; that procedure is the `reset-context` skill's, not Burns'. Burns clears the context, sends the resume prompt, and reports whether the agent took it up.

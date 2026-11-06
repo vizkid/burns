@@ -107,6 +107,7 @@ func run() error {
 		server.Rex, server.Panes = cli, panes
 		go panes.Run(ctx, 15*time.Second, 10*time.Second)
 		go (&bindings.Tracker{Store: st, Rex: cli, Host: *host, Now: time.Now}).Run(ctx, *rexPath)
+		go server.RunRoar(ctx, api.RoarDir(os.Getenv, userHome))
 		log.Printf("checking bindings with %s", *rexPath)
 	} else {
 		log.Printf("WARN rex not found: bindings stay unverified and open")
