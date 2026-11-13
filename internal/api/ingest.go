@@ -4,6 +4,7 @@ import (
 	"log"
 	"net/http"
 
+	"github.com/vizkid/burns/internal/billing"
 	"github.com/vizkid/burns/internal/claude"
 	"github.com/vizkid/burns/internal/otlp"
 	"github.com/vizkid/burns/internal/quota"
@@ -11,7 +12,7 @@ import (
 )
 
 // claudeLimit is the limit ID of Claude's subscription windows.
-const claudeLimit = "claude"
+const claudeLimit = billing.ClaudeLimit
 
 // logs stores api_request and compaction events from Claude Code.
 func (s *Server) logs(w http.ResponseWriter, r *http.Request) {

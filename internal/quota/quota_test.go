@@ -147,3 +147,21 @@ func TestRule10MergeKeepsHighestOfSameWindow(t *testing.T) {
 	c := Windows{10080: win(1, 7*24*time.Hour, 0)}
 	mustValue(t, Merge(now, a, c)[10080], 1)
 }
+
+// Rule 11: Claude's usage endpoint is the account's own record. Its reading
+// replaces the stored one even when lower in the same window (a reset), and a
+// window it omits becomes unknown. Seen live on 2026-11-13: after a weekly
+// reset the statusline stopped sending seven_day, and 100% stayed.
+func TestRule11AuthoritativeReplacesAndClears(t *testing.T) {
+	stored := Windows{300: win(30, time.Hour, time.Hour), 10080: win(100, 96*time.Hour, time.Hour)}
+	got := Apply(stored, Report{Provider: "claude", At: now, Authoritative: true,
+		Windows: Windows{10080: win(2, 96*time.Hour, 0)}}, now)
+	mustValue(t, got[10080], 2)
+	if _, ok := got[300]; ok {
+		t.Fatalf("omitted five-hour = %+v; want cleared", got[300])
+	}
+	// An older authoritative report changes nothing.
+	got = Apply(stored, Report{Provider: "claude", At: now.Add(-2 * time.Hour), Authoritative: true}, now)
+	mustValue(t, got[10080], 100)
+	mustValue(t, got[300], 30)
+}

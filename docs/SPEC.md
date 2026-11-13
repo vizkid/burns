@@ -336,6 +336,7 @@ Burns rewrites the code from these rules. Each rule gets a test.
 8. A burn rate needs two samples from one session. Until then it is unavailable.
 9. Unknown or stale data never displays as zero or unlimited.
 10. Usage in one window never goes down. A lower percent for the same reset (within one minute) is stale: an idle session repeats the value of its last response. It is not stored, recorded as a reading, or merged. A new window may start lower.
+11. Claude's usage endpoint (`/api/oauth/usage`, polled every 15 minutes with the billed spend) is the account's own record. Its `five_hour` and `seven_day` windows replace the stored ones, a lower percent included, and rules 4 and 10 do not hold it back. A lower percent in the same window is a reset, so that window's earlier readings are deleted. A window it sends as null, or without `resets_at`, is cleared to unknown; Burns does not infer the reset (rule 7). A response with neither key changes no window. Seen live on 2026-11-13: after an early weekly reset, the statusline stopped sending `seven_day`, as Claude's statusline does whenever the API omits a window, and Burns held 100% for the old reset. An idle session that later repeats its old reading can raise the window again until the next poll.
 
 ### Sources
 

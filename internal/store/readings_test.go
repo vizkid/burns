@@ -155,3 +155,25 @@ func TestReadingsSkipStaleLowerPercent(t *testing.T) {
 		t.Fatalf("readings = %v; want 24 25 26 27", got)
 	}
 }
+
+// Rule 11: a lower reading from the usage endpoint in the same window means
+// the window restarted, so its earlier readings go and the new one is stored.
+func TestAuthoritativeLowerRestartsWindow(t *testing.T) {
+	s := open(t)
+	reset := t0.Add(72 * time.Hour)
+	for i, pct := range []float64{90, 100} {
+		at := t0.Add(time.Duration(i) * time.Minute)
+		if err := s.ApplyReports("work", "claude", []quota.Report{weekly(pct, reset, at)}, at); err != nil {
+			t.Fatal(err)
+		}
+	}
+	at := t0.Add(time.Hour)
+	r := weekly(2, reset, at)
+	r.Authoritative = true
+	if err := s.ApplyReports("work", "claude", []quota.Report{r}, at); err != nil {
+		t.Fatal(err)
+	}
+	if got := percents(t, s, at); !equal(got, []float64{2}) {
+		t.Fatalf("readings = %v; want [2]", got)
+	}
+}

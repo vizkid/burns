@@ -32,8 +32,17 @@ func recordReadings(tx *sql.Tx, provider, account, limitID string, reports []quo
 			if !w.Live(now) {
 				continue
 			}
-			if prev, ok := last[m]; ok && (!w.ObservedAt.After(prev.ObservedAt) || sameReading(prev, w) || quota.Stale(prev, w)) {
+			prev, ok := last[m]
+			restart := ok && r.Authoritative && quota.Stale(prev, w)
+			if ok && (!w.ObservedAt.After(prev.ObservedAt) || sameReading(prev, w) || (quota.Stale(prev, w) && !restart)) {
 				continue
+			}
+			// Rule 11: a lower authoritative reading in the same window is a reset.
+			if restart {
+				if _, err := tx.Exec(`DELETE FROM reading WHERE provider = ? AND account = ? AND limit_id = ? AND minutes = ?`,
+					provider, account, limitID, m); err != nil {
+					return false, err
+				}
 			}
 			// A new window supersedes the old one even before the old reset
 			// passes: Codex can restart a week early.

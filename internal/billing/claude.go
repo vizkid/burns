@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/vizkid/burns/internal/config"
+	"github.com/vizkid/burns/internal/quota"
 	"github.com/vizkid/burns/internal/store"
 	"github.com/vizkid/burns/internal/usage"
 )
@@ -25,6 +26,9 @@ const (
 	oauthBeta = "oauth-2025-04-20"
 	maxBody   = 1 << 20
 )
+
+// ClaudeLimit is the limit ID of Claude's subscription windows, as the statusline stores them.
+const ClaudeLimit = "claude"
 
 // SourceClaude names readings from the usage endpoint.
 const SourceClaude = "claude-usage"
@@ -138,11 +142,18 @@ func (p *Poller) one(ctx context.Context, a config.Account) error {
 	if err != nil {
 		return err
 	}
+	now := p.Now()
+	if w := parseWindows(body, now); w != nil {
+		r := quota.Report{Provider: usage.Claude, At: now, Windows: w, Authoritative: true}
+		if err := p.Store.ApplyReports(a.Name, ClaudeLimit, []quota.Report{r}, now); err != nil {
+			return err
+		}
+	}
 	b, err := parse(body)
 	if err != nil {
 		return err
 	}
-	b.Provider, b.Account, b.ObservedAt = a.Provider, a.Name, p.Now()
+	b.Provider, b.Account, b.ObservedAt = a.Provider, a.Name, now
 	return p.Store.SetBilled(b)
 }
 

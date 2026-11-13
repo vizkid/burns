@@ -27,6 +27,10 @@ type Report struct {
 	Provider string
 	At       time.Time
 	Windows  Windows
+	// Authoritative marks Claude's usage endpoint, the account's own record
+	// (rule 11): its windows replace the stored ones, lower included, and a
+	// window it omits is cleared.
+	Authoritative bool
 }
 
 // Live reports whether the window holds a current reading.
@@ -61,6 +65,9 @@ func Stale(prev, w Window) bool {
 // a Codex account can report only a weekly window (rule 5). Kept windows keep
 // their original observation time and read as unknown once their reset passes.
 func Apply(stored Windows, r Report, now time.Time) Windows {
+	if r.Authoritative {
+		return applyAuthoritative(stored, r, now)
+	}
 	out := Windows{}
 	for m, w := range stored {
 		_, reported := r.Windows[m]
@@ -102,6 +109,24 @@ func Merge(now time.Time, sets ...Windows) Windows {
 					continue
 				}
 			}
+			out[m] = w
+		}
+	}
+	return out
+}
+
+// applyAuthoritative folds a usage-endpoint report (rule 11). A stored window
+// newer than the report stays; every other stored window gives way to the
+// report's live one, or to unknown when the report has none.
+func applyAuthoritative(stored Windows, r Report, now time.Time) Windows {
+	out := Windows{}
+	for m, w := range stored {
+		if !r.At.IsZero() && r.At.Before(w.ObservedAt) {
+			out[m] = w
+		}
+	}
+	for m, w := range r.Windows {
+		if _, kept := out[m]; !kept && w.Live(now) {
 			out[m] = w
 		}
 	}

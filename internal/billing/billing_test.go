@@ -229,3 +229,21 @@ func itoa(n int64) string {
 	}
 	return string(b)
 }
+
+// The usage endpoint's windows become quota readings. A window without a reset
+// time, as after a reset before the window starts, is left out: never inferred.
+func TestParseWindows(t *testing.T) {
+	body := `{"five_hour":{"utilization":12.0,"resets_at":"2026-11-02T08:00:00.123+00:00"},
+	 "seven_day":{"utilization":0.0,"resets_at":null},"extra_usage":null}`
+	w := parseWindows([]byte(body), now)
+	if p := w[300].Percent; p == nil || *p != 12 || !w[300].ResetsAt.Equal(time.Date(2026, 11, 2, 8, 0, 0, 123e6, time.UTC)) ||
+		!w[300].ObservedAt.Equal(now) {
+		t.Fatalf("five-hour = %+v", w[300])
+	}
+	if _, ok := w[10080]; ok {
+		t.Fatalf("seven-day without a reset = %+v; want left out", w[10080])
+	}
+	if w := parseWindows([]byte(`nope`), now); w != nil {
+		t.Fatalf("bad body gave %+v; want nil, no report", w)
+	}
+}
