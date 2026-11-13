@@ -28,6 +28,8 @@ public struct WireWindow: Codable, Equatable, Sendable {
     public var percent: Double?
     public var resetsAt: Date
     public var observedAt: Date
+    /// Set when the window restarted early and kept its reset (rule 11). Missing from an older `smithersd`.
+    public var startsAt: Date?
 }
 
 public struct ReadingsAnswer: Codable, Equatable, Sendable {

@@ -177,3 +177,27 @@ func TestAuthoritativeLowerRestartsWindow(t *testing.T) {
 		t.Fatalf("readings = %v; want [2]", got)
 	}
 }
+
+// The restart start is stored with the window and served back.
+func TestRestartStartRoundTrips(t *testing.T) {
+	s := open(t)
+	reset := t0.Add(72 * time.Hour)
+	if err := s.ApplyReports("work", "claude", []quota.Report{weekly(100, reset, t0)}, t0); err != nil {
+		t.Fatal(err)
+	}
+	at := t0.Add(time.Hour)
+	r := weekly(9, reset, at)
+	r.Authoritative = true
+	if err := s.ApplyReports("work", "claude", []quota.Report{r}, at); err != nil {
+		t.Fatal(err)
+	}
+	ls, err := s.Limits()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, l := range ls {
+		if w := l.Windows[10080]; l.Account == "work" && (w.StartsAt == nil || !w.StartsAt.Equal(at)) {
+			t.Fatalf("start = %v; want %v", w.StartsAt, at)
+		}
+	}
+}

@@ -17,9 +17,20 @@ public struct Window: Equatable, Sendable {
     public var observedAt: Date
     /// The pool this window came from. Empty when no limit named it.
     public var limitId: String
-    public init(percent: Double?, resetsAt: Date, observedAt: Date, limitId: String = "") {
+    /// Set when the window restarted early and kept its reset (rule 11): it runs from here.
+    public var startsAt: Date?
+    public init(percent: Double?, resetsAt: Date, observedAt: Date, limitId: String = "", startsAt: Date? = nil) {
         self.percent = percent; self.resetsAt = resetsAt; self.observedAt = observedAt; self.limitId = limitId
+        self.startsAt = startsAt
     }
+
+    /// When the window began: its restart, else its reset minus its nominal length.
+    public func start(minutes: Int) -> Date {
+        startsAt.map { min($0, resetsAt) } ?? resetsAt.addingTimeInterval(-TimeInterval(minutes) * 60)
+    }
+
+    /// The window's real span in seconds, shorter than nominal after an early restart.
+    public func length(minutes: Int) -> TimeInterval { max(resetsAt.timeIntervalSince(start(minutes: minutes)), 60) }
 
     /// Rule 2: a window whose reset passed is unknown, never zero.
     public func isLive(at now: Date) -> Bool { percent != nil && resetsAt > now }
@@ -61,12 +72,21 @@ public enum Merge {
     public static func windows(_ sets: [[Int: Window]], now: Date) -> [Int: Window] {
         var out: [Int: Window] = [:]
         for set in sets {
-            for (m, w) in set where w.isLive(at: now) {
+            for (m, var w) in set where w.isLive(at: now) {
                 if let prev = out[m] {
                     if abs(prev.resetsAt.timeIntervalSince(w.resetsAt)) <= resetJitter, let p = prev.percent, let q = w.percent {
-                        // Rule 10: within one window usage never goes down, so the highest
-                        // wins; another host's newer reading can be stale.
-                        if q < p || (q == p && w.observedAt <= prev.observedAt) { continue }
+                        // Rule 11: a restart later than the other reading replaces it; the
+                        // merged window keeps the latest start.
+                        let latest = [prev.startsAt, w.startsAt].compactMap { $0 }.max()
+                        let restarted = w.startsAt.map { $0 > prev.observedAt } ?? false
+                        let superseded = prev.startsAt.map { $0 > w.observedAt } ?? false
+                        // Rule 10 otherwise: within one window usage never goes down, so the
+                        // highest wins; another host's newer reading can be stale.
+                        if !restarted && (superseded || q < p || (q == p && w.observedAt <= prev.observedAt)) {
+                            out[m]?.startsAt = latest
+                            continue
+                        }
+                        w.startsAt = latest
                     } else if w.observedAt <= prev.observedAt { continue }
                 }
                 out[m] = w
@@ -86,7 +106,8 @@ public enum Merge {
                     var set: [Int: Window] = [:]
                     for (key, w) in limit.windows {
                         guard let m = Int(key) else { continue }
-                        set[m] = Window(percent: w.percent, resetsAt: w.resetsAt, observedAt: w.observedAt, limitId: limit.limitId)
+                        set[m] = Window(percent: w.percent, resetsAt: w.resetsAt, observedAt: w.observedAt, limitId: limit.limitId,
+                                        startsAt: w.startsAt)
                     }
                     pools[id, default: [:]][limit.limitId, default: []].append(set)
                 }

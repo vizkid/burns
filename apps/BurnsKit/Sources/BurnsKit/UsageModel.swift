@@ -70,7 +70,8 @@ public struct UsageModel: Equatable, Sendable {
             let seven = live.filter { $0.key > Merge.fiveHourMax }.max { $0.key < $1.key }
             let tile = SpendTileModel(account: a.id.label, fiveHourPercent: five?.value.percent, fiveHourResetsAt: five?.value.resetsAt,
                                       sevenDayPercent: seven?.value.percent, sevenDayResetsAt: seven?.value.resetsAt,
-                                      fiveHourMinutes: five?.key, sevenDayMinutes: seven?.key,
+                                      fiveHourMinutes: five.map { Int($0.value.length(minutes: $0.key) / 60) },
+                                      sevenDayMinutes: seven.map { Int($0.value.length(minutes: $0.key) / 60) },
                                       onCredits: false, now: now, calendar: calendar)
             return Ring(id: a.id, tile: tile, credits: !a.isQuota, swatch: swatches[a.id.name] ?? .grey)
         }

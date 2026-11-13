@@ -165,3 +165,46 @@ func TestRule11AuthoritativeReplacesAndClears(t *testing.T) {
 	mustValue(t, got[10080], 100)
 	mustValue(t, got[300], 30)
 }
+
+// Rule 11: a lower authoritative reading in the same window starts the window
+// at that reading, and later reports of the window keep that start.
+func TestRule11RestartSetsStart(t *testing.T) {
+	stored := Windows{10080: win(100, 96*time.Hour, time.Hour)}
+	got := Apply(stored, Report{Provider: "claude", At: now, Authoritative: true,
+		Windows: Windows{10080: win(9, 96*time.Hour, 0)}}, now)
+	if s := got[10080].StartsAt; s == nil || !s.Equal(now) {
+		t.Fatalf("start = %v; want now", s)
+	}
+	later := win(12, 96*time.Hour, -time.Minute)
+	got = Apply(got, Report{Provider: "claude", At: now.Add(time.Minute), Windows: Windows{10080: later}}, now)
+	if s := got[10080].StartsAt; s == nil || !s.Equal(now) {
+		t.Fatalf("start after a statusline report = %v; want kept", s)
+	}
+	got = Apply(got, Report{Provider: "claude", At: now.Add(2 * time.Minute), Authoritative: true,
+		Windows: Windows{10080: win(13, 96*time.Hour, -2*time.Minute)}}, now)
+	if s := got[10080].StartsAt; s == nil || !s.Equal(now) {
+		t.Fatalf("start after a higher endpoint reading = %v; want kept", s)
+	}
+	// A new window, with a new reset, has no restart start.
+	got = Apply(got, Report{Provider: "claude", At: now.Add(3 * time.Minute), Authoritative: true,
+		Windows: Windows{10080: win(1, 200*time.Hour, -3*time.Minute)}}, now)
+	if s := got[10080].StartsAt; s != nil {
+		t.Fatalf("new window start = %v; want nil", s)
+	}
+}
+
+// Rule 6 with rule 11, as the apps merge: a restart later than another host's
+// reading replaces it though lower, and the merged window keeps the start.
+func TestMergeRestartBeatsOlderHigher(t *testing.T) {
+	stale := win(100, 96*time.Hour, 2*time.Hour)
+	fresh := win(9, 96*time.Hour, 30*time.Minute)
+	start := now.Add(-time.Hour)
+	fresh.StartsAt = &start
+	for _, sets := range [][]Windows{{{10080: stale}, {10080: fresh}}, {{10080: fresh}, {10080: stale}}} {
+		w := Merge(now, sets...)[10080]
+		mustValue(t, w, 9)
+		if w.StartsAt == nil || !w.StartsAt.Equal(start) {
+			t.Fatalf("start = %v; want %v", w.StartsAt, start)
+		}
+	}
+}

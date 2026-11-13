@@ -81,6 +81,8 @@ CREATE TABLE billed_point (
 CREATE TABLE context (
 	provider TEXT NOT NULL, session TEXT NOT NULL, used INTEGER NOT NULL, size INTEGER NOT NULL,
 	at INTEGER NOT NULL, PRIMARY KEY (provider, session)) WITHOUT ROWID;
+`, `
+ALTER TABLE latest ADD COLUMN starts_at INTEGER;
 `}
 
 // Open opens or creates the store and applies migrations.

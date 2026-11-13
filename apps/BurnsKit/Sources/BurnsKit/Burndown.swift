@@ -61,8 +61,9 @@ public struct Burndown: Equatable, Sendable {
             $0.provider == account.id.provider && $0.account == account.id.name && $0.minutes == m && w.holds($0)
         }
         let charted = line(minutes: m, window: w, readings: mine, now: now)
-        var b = Burndown(account: account.id, line: charted, grid: grid(charted), headline: headline(minutes: m, window: w, now: now, projection: charted.projection))
-        b.windowStart = w.resetsAt.addingTimeInterval(-length(m))
+        var b = Burndown(account: account.id, line: charted, grid: grid(charted, span: w.length(minutes: m)),
+                         headline: headline(minutes: m, window: w, now: now, projection: charted.projection))
+        b.windowStart = w.start(minutes: m)
         b.spent = (w.percent ?? 0) >= 100
         // Any window at 100% counts: the five-hour limit starts paid usage while the week has room.
         b.limitAt = account.liveWindows(at: now).filter { ($0.value.percent ?? 0) >= 100 }.flatMap { minutes, window in
@@ -77,7 +78,8 @@ public struct Burndown: Equatable, Sendable {
     static func length(_ minutes: Int) -> TimeInterval { TimeInterval(minutes) * 60 }
 
     static func line(minutes: Int, window w: Window, readings: [Reading], now: Date) -> Line {
-        let length = length(minutes), start = w.resetsAt.addingTimeInterval(-length)
+        // A restarted window runs from its restart (rule 11), so x 0 is that moment.
+        let length = w.length(minutes: minutes), start = w.start(minutes: minutes)
         func x(_ d: Date) -> Double { min(max(d.timeIntervalSince(start) / length, 0), 1) }
         let used = w.percent ?? 0
         // Readings sample usage that grew between them, so each one is a point on the curve: a flat
@@ -127,10 +129,13 @@ public struct Burndown: Equatable, Sendable {
         return a.left + (b.left - a.left) * (x - a.x) / (b.x - a.x)
     }
 
-    static func grid(_ line: Line) -> [Slot] {
-        let count = line.minutes >= 1440 ? line.minutes / 1440 : max(1, line.minutes / 60)
-        return (0..<count).map { i in
-            let x0 = Double(i) / Double(count), x1 = Double(i + 1) / Double(count)
+    /// Whole days for the week, hours for a five-hour window, counted back from the reset, so a
+    /// restarted window's oldest slot is partial.
+    static func grid(_ line: Line, span: TimeInterval) -> [Slot] {
+        let unit: TimeInterval = line.minutes >= 1440 ? 86_400 : 3_600
+        let count = max(1, Int((span / unit - 1e-9).rounded(.up)))
+        return (0..<count).reversed().map { k in
+            let x0 = max(0, 1 - Double(k + 1) * unit / span), x1 = 1 - Double(k) * unit / span
             return Slot(x0: x0, x1: x1, elapsed: x1 <= line.now + 1e-9)
         }
     }
@@ -140,8 +145,8 @@ public struct Burndown: Equatable, Sendable {
         guard let used = w.percent else { return "Usage unknown" }
         let reset = SpendReset.countdown(to: w.resetsAt, now: now).map { "resets " + $0 }
         if used >= 100 { return (["Budget spent"] + [reset].compactMap { $0 }).joined(separator: " · ") }
-        let pace = SpendPace(usedPercent: used, resetsAt: w.resetsAt, length: length(m), now: now)
-        let parts = [pace.flatMap { current($0) }, outlook(projection, length: length(m), now: now), reset]
+        let pace = SpendPace(usedPercent: used, resetsAt: w.resetsAt, length: w.length(minutes: m), now: now)
+        let parts = [pace.flatMap { current($0) }, outlook(projection, length: w.length(minutes: m), now: now), reset]
         return ([String(format: "%.0f%% left", 100 - used)] + parts.compactMap { $0 }).joined(separator: " · ")
     }
 

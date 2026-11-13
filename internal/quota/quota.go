@@ -16,6 +16,9 @@ type Window struct {
 	Percent    *float64  `json:"percent"`
 	ResetsAt   time.Time `json:"resets_at"`
 	ObservedAt time.Time `json:"observed_at"`
+	// StartsAt is set when the window restarted early and kept its reset (rule 11):
+	// the window then runs from StartsAt, not from its reset minus its length.
+	StartsAt *time.Time `json:"starts_at,omitempty"`
 }
 
 // Windows maps window length in minutes to its window.
@@ -81,10 +84,11 @@ func Apply(stored Windows, r Report, now time.Time) Windows {
 		if !w.Live(now) {
 			continue
 		}
-		if prev, ok := out[m]; ok && prev.Live(now) && (w.ObservedAt.Before(prev.ObservedAt) || Stale(prev, w)) {
+		prev, ok := out[m]
+		if ok && prev.Live(now) && (w.ObservedAt.Before(prev.ObservedAt) || Stale(prev, w)) {
 			continue
 		}
-		out[m] = w
+		out[m] = keepStart(prev, ok, w)
 	}
 	return out
 }
@@ -101,10 +105,18 @@ func Merge(now time.Time, sets ...Windows) Windows {
 			}
 			if prev, ok := out[m]; ok {
 				if SameWindow(prev, w) {
+					// Rule 11: a restart later than the other reading replaces it,
+					// and the merged window keeps the latest start.
+					latest := laterStart(prev.StartsAt, w.StartsAt)
+					restarted := w.StartsAt != nil && w.StartsAt.After(prev.ObservedAt)
+					superseded := prev.StartsAt != nil && prev.StartsAt.After(w.ObservedAt)
 					higher := *w.Percent > *prev.Percent
-					if !higher && (*w.Percent < *prev.Percent || !w.ObservedAt.After(prev.ObservedAt)) {
+					if !restarted && (superseded || !higher && (*w.Percent < *prev.Percent || !w.ObservedAt.After(prev.ObservedAt))) {
+						prev.StartsAt = latest
+						out[m] = prev
 						continue
 					}
+					w.StartsAt = latest
 				} else if !w.ObservedAt.After(prev.ObservedAt) {
 					continue
 				}
@@ -126,9 +138,30 @@ func applyAuthoritative(stored Windows, r Report, now time.Time) Windows {
 		}
 	}
 	for m, w := range r.Windows {
-		if _, kept := out[m]; !kept && w.Live(now) {
-			out[m] = w
+		if _, kept := out[m]; kept || !w.Live(now) {
+			continue
 		}
+		prev, ok := stored[m]
+		if ok && Stale(prev, w) {
+			start := w.ObservedAt
+			w.StartsAt = &start
+		}
+		out[m] = keepStart(prev, ok, w)
 	}
 	return out
+}
+
+// keepStart carries a restarted window's start to a later reading of the same window.
+func keepStart(prev Window, ok bool, w Window) Window {
+	if ok && w.StartsAt == nil && SameWindow(prev, w) {
+		w.StartsAt = prev.StartsAt
+	}
+	return w
+}
+
+func laterStart(a, b *time.Time) *time.Time {
+	if a == nil || (b != nil && b.After(*a)) {
+		return b
+	}
+	return a
 }

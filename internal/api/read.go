@@ -12,10 +12,11 @@ import (
 )
 
 type windowDoc struct {
-	Percent    *float64  `json:"percent"`
-	State      string    `json:"state"`
-	ResetsAt   time.Time `json:"resets_at"`
-	ObservedAt time.Time `json:"observed_at"`
+	Percent    *float64   `json:"percent"`
+	State      string     `json:"state"`
+	ResetsAt   time.Time  `json:"resets_at"`
+	ObservedAt time.Time  `json:"observed_at"`
+	StartsAt   *time.Time `json:"starts_at,omitempty"`
 }
 
 type limitDoc struct {
@@ -55,7 +56,7 @@ func (s *Server) usage(w http.ResponseWriter, r *http.Request) {
 			}
 			ld := limitDoc{LimitID: l.LimitID, Windows: map[string]windowDoc{}, Credits: l.Credits}
 			for m, win := range l.Windows {
-				wd := windowDoc{State: "unknown", ResetsAt: win.ResetsAt, ObservedAt: win.ObservedAt}
+				wd := windowDoc{State: "unknown", ResetsAt: win.ResetsAt, ObservedAt: win.ObservedAt, StartsAt: win.StartsAt}
 				if v, ok := win.Value(now); ok {
 					wd.Percent, wd.State = &v, "live"
 				}

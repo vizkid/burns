@@ -43,8 +43,9 @@ func (s *Store) ApplyReports(account, limitID string, reports []quota.Report, no
 		return err
 	}
 	for m, w := range next {
-		if _, err := tx.Exec(`INSERT INTO latest VALUES (?,?,?,?,?,?,?)`, provider, account, limitID, m,
-			*w.Percent, nanos(w.ResetsAt), nanos(w.ObservedAt)); err != nil {
+		if _, err := tx.Exec(`INSERT INTO latest (provider, account, limit_id, minutes, percent, resets_at, observed_at, starts_at)
+			VALUES (?,?,?,?,?,?,?,?)`, provider, account, limitID, m,
+			*w.Percent, nanos(w.ResetsAt), nanos(w.ObservedAt), startNanos(w.StartsAt)); err != nil {
 			return err
 		}
 	}
@@ -53,7 +54,7 @@ func (s *Store) ApplyReports(account, limitID string, reports []quota.Report, no
 
 func loadWindows(tx *sql.Tx, provider, account, limitID string) (quota.Windows, error) {
 	stored := quota.Windows{}
-	rows, err := tx.Query(`SELECT minutes, percent, resets_at, observed_at FROM latest
+	rows, err := tx.Query(`SELECT minutes, percent, resets_at, observed_at, starts_at FROM latest
 		WHERE provider = ? AND account = ? AND limit_id = ?`, provider, account, limitID)
 	if err != nil {
 		return nil, err
@@ -63,10 +64,11 @@ func loadWindows(tx *sql.Tx, provider, account, limitID string) (quota.Windows, 
 		var m int
 		var pct float64
 		var reset, obs int64
-		if err := rows.Scan(&m, &pct, &reset, &obs); err != nil {
+		var start sql.NullInt64
+		if err := rows.Scan(&m, &pct, &reset, &obs, &start); err != nil {
 			return nil, err
 		}
-		stored[m] = quota.Window{Percent: &pct, ResetsAt: fromNanos(reset), ObservedAt: fromNanos(obs)}
+		stored[m] = quota.Window{Percent: &pct, ResetsAt: fromNanos(reset), ObservedAt: fromNanos(obs), StartsAt: fromStart(start)}
 	}
 	return stored, rows.Err()
 }
@@ -78,7 +80,7 @@ func sameWindows(a, b quota.Windows) bool {
 	for m, x := range a {
 		y, ok := b[m]
 		if !ok || x.Percent == nil || y.Percent == nil || *x.Percent != *y.Percent ||
-			!x.ResetsAt.Equal(y.ResetsAt) || !x.ObservedAt.Equal(y.ObservedAt) {
+			!x.ResetsAt.Equal(y.ResetsAt) || !x.ObservedAt.Equal(y.ObservedAt) || startNanos(x.StartsAt) != startNanos(y.StartsAt) {
 			return false
 		}
 	}
@@ -121,7 +123,7 @@ func (s *Store) Limits() ([]Limit, error) {
 		}
 		return byKey[k]
 	}
-	rows, err := s.rdb.Query(`SELECT provider, account, limit_id, minutes, percent, resets_at, observed_at FROM latest
+	rows, err := s.rdb.Query(`SELECT provider, account, limit_id, minutes, percent, resets_at, observed_at, starts_at FROM latest
 		ORDER BY provider, account, limit_id, minutes`)
 	if err != nil {
 		return nil, err
@@ -131,11 +133,12 @@ func (s *Store) Limits() ([]Limit, error) {
 		var m int
 		var pct float64
 		var reset, obs int64
-		if err := rows.Scan(&p, &a, &l, &m, &pct, &reset, &obs); err != nil {
+		var start sql.NullInt64
+		if err := rows.Scan(&p, &a, &l, &m, &pct, &reset, &obs, &start); err != nil {
 			rows.Close()
 			return nil, err
 		}
-		get(p, a, l).Windows[m] = quota.Window{Percent: &pct, ResetsAt: fromNanos(reset), ObservedAt: fromNanos(obs)}
+		get(p, a, l).Windows[m] = quota.Window{Percent: &pct, ResetsAt: fromNanos(reset), ObservedAt: fromNanos(obs), StartsAt: fromStart(start)}
 	}
 	err = rows.Err()
 	rows.Close()
@@ -162,4 +165,20 @@ func (s *Store) Limits() ([]Limit, error) {
 		out = append(out, *byKey[k])
 	}
 	return out, rows.Err()
+}
+
+// startNanos stores a restart start, or NULL for none.
+func startNanos(t *time.Time) any {
+	if t == nil {
+		return nil
+	}
+	return nanos(*t)
+}
+
+func fromStart(n sql.NullInt64) *time.Time {
+	if !n.Valid {
+		return nil
+	}
+	t := fromNanos(n.Int64)
+	return &t
 }

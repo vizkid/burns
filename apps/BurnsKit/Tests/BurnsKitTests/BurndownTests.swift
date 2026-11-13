@@ -185,3 +185,36 @@ struct BurndownTests {
         #expect(Burndown.build(account: usage([:]), readings: [], now: now).headline == "Usage unknown")
     }
 }
+
+/// Rule 11: a window that restarted early and kept its reset runs from its `startsAt`, not from a
+/// full week before the reset. The steady line, the pace and the day grid cover the same span.
+struct RestartedWindowTests {
+    let now = Fixture.now, h = Fixture.h
+    let id = AccountID(provider: "claude", name: "alpha")
+
+    @Test func lineAndPaceRunFromTheRestart() throws {
+        // Restarted 1 hour ago, resets in 100 hours: a 101-hour window, 9% used in its first hour.
+        let reset = now + 100 * h, start = now - h
+        var w = Window(percent: 9, resetsAt: reset, observedAt: now)
+        w.startsAt = start
+        let u = AccountUsage(id: id, kind: "subscription", windows: [10080: w])
+        let b = Burndown.build(account: u, readings: [], now: now)
+        let line = try #require(b.line)
+        #expect(b.windowStart == start)
+        #expect(abs(line.now - 1.0 / 101) < 1e-9)
+        #expect(line.actual.first == Point(x: 0, left: 100))
+        // 9% in 1% of the window is far over the steady line, never "under".
+        #expect(b.headline.contains("over"))
+        // Whole days back from the reset: four full days and one partial, oldest first.
+        #expect(b.grid.count == 5)
+        #expect(b.grid.first?.x0 == 0)
+        #expect(abs((b.grid.last?.x0 ?? 0) - (1 - 24.0 / 101)) < 1e-9)
+    }
+
+    @Test func aWindowWithoutRestartIsUnchanged() throws {
+        let w = Window(percent: 30, resetsAt: now + 72 * h, observedAt: now)
+        let b = Burndown.build(account: AccountUsage(id: id, kind: "subscription", windows: [10080: w]), readings: [], now: now)
+        #expect(b.windowStart == now - 96 * h)
+        #expect(b.grid.count == 7)
+    }
+}

@@ -69,3 +69,31 @@ struct MergeTests {
         #expect(rs.map(\.percent) == [20, 25, 30])
     }
 }
+
+/// Rule 6 with rule 11: a host whose window restarted after another host's reading wins,
+/// though its percent is lower; that reading predates the restart. The latest start is kept.
+struct RestartMergeTests {
+    let now = Fixture.now, h = Fixture.h
+
+    @Test func restartBeatsAnOlderHigherReading() {
+        let reset = now + 100 * h
+        let stale = Window(percent: 100, resetsAt: reset, observedAt: now - 2 * h)
+        var fresh = Window(percent: 9, resetsAt: reset, observedAt: now - h / 2)
+        fresh.startsAt = now - h
+        for sets in [[[10080: stale], [10080: fresh]], [[10080: fresh], [10080: stale]]] {
+            let w = Merge.windows(sets, now: now)[10080]
+            #expect(w?.percent == 9)
+            #expect(w?.startsAt == now - h)
+        }
+    }
+
+    @Test func aHigherReadingAfterTheRestartStillWinsAndKeepsTheStart() {
+        let reset = now + 100 * h
+        var restarted = Window(percent: 9, resetsAt: reset, observedAt: now - h / 2)
+        restarted.startsAt = now - h
+        let later = Window(percent: 12, resetsAt: reset, observedAt: now - h / 4)
+        let w = Merge.windows([[10080: restarted], [10080: later]], now: now)[10080]
+        #expect(w?.percent == 12)
+        #expect(w?.startsAt == now - h)
+    }
+}
