@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/vizkid/burns/internal/launch"
+	"github.com/vizkid/burns/internal/theme"
 	"github.com/vizkid/rexkit/rex"
 )
 
@@ -53,6 +54,8 @@ type Request struct {
 	// TrustWatch is how long spawn reads a new Claude pane's screen for the
 	// folder-trust dialog once Claude runs. Zero skips the read.
 	TrustWatch time.Duration
+	// Theme is the account's pane colours, applied to the new block. Nil makes no call.
+	Theme *theme.Colours
 }
 
 // Result names the new pane. Agent is the provider once it runs, else empty.
@@ -60,7 +63,8 @@ type Result struct {
 	SessionID, SessionLabel string
 	Block, Label            string
 	Agent                   string
-	Created                 bool // the session was created on the target host
+	Created                 bool  // the session was created on the target host
+	ThemeErr                error // why the theme was not applied; the agent starts anyway
 }
 
 // Spawn opens the pane on target, names it, and waits for the agent. local is
@@ -82,10 +86,25 @@ func Spawn(ctx context.Context, local, target Rex, req Request) (Result, error) 
 	if err != nil {
 		return res, err
 	}
+	res.ThemeErr = applyTheme(ctx, target, res.SessionID, res.Block, req.Theme)
 	if res.Agent, err = wait(ctx, target, res.SessionID, res.Block, req); err != nil {
 		return res, err
 	}
 	return res, watchTrust(ctx, target, res.SessionID, res.Block, req)
+}
+
+// applyTheme sets the new block's colours on its own host, which need not have
+// the Rex app (docs/SPEC.md, "Pane themes").
+func applyTheme(ctx context.Context, r Rex, session, block string, c *theme.Colours) error {
+	if c == nil {
+		return nil
+	}
+	args, err := json.Marshal(c)
+	if err != nil {
+		return err
+	}
+	_, err = r.Run(ctx, "block", "call", "-s", session, "-b", block, "set_theme", string(args))
+	return err
 }
 
 // watchTrust reads a new Claude pane's screen for TrustWatch. Claude is the

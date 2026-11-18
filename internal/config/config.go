@@ -39,6 +39,9 @@ var settingPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._:-]{0,63}$`)
 
 var envPattern = regexp.MustCompile(`^[A-Z_][A-Z0-9_]{0,63}$`)
 
+// themePattern is a Rex theme id, such as petrol-lagoon.
+var themePattern = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,63}$`)
+
 var currencyPattern = regexp.MustCompile(`^[A-Z]{3}$`)
 
 // Account is one provider and account name with its agent home.
@@ -53,7 +56,9 @@ type Account struct {
 	Kind       string   `json:"kind"`
 	Colour     string   `json:"colour,omitempty"`
 	Emoji      string   `json:"emoji,omitempty"`
-	Launch     *Launch  `json:"launch,omitempty"`
+	// Theme is a Rex theme id for the account's agent panes (docs/SPEC.md, "Pane themes").
+	Theme  string  `json:"theme,omitempty"`
+	Launch *Launch `json:"launch,omitempty"`
 	// CreditPrice is what this account paid per credit. Plans differ, and no API states it.
 	CreditPrice *CreditPrice `json:"credit_price,omitempty"`
 }
@@ -143,6 +148,8 @@ func (c Config) validate() error {
 			problem = "colour must be purple, teal, blue, green, pink or grey"
 		case utf8.RuneCountInString(a.Emoji) > maxEmoji || strings.ContainsFunc(a.Emoji, unicode.IsControl):
 			problem = "emoji must be one emoji"
+		case a.Theme != "" && !themePattern.MatchString(a.Theme):
+			problem = "theme must be a Rex theme id: lowercase letters, digits and hyphens"
 		case seen[a.Provider+"/"+a.Name]:
 			problem = "duplicate account"
 		case a.CreditPrice != nil && (a.CreditPrice.Amount <= 0 || !currencyPattern.MatchString(a.CreditPrice.Currency)):

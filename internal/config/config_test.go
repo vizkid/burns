@@ -61,6 +61,8 @@ func TestLoadRejectsBadFiles(t *testing.T) {
 		"two documents": `{"accounts":[]}{"accounts":[]}`,
 		"empty extra":   `{"accounts":[{"provider":"claude","name":"a","home":".c","extra_homes":[" "],"kind":"subscription"}]}`,
 		"home twice":    `{"accounts":[{"provider":"claude","name":"a","home":".c","kind":"subscription"},{"provider":"claude","name":"b","home":".d","extra_homes":[".c"],"kind":"subscription"}]}`,
+		"bad theme":     `{"accounts":[{"provider":"claude","name":"a","home":".c","kind":"subscription","theme":"Ink Meridian"}]}`,
+		"flag theme":    `{"accounts":[{"provider":"claude","name":"a","home":".c","kind":"subscription","theme":"-x"}]}`,
 	} {
 		if _, err := load(t, body); err == nil {
 			t.Errorf("%s: want error", name)
@@ -89,6 +91,14 @@ func TestExtraHomesBelongToTheAccount(t *testing.T) {
 	}
 	if a, ok := c.ForPath("/home/u/.claude-personal/projects/p/s.jsonl"); !ok || a.Name != "personal" {
 		t.Fatalf("main home = %+v, %v", a, ok)
+	}
+}
+
+// A theme is a Rex theme id, kept as written.
+func TestThemeIsARexThemeID(t *testing.T) {
+	c, err := Parse([]byte(`{"accounts":[{"provider":"codex","name":"a","home":".c","kind":"subscription","theme":"petrol-lagoon"}]}`), "/home/u")
+	if err != nil || c.Accounts[0].Theme != "petrol-lagoon" {
+		t.Fatalf("theme = %+v, %v", c.Accounts, err)
 	}
 }
 

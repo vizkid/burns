@@ -84,6 +84,7 @@ func startAgent(args []string, errOut io.Writer, getenv func(string) string) err
 	if err := os.MkdirAll(home, 0o700); err != nil {
 		return err
 	}
+	themeOwnPane(a, user, getenv("REX_SESSION"), getenv("REX_BLOCK"))
 	tools, problems := launch.LoadTools(filepath.Join(dir, "tools.d"))
 	for _, p := range problems {
 		fmt.Fprintln(errOut, "burns:", p)

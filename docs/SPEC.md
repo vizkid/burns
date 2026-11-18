@@ -302,6 +302,7 @@ Shared source uses example names only.
 | `home` | Agent home, absolute or relative to the user's home, such as `.codex-work` |
 | `extra_homes` | Optional. Other homes signed in to the same account, such as the CLI's default `.claude` or `.codex`. They share one quota, so they are one account. Each home belongs to one account only. |
 | `kind` | `subscription`, or `azure` (Codex only) |
+| `theme` | Optional. A Rex theme id, such as `petrol-lagoon`, for the account's agent panes. See "Pane themes". |
 
 Unknown fields are errors. File order is the settings order used for ties.
 A statusline post or file belongs to the account one of whose homes contains its path, matched as a whole path component.
@@ -785,6 +786,20 @@ Tested live on 2026-11-03 from a Claude pane on Stiletto, with Haiku:
 | `astra` before words-only matching | Refused, listing the account's models. That led to the rule that a name without digits matches on words alone. |
 
 Roar drives Rex through a Go client of its own: Rex's server API over a WebSocket, plus wrappers for the `rex` CLI. It also resolves names such as `label@session` and `host:` addresses. Burns starts a `rex` process for each call, and on 2026-11-02 those calls were killed under load 24 times. A shared module would give Burns roar's addressing and one connection instead of a process per call.
+
+### Pane themes (Viz, 2026-11-18)
+
+An agent pane takes its account's colours from Rex, so each account's panes look alike on every host. The shell launchers set these colours before; they no longer do.
+
+| Rule | Detail | Why |
+|---|---|---|
+| Field | An account's optional `theme` names a Rex theme id: lowercase letters, digits and hyphens. No `theme` means no call, and the pane keeps the app's theme. | Rex ships its themes by id. |
+| Colours | Burns reads the theme from Rex's design tokens, `themes.json` in the Rex app bundle (`Contents/Resources/SuperUI_SuperDesignTokens.bundle/Contents/Resources/themes.json`). It looks in `/Applications` and `~/Applications` for `Rex.app` and `Rex Beta.app`. It takes `semantic.terminalBackground`, `terminalForeground` and `terminalCursor`, the 256 `palette` entries, and `appearance` as the scheme. | These are Display P3 values, the same space as the palette, so the pane matches Rex with "Use Display P3 Color Space" on. Each channel becomes `round(clamp(c) × 255)` in `#rrggbb`. |
+| Call | `rex [-S H] block call -s S -b B set_theme {background, foreground, cursor, scheme, palette}`, with the palette as `index=#rrggbb`. | Rex's own per-block call. `client.theme.change` is app-wide. |
+| Launch | `smithers launch` applies its account's theme to its own block before it starts the agent, when that host has the Rex app. | Covers the Mac panel's launches and spawns onto hosts with the app. |
+| Spawn | `smithers spawn` applies the account's theme to each pane it opens, on any host, once the pane exists. It resolves the theme on the caller's host. | A host without the Rex app, such as a Linux host, cannot resolve a theme. Its panes are spawned from a Mac. |
+| Failure | A missing themes file, an unknown id or a refused call never stops a launch or spawn. Launch writes the reason to `launch.log`; spawn prints a warning. | Colour is cosmetic. |
+| Scope | Only terminal colours change. Rex's tab tint and borders follow the app theme. A CLI typed into a plain pane gets no theme. | `set_theme` covers the terminal only. |
 
 ### Bindings from roar (Viz, 2026-11-06)
 

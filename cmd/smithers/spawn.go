@@ -119,8 +119,9 @@ func (sp *spawner) setUp(getenv func(string) string) int {
 }
 
 func (sp *spawner) request(provider, account, model, label, tab string) spawn.Request {
+	emoji, colours := accountLook(sp.home, provider, account, sp.errOut)
 	return spawn.Request{Provider: provider, Account: account, Model: model, Label: label, Tab: tab, Dir: sp.dir,
-		Emoji: accountEmoji(sp.home, provider, account), CallerSession: sp.session, CallerBlock: sp.block,
+		Emoji: emoji, Theme: colours, CallerSession: sp.session, CallerBlock: sp.block,
 		Wait: sp.wait, Every: time.Second, TrustWatch: trustWatch}
 }
 
@@ -139,6 +140,9 @@ func report(out, errOut io.Writer, host string, res spawn.Result, err error) int
 		return 1
 	}
 	addr := roarAddress(host, res.Label, res.SessionLabel)
+	if res.ThemeErr != nil {
+		fmt.Fprintf(errOut, "warning: pane %s keeps the app's colours: %v\n", addr, res.ThemeErr)
+	}
 	if err != nil {
 		fmt.Fprintf(errOut, "spawn: pane %s (%s) opened on %s, but %v.\n", addr, res.Block, where, err)
 		switch {
@@ -189,15 +193,6 @@ func roarAddress(host, label, session string) string {
 		return host + ":" + label + "@" + session
 	}
 	return label + "@" + session
-}
-
-func accountEmoji(home, provider, name string) string {
-	cfg, err := config.Load(filepath.Join(config.Dir(home), "accounts.json"), home)
-	if err != nil {
-		return ""
-	}
-	a, _ := cfg.Find(provider, name)
-	return a.Emoji
 }
 
 // warnQuota says so when the account's live window is spent or unknown. Viz,
