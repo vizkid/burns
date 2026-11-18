@@ -802,6 +802,8 @@ An agent pane takes its account's colours from a Rex theme, so each account's pa
 | Failure | A missing themes file, an unknown id or a bad `--colours` never stops a launch or spawn. Launch writes the reason to `launch.log`; spawn prints a warning. | Colour is cosmetic. |
 | Scope | Only terminal colours change. Rex's tab tint and borders follow the app theme. A program that resets the terminal returns it to the app's colours. A shell launcher themes the terminal it runs in, inside Rex or not. A CLI started without `smithers launch` gets no theme. | The codes set the terminal's current colours. |
 
+Built 2026-11-18 in `b899936`. The picker lists the 41 themes of the Rex app on this Mac. A Mac menu draws only images, so each swatch is rendered to an image. Deploying to a host without the Rex app means copying the Mac's `themes.json` to `~/.config/burns/themes.json` there, trimmed to each theme's `id`, `name`, `appearance`, `palette` and terminal colours. ColonelK holds that copy, made from Rex Beta's file of 2026-11-17. Tested live on ColonelK: a Claude launch from a plain shell, outside Rex, wrote petrol-lagoon's background. A newer Rex release needs a fresh copy, or such hosts keep the older colours.
+
 ### Shell launchers (Viz, 2026-11-18; built the same day)
 
 The accounts file is the only place an account's launch is defined, and `smithers launch` is the only code that starts an agent. Viz, 2026-11-18: "I want burns and the launch aliases to be in sync." The dotfiles generate one shell launcher per account from the accounts file: `c<name>` for Claude and `x<name>` for Codex. Each runs `smithers launch --no-pause --provider P --account NAME -- "$@"`.
