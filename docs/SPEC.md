@@ -169,7 +169,7 @@ Today the apps only read accounts, and only a file edit on each host changes the
 | Every account applies to every host. Homes are relative to the user's home, so one path works on each host. | Viz, 2026-10-31: accounts work on any host by default. |
 | The apps propagate the list. On each refresh an app reads each host's accounts with `GET /accounts` and, when they differ from the central list, writes it with `PUT /accounts`. A host that was offline catches up when an app next reaches it. | Hosts never need iCloud. `smithersd` still reads a local file at startup, so a host keeps working with no app running. |
 | `PUT` will replace the file's `accounts` only, once the file has `providers` (not built: the file has only `accounts` today, so `PUT` replaces the whole file). The file's `providers`, each provider's CLI on that host, stay as the host set them. | A CLI's path is a fact of one host, not of the account. |
-| The central list wins, but never silently. An app remembers the hash it last wrote to each host. If the host's file changed since, by hand or by an agent, the app shows the difference and offers to import it into the central list or overwrite it. A write never deletes fields the app does not edit: an account keeps `launch` and any other field as read. Before each pass, a field that host copies hold and the list's copy lacks joins the list, when every host that has it agrees on its value (2026-11-04). The apps never edit those fields, so a missing one was added on a host, and taking it loses nothing. A host whose copy still holds fields that the list's copy does not match, because hosts disagree, is held for review even when its hash matches. Overwrite in the review is the only write that drops them. | Hand edits and the README setup prompt stay useful, and nothing is lost unseen. |
+| The central list wins, but never silently. An app remembers the hash it last wrote to each host. If the host's file changed since, by hand or by an agent, the app shows the difference and offers to import it into the central list or overwrite it. A write never deletes fields the app does not edit: an account keeps `launch` and any other field as read. Before each pass, a field that host copies hold and the list's copy lacks joins the list, when every host that has it agrees on its value (2026-11-04). The apps never edit those fields, so a missing one was added on a host, and taking it loses nothing. A host whose copy still holds fields that the list's copy does not match, because hosts disagree, is held for review even when its hash matches. Overwrite in the review is the only write that drops them. | Hand edits and the setup guide's agent prompt (`docs/SETUP.md`) stay useful, and nothing is lost unseen. |
 | On first use, the app imports every host's accounts into the central list, matched by provider and name. If two hosts give one account different homes, the app asks which to keep. | Existing hosts already have files. |
 | `PUT` carries `If-Match` with the `ETag` that `GET` returned, a hash of the file. A mismatch answers 412: the app reads again and applies the rule above. | Another device, or a hand edit, may have changed the file between the read and the write. |
 | An account with none of its homes on a host, `home` or `extra_homes`, is "not set up" there. `PUT` accepts it, and `GET /usage` lists it with `set_up: false` and no limits. Each scan already skips a missing home, so collecting starts once the home appears, without a restart. | Accounts exist everywhere, so a missing home is expected, not an error. No usage there is unknown, never zero. A launch creates the home while `smithersd` runs. |
@@ -962,7 +962,7 @@ Both run beside Penfold's forwarder and hooks. Adding them does not wait for the
 
 ### Installing
 
-`make install` builds both binaries and copies them to `~/.local/bin`. On macOS it then writes the login agent `~/Library/LaunchAgents/com.vizkid.burns.smithersd.plist` and restarts it. Run it again to upgrade.
+`make install` builds both binaries and copies them to `~/.local/bin`. On macOS it then writes the login agent `~/Library/LaunchAgents/com.vizkid.burns.smithersd.plist` and restarts it. Run it again to upgrade. `docs/SETUP.md` is the operator's guide to these steps, with a prompt an agent can follow.
 
 | Item | Value |
 |---|---|
@@ -1072,6 +1072,7 @@ Checked on Stiletto on 2026-10-28 with `make check` green and `smithersd` readin
 
 ## Cross-references
 
+- Setup guide and agent prompt: `docs/SETUP.md`
 - Rex decision record: `rex/decisions.md`, "Burns: picker direction"
 - Penfold launch: `docs/specs/LAUNCH_SPEC.md`, sections "Launcher ownership", "Models", "Launch confirmation"
 - Penfold quota: `docs/specs/CLAUDE_QUOTA_INGESTION_SPEC.md`, `docs/specs/TOKEN_BURN_SPEC.md`
