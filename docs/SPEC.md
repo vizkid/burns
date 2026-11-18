@@ -798,9 +798,9 @@ An agent pane takes its account's colours from a Rex theme, so each account's pa
 | Launch | `smithers launch` writes the colours into its own pane before it starts the agent: OSC 4 for each palette entry, then OSC 10, 11 and 12 for foreground, background and cursor. It resolves the theme on its own host, unless spawn passed `--colours`. | The pane's own program sets them, so they apply whichever Rex client owns the pane, such as the Mac app showing it. |
 | Spawn | `smithers spawn` resolves the account's theme on the caller's host and passes it as `smithers launch --colours`: background, foreground, cursor and the palette, as 259 comma-separated `rrggbb`. Launch refuses any other form. | A host without the Rex app, such as a Linux host, cannot resolve a theme. Its panes are spawned from a Mac. |
 | Failure | A missing themes file, an unknown id or a bad `--colours` never stops a launch or spawn. Launch writes the reason to `launch.log`; spawn prints a warning. | Colour is cosmetic. |
-| Scope | Only terminal colours change. Rex's tab tint and borders follow the app theme. A program that resets the terminal returns it to the app's colours. A CLI typed into a plain pane gets no theme. | The codes set the terminal's current colours. |
+| Scope | Only terminal colours change. Rex's tab tint and borders follow the app theme. A program that resets the terminal returns it to the app's colours. A shell launcher themes the terminal it runs in, inside Rex or not. A CLI started without `smithers launch` gets no theme. | The codes set the terminal's current colours. |
 
-### Shell launchers (Viz, 2026-11-18)
+### Shell launchers (Viz, 2026-11-18; built the same day)
 
 The accounts file is the only place an account's launch is defined, and `smithers launch` is the only code that starts an agent. Viz, 2026-11-18: "I want burns and the launch aliases to be in sync." The dotfiles generate one shell launcher per account from the accounts file: `c<name>` for Claude and `x<name>` for Codex. Each runs `smithers launch --no-pause --provider P --account NAME -- "$@"`.
 
@@ -813,7 +813,7 @@ The accounts file is the only place an account's launch is defined, and `smither
 | Pause | `--no-pause` makes a failed launch exit at once with status 1, instead of waiting for Return. | The pause keeps a new Rex pane open so the reason stays visible. A launcher runs in a shell that stays open anyway. |
 | Permission mode | Claude accounts set `launch.permission_mode: "auto"` in each host's accounts file. | The launchers passed `--permission-mode auto`. This is configuration, not code. |
 
-#### Account icons in the apps (Viz, 2026-11-18)
+#### Account icons in the apps (Viz, 2026-11-18; built the same day)
 
 Viz, 2026-11-18: icons need an SF Symbols picker, driven in Burns. Rex shows no SF Symbol: its labels and titles are text, and the macOS system font draws a symbol's private-use character as an empty box. So each icon the picker offers is an SF Symbol paired with a Unicode glyph that looks like it.
 
@@ -823,6 +823,8 @@ Viz, 2026-11-18: icons need an SF Symbols picker, driven in Burns. Rex shows no 
 | Picker | Settings' Icon row opens a grid of the catalogue's symbols, drawn in the account's swatch colour. Picking one sets `symbol` and sets `emoji` to its glyph. "Use Default" clears both. | One choice drives the apps, the tab label and the title. |
 | Catalogue | A fixed list in BurnsKit of symbols with glyphs: circles, halves, squares, diamonds, triangles, stars, hexagons and a few marks. Each glyph is one character with no emoji presentation. A test checks that each symbol exists on the Mac and each glyph is text. | A glyph with emoji presentation would bring the emoji back. |
 | Showing | Where the apps show an account, they draw its `symbol` in its swatch colour. An account with only an `emoji` shows that text. With neither, the account shows `circle.fill`, and its tab label and title use `●`. | Older accounts keep their emoji until someone picks an icon. |
+
+Built 2026-11-18 in `ead894a` and deployed to every host. Each host's accounts file holds `◐` `circle.lefthalf.filled` for viz, `◆` `diamond.fill` for nfx and `▲` `triangle.fill` for azure, with `permission_mode: "auto"` on the Claude accounts and `project: "stance"` on the azure credential. Tested live on one host, outside Rex: a Claude launch set the title `🌗 burns · claude viz`, applied the theme and passed `--version` to Claude; `--no-pause` with an unknown account exited 1 at once. The catalogue's tests check each symbol on macOS and each glyph against Unicode's emoji property. Settings was rendered in light and dark. Not yet tested live: the azure launch through `cop run --project`, and the generated launchers, which the dotfiles owner tests per alias.
 
 ### Bindings from roar (Viz, 2026-11-06)
 
