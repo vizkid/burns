@@ -9,6 +9,8 @@ public struct AccountGroup: Identifiable, Equatable, Sendable {
     public var emoji: String
     /// The icon's SF Symbol. Nil for an account that has only an older emoji.
     public var symbol: String?
+    /// The Rex theme id, shared by the name's providers like the icon.
+    public var theme: String?
     public var id: String { name }
 
     /// Names in list order. A name with no colour takes the next unused swatch, and one with no
@@ -25,7 +27,8 @@ public struct AccountGroup: Identifiable, Equatable, Sendable {
             let standard = SymbolCatalogue.standard
             return AccountGroup(name: name, entries: entries, swatch: swatch,
                                 emoji: owner?.emoji ?? SymbolCatalogue.all.first { $0.symbol == owner?.symbol }?.glyph ?? standard.glyph,
-                                symbol: owner == nil ? standard.symbol : owner?.symbol)
+                                symbol: owner == nil ? standard.symbol : owner?.symbol,
+                                theme: entries.compactMap(\.theme).first)
         }
     }
 
@@ -101,6 +104,7 @@ public struct AccountPage: View {
                 Section("Appearance") {
                     LabeledContent("Colour") { swatches(group) }
                     LabeledContent("Icon") { SymbolPicker(group: group) { item in update { SymbolCatalogue.apply(item, to: &$0) } } }
+                    LabeledContent("Theme") { ThemePicker(current: group.theme, themes: RexTheme.onThisMac) { id in update { $0.theme = id } } }
                 }
                 ForEach(group.entries) { entry in
                     Section(entry.id.label) {

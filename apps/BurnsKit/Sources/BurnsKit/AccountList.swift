@@ -13,6 +13,8 @@ public struct CentralAccount: Codable, Equatable, Sendable, Identifiable {
     public var emoji: String?
     /// The icon's SF Symbol, drawn by the apps.
     public var symbol: String?
+    /// The Rex theme id of the account's panes (docs/SPEC.md, "Pane themes").
+    public var theme: String?
     /// Every field the app does not edit, such as `launch`, kept as read. The app writes the whole
     /// file, so a field it dropped here would be deleted from the host.
     public var extra: [String: JSONValue]
@@ -26,7 +28,7 @@ public struct CentralAccount: Codable, Equatable, Sendable, Identifiable {
     }
 
     enum CodingKeys: String, CodingKey, CaseIterable {
-        case provider, name, home, kind, colour, emoji, symbol
+        case provider, name, home, kind, colour, emoji, symbol, theme
         case extraHomes = "extra_homes"
     }
 
@@ -41,6 +43,7 @@ public struct CentralAccount: Codable, Equatable, Sendable, Identifiable {
         colour = try c.decodeIfPresent(String.self, forKey: .colour)
         emoji = try c.decodeIfPresent(String.self, forKey: .emoji)
         symbol = try c.decodeIfPresent(String.self, forKey: .symbol)
+        theme = try c.decodeIfPresent(String.self, forKey: .theme)
         let all = try decoder.container(keyedBy: FieldName.self)
         let known = Set(CodingKeys.allCases.map(\.rawValue))
         extra = try all.allKeys.filter { !known.contains($0.stringValue) }.reduce(into: [:]) { out, key in
@@ -58,6 +61,7 @@ public struct CentralAccount: Codable, Equatable, Sendable, Identifiable {
         try c.encodeIfPresent(colour, forKey: .colour)
         try c.encodeIfPresent(emoji, forKey: .emoji)
         try c.encodeIfPresent(symbol, forKey: .symbol)
+        try c.encodeIfPresent(theme, forKey: .theme)
         var rest = encoder.container(keyedBy: FieldName.self)
         for (name, value) in extra { try rest.encode(value, forKey: FieldName(name)) }
     }

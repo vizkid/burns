@@ -69,3 +69,21 @@ func TestLaunchLogsAThemeItCannotApply(t *testing.T) {
 		t.Fatalf("wrote %q", out.String())
 	}
 }
+
+// A host without the Rex app reads the copy in the Burns config folder.
+func TestThemeFileFallsBackToTheConfigCopy(t *testing.T) {
+	dir := t.TempDir()
+	if got := themeSource("/app/themes.json", dir); got != "/app/themes.json" {
+		t.Fatalf("app file: %q", got)
+	}
+	if got := themeSource("", dir); got != "" {
+		t.Fatalf("no copy: %q", got)
+	}
+	copyPath := filepath.Join(dir, "themes.json")
+	if err := os.WriteFile(copyPath, []byte("[]"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if got := themeSource("", dir); got != copyPath {
+		t.Fatalf("copy: %q", got)
+	}
+}

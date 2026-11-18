@@ -4,14 +4,30 @@ import (
 	"cmp"
 	"fmt"
 	"io"
+	"os"
 	"path/filepath"
 
 	"github.com/vizkid/burns/internal/config"
 	"github.com/vizkid/burns/internal/theme"
 )
 
-// themeFile is this host's Rex themes file, or "" without the Rex app.
-func themeFile(userHome string) string { return theme.Locate(theme.Dirs(userHome)) }
+// themeFile is this host's Rex themes file: the Rex app's, or else the copy a
+// deploy leaves in the Burns config folder. It is "" with neither.
+func themeFile(userHome string) string {
+	return themeSource(theme.Locate(theme.Dirs(userHome)), config.Dir(userHome))
+}
+
+// themeSource prefers the Rex app's file, which is current, to the copy.
+func themeSource(appFile, configDir string) string {
+	if appFile != "" {
+		return appFile
+	}
+	p := filepath.Join(configDir, "themes.json")
+	if info, err := os.Stat(p); err == nil && info.Mode().IsRegular() {
+		return p
+	}
+	return ""
+}
 
 // applyTheme writes the launch's colours into its own pane before the agent
 // starts (docs/SPEC.md, "Pane themes"). Colours that spawn passed win, since
@@ -27,7 +43,7 @@ func applyTheme(a config.Account, file, passed string, out io.Writer, block stri
 	case a.Theme == "":
 		return ""
 	case file == "":
-		return block + ": theme " + a.Theme + " not applied: this host has no Rex app, and spawn passed no colours"
+		return block + ": theme " + a.Theme + " not applied: this host has no Rex app or themes.json copy, and spawn passed no colours"
 	default:
 		c, err = theme.Find(file, a.Theme)
 	}
