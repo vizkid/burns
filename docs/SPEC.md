@@ -789,17 +789,16 @@ Roar drives Rex through a Go client of its own: Rex's server API over a WebSocke
 
 ### Pane themes (Viz, 2026-11-18)
 
-An agent pane takes its account's colours from Rex, so each account's panes look alike on every host. The shell launchers set these colours before; they no longer do.
+An agent pane takes its account's colours from a Rex theme, so each account's panes look alike on every host. The shell launchers set these colours before; they no longer do.
 
 | Rule | Detail | Why |
 |---|---|---|
-| Field | An account's optional `theme` names a Rex theme id: lowercase letters, digits and hyphens. No `theme` means no call, and the pane keeps the app's theme. | Rex ships its themes by id. |
-| Colours | Burns reads the theme from Rex's design tokens, `themes.json` in the Rex app bundle (`Contents/Resources/SuperUI_SuperDesignTokens.bundle/Contents/Resources/themes.json`). It looks in `/Applications` and `~/Applications` for `Rex.app` and `Rex Beta.app`. It takes `semantic.terminalBackground`, `terminalForeground` and `terminalCursor`, the 256 `palette` entries, and `appearance` as the scheme. | These are Display P3 values, the same space as the palette, so the pane matches Rex with "Use Display P3 Color Space" on. Each channel becomes `round(clamp(c) × 255)` in `#rrggbb`. |
-| Call | `rex [-S H] block call -s S -b B set_theme {background, foreground, cursor, scheme, palette}`, with the palette as `index=#rrggbb`. | Rex's own per-block call. `client.theme.change` is app-wide. |
-| Launch | `smithers launch` applies its account's theme to its own block before it starts the agent, when that host has the Rex app. | Covers the Mac panel's launches and spawns onto hosts with the app. |
-| Spawn | `smithers spawn` applies the account's theme to each pane it opens, on any host, once the pane exists. It resolves the theme on the caller's host. | A host without the Rex app, such as a Linux host, cannot resolve a theme. Its panes are spawned from a Mac. |
-| Failure | A missing themes file, an unknown id or a refused call never stops a launch or spawn. Launch writes the reason to `launch.log`; spawn prints a warning. | Colour is cosmetic. |
-| Scope | Only terminal colours change. Rex's tab tint and borders follow the app theme. A CLI typed into a plain pane gets no theme. | `set_theme` covers the terminal only. |
+| Field | An account's optional `theme` names a Rex theme id: lowercase letters, digits and hyphens. No `theme` means nothing is written, and the pane keeps the app's colours. | Rex ships its themes by id. |
+| Colours | Burns reads the theme from Rex's design tokens, `themes.json` in the Rex app bundle (`Contents/Resources/SuperUI_SuperDesignTokens.bundle/Contents/Resources/themes.json`). It looks in `/Applications` and `~/Applications` for `Rex.app` and `Rex Beta.app`. It takes `semantic.terminalBackground`, `terminalForeground` and `terminalCursor`, and the 256 `palette` entries. | These are Display P3 values, the same space as the palette, so the pane matches Rex with "Use Display P3 Color Space" on. Each channel becomes `round(clamp(c) × 255)` in `#rrggbb`. |
+| Launch | `smithers launch` writes the colours into its own pane before it starts the agent: OSC 4 for each palette entry, then OSC 10, 11 and 12 for foreground, background and cursor. It resolves the theme on its own host, unless spawn passed `--colours`. | The pane's own program sets them, so they apply whichever Rex client owns the pane, such as the Mac app showing it. |
+| Spawn | `smithers spawn` resolves the account's theme on the caller's host and passes it as `smithers launch --colours`: background, foreground, cursor and the palette, as 259 comma-separated `rrggbb`. Launch refuses any other form. | A host without the Rex app, such as a Linux host, cannot resolve a theme. Its panes are spawned from a Mac. |
+| Failure | A missing themes file, an unknown id or a bad `--colours` never stops a launch or spawn. Launch writes the reason to `launch.log`; spawn prints a warning. | Colour is cosmetic. |
+| Scope | Only terminal colours change. Rex's tab tint and borders follow the app theme. A program that resets the terminal returns it to the app's colours. A CLI typed into a plain pane gets no theme. | The codes set the terminal's current colours. |
 
 ### Bindings from roar (Viz, 2026-11-06)
 

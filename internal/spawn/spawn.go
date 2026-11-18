@@ -54,7 +54,8 @@ type Request struct {
 	// TrustWatch is how long spawn reads a new Claude pane's screen for the
 	// folder-trust dialog once Claude runs. Zero skips the read.
 	TrustWatch time.Duration
-	// Theme is the account's pane colours, applied to the new block. Nil makes no call.
+	// Theme is the account's pane colours, passed to the launch, which may run
+	// on a host without the Rex app. Nil passes none.
 	Theme *theme.Colours
 }
 
@@ -63,8 +64,7 @@ type Result struct {
 	SessionID, SessionLabel string
 	Block, Label            string
 	Agent                   string
-	Created                 bool  // the session was created on the target host
-	ThemeErr                error // why the theme was not applied; the agent starts anyway
+	Created                 bool // the session was created on the target host
 }
 
 // Spawn opens the pane on target, names it, and waits for the agent. local is
@@ -86,25 +86,10 @@ func Spawn(ctx context.Context, local, target Rex, req Request) (Result, error) 
 	if err != nil {
 		return res, err
 	}
-	res.ThemeErr = applyTheme(ctx, target, res.SessionID, res.Block, req.Theme)
 	if res.Agent, err = wait(ctx, target, res.SessionID, res.Block, req); err != nil {
 		return res, err
 	}
 	return res, watchTrust(ctx, target, res.SessionID, res.Block, req)
-}
-
-// applyTheme sets the new block's colours on its own host, which need not have
-// the Rex app (docs/SPEC.md, "Pane themes").
-func applyTheme(ctx context.Context, r Rex, session, block string, c *theme.Colours) error {
-	if c == nil {
-		return nil
-	}
-	args, err := json.Marshal(c)
-	if err != nil {
-		return err
-	}
-	_, err = r.Run(ctx, "block", "call", "-s", session, "-b", block, "set_theme", string(args))
-	return err
 }
 
 // watchTrust reads a new Claude pane's screen for TrustWatch. Claude is the
@@ -192,6 +177,9 @@ func command(req Request) []string {
 	args := []string{"--", "smithers", "launch", "--provider", req.Provider, "--account", req.Account}
 	if req.Model != "" {
 		args = append(args, "--model", req.Model)
+	}
+	if req.Theme != nil {
+		args = append(args, "--colours", req.Theme.Encode())
 	}
 	return append(args, "--dir", req.Dir)
 }

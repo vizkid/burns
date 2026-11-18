@@ -1,13 +1,13 @@
 package main
 
 import (
-	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/vizkid/burns/internal/config"
+	"github.com/vizkid/burns/internal/theme"
 )
 
 // themesFile writes a themes.json with one theme, "t1", whose colours are all black.
@@ -24,43 +24,48 @@ func themesFile(t *testing.T) string {
 	return p
 }
 
-type calls [][]string
-
-func (c *calls) run(args ...string) error { *c = append(*c, args); return nil }
-
-func TestLaunchAppliesTheAccountThemeToItsBlock(t *testing.T) {
-	var ran calls
-	line := applyTheme(config.Account{Theme: "t1"}, themesFile(t), ran.run, "session:s", "block:b")
-	if len(ran) != 1 || strings.Join(ran[0][:7], " ") != "block call -s session:s -b block:b set_theme" {
-		t.Fatalf("ran %q", ran)
-	}
-	if !strings.Contains(ran[0][7], `"background":"#000000"`) || !strings.Contains(line, "t1") {
-		t.Fatalf("args %s, log %q", ran[0][7], line)
+func TestLaunchWritesTheAccountThemeIntoItsPane(t *testing.T) {
+	var out strings.Builder
+	line := applyTheme(config.Account{Theme: "t1"}, themesFile(t), "", &out, "block:b")
+	if !strings.Contains(out.String(), "\x1b]11;#000000\x1b\\") || !strings.Contains(line, "t1 applied") {
+		t.Fatalf("wrote %.40q, log %q", out.String(), line)
 	}
 }
 
-func TestLaunchWithoutAThemeCallsNothing(t *testing.T) {
-	var ran calls
-	if line := applyTheme(config.Account{}, themesFile(t), ran.run, "s", "b"); line != "" || len(ran) != 0 {
-		t.Fatalf("log %q, ran %q", line, ran)
+func TestLaunchWithoutAThemeWritesNothing(t *testing.T) {
+	var out strings.Builder
+	if line := applyTheme(config.Account{}, themesFile(t), "", &out, "b"); line != "" || out.Len() != 0 {
+		t.Fatalf("log %q, wrote %d bytes", line, out.Len())
 	}
 }
 
-// A host without the Rex app leaves the theme to spawn and says so in the log.
-func TestLaunchWithoutTheRexAppLeavesTheThemeToSpawn(t *testing.T) {
-	var ran calls
-	line := applyTheme(config.Account{Theme: "t1"}, "", ran.run, "s", "b")
-	if len(ran) != 0 || !strings.Contains(line, "no Rex app") {
-		t.Fatalf("log %q, ran %q", line, ran)
+// A host without the Rex app uses the colours spawn resolved on the caller's host.
+func TestLaunchUsesTheColoursSpawnPassed(t *testing.T) {
+	c, err := theme.Find(themesFile(t), "t1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	c.Background = "#102030"
+	var out strings.Builder
+	line := applyTheme(config.Account{Theme: "t1"}, "", c.Encode(), &out, "b")
+	if !strings.Contains(out.String(), "\x1b]11;#102030\x1b\\") || !strings.Contains(line, "applied") {
+		t.Fatalf("wrote %.40q, log %q", out.String(), line)
 	}
 }
 
-func TestLaunchLogsARefusedTheme(t *testing.T) {
-	fail := func(...string) error { return errors.New("refused") }
-	if line := applyTheme(config.Account{Theme: "t1"}, themesFile(t), fail, "s", "b"); !strings.Contains(line, "refused") {
-		t.Fatalf("log %q", line)
+func TestLaunchLogsAThemeItCannotApply(t *testing.T) {
+	var out strings.Builder
+	for _, c := range []struct{ theme, file, passed, want string }{
+		{"t1", "", "", "no Rex app"},
+		{"nope", themesFile(t), "", "nope"},
+		{"t1", themesFile(t), "\x1b]0;evil", "not applied"},
+	} {
+		line := applyTheme(config.Account{Theme: c.theme}, c.file, c.passed, &out, "b")
+		if !strings.Contains(line, c.want) {
+			t.Errorf("%+v: log %q", c, line)
+		}
 	}
-	if line := applyTheme(config.Account{Theme: "nope"}, themesFile(t), fail, "s", "b"); !strings.Contains(line, "nope") {
-		t.Fatalf("log %q", line)
+	if out.Len() != 0 {
+		t.Fatalf("wrote %q", out.String())
 	}
 }

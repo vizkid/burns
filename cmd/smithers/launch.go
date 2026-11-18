@@ -55,6 +55,7 @@ func startAgent(args []string, errOut io.Writer, getenv func(string) string) err
 	effort := fl.String("effort", "", "effort, replacing the account's")
 	permission := fl.String("permission-mode", "", "permission mode, replacing the account's")
 	start := fl.String("dir", "", "folder to start in, relative to this host's home")
+	colours := fl.String("colours", "", "the pane's colours, resolved by spawn on a host with the Rex app")
 	if err := fl.Parse(args); err != nil {
 		return err
 	}
@@ -84,7 +85,9 @@ func startAgent(args []string, errOut io.Writer, getenv func(string) string) err
 	if err := os.MkdirAll(home, 0o700); err != nil {
 		return err
 	}
-	themeOwnPane(a, user, getenv("REX_SESSION"), getenv("REX_BLOCK"))
+	if line := applyTheme(a, themeFile(user), *colours, os.Stdout, getenv("REX_BLOCK")); line != "" {
+		logLaunch(line)
+	}
 	tools, problems := launch.LoadTools(filepath.Join(dir, "tools.d"))
 	for _, p := range problems {
 		fmt.Fprintln(errOut, "burns:", p)

@@ -140,9 +140,6 @@ func report(out, errOut io.Writer, host string, res spawn.Result, err error) int
 		return 1
 	}
 	addr := roarAddress(host, res.Label, res.SessionLabel)
-	if res.ThemeErr != nil {
-		fmt.Fprintf(errOut, "warning: pane %s keeps the app's colours: %v\n", addr, res.ThemeErr)
-	}
 	if err != nil {
 		fmt.Fprintf(errOut, "spawn: pane %s (%s) opened on %s, but %v.\n", addr, res.Block, where, err)
 		switch {

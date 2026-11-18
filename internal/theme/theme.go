@@ -1,10 +1,9 @@
-// Package theme turns a Rex theme id into the colours of Rex's per-block
-// set_theme call (docs/SPEC.md, "Pane themes").
+// Package theme turns a Rex theme id into a pane's terminal colours
+// (docs/SPEC.md, "Pane themes").
 package theme
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
 	"math"
 	"os"
@@ -20,14 +19,11 @@ const maxFile = 16 << 20
 // apps are the Rex app names, released first.
 var apps = []string{"Rex.app", "Rex Beta.app"}
 
-// Colours are the arguments of Rex's set_theme block call. Palette entries
-// read "index=#rrggbb".
+// Colours are a pane's terminal colours, each "#rrggbb", with the 256-colour
+// palette in index order.
 type Colours struct {
-	Background string   `json:"background"`
-	Foreground string   `json:"foreground"`
-	Cursor     string   `json:"cursor"`
-	Scheme     string   `json:"scheme"`
-	Palette    []string `json:"palette"`
+	Background, Foreground, Cursor string
+	Palette                        [256]string
 }
 
 // Dirs are the folders that may hold the Rex app.
@@ -56,10 +52,9 @@ type tone struct {
 }
 
 type entry struct {
-	ID         string          `json:"id"`
-	Appearance string          `json:"appearance"`
-	Palette    []tone          `json:"palette"`
-	Semantic   map[string]tone `json:"semantic"`
+	ID       string          `json:"id"`
+	Palette  []tone          `json:"palette"`
+	Semantic map[string]tone `json:"semantic"`
 }
 
 // Find reads the theme with this id from a themes file. It uses the Display P3
@@ -86,7 +81,7 @@ func Find(path, id string) (Colours, error) {
 }
 
 func colours(t entry) (Colours, error) {
-	c := Colours{Scheme: t.Appearance}
+	var c Colours
 	for _, f := range []struct {
 		name string
 		out  *string
@@ -97,17 +92,14 @@ func colours(t entry) (Colours, error) {
 		}
 		*f.out = v.hex()
 	}
-	if len(t.Palette) != 256 {
+	if len(t.Palette) != len(c.Palette) {
 		return Colours{}, fmt.Errorf("theme %q has %d palette entries, not 256", t.ID, len(t.Palette))
 	}
 	for i, v := range t.Palette {
 		if !v.complete() {
-			return Colours{}, errors.New("theme " + t.ID + " has an incomplete palette entry")
+			return Colours{}, fmt.Errorf("theme %q has an incomplete palette entry %d", t.ID, i)
 		}
-		c.Palette = append(c.Palette, fmt.Sprintf("%d=%s", i, v.hex()))
-	}
-	if c.Scheme != "light" && c.Scheme != "dark" {
-		return Colours{}, fmt.Errorf("theme %q has appearance %q", t.ID, t.Appearance)
+		c.Palette[i] = v.hex()
 	}
 	return c, nil
 }

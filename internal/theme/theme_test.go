@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
-	"slices"
 	"strings"
 	"testing"
 )
@@ -49,16 +48,11 @@ func TestFindConvertsTheThemeToHex(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if c.Background != "#0d1618" || c.Foreground != "#c5d8d8" || c.Cursor != "#3bd3c3" || c.Scheme != "dark" {
-		t.Errorf("colours = %+v", c)
+	if c.Background != "#0d1618" || c.Foreground != "#c5d8d8" || c.Cursor != "#3bd3c3" {
+		t.Errorf("colours = %s %s %s", c.Background, c.Foreground, c.Cursor)
 	}
-	if len(c.Palette) != 256 {
-		t.Fatalf("palette has %d entries", len(c.Palette))
-	}
-	for _, want := range []string{"0=#172325", "1=#ff0080", "255=#ffffff"} {
-		if !slices.Contains(c.Palette, want) {
-			t.Errorf("palette lacks %s: %v", want, c.Palette[:2])
-		}
+	if c.Palette[0] != "#172325" || c.Palette[1] != "#ff0080" || c.Palette[255] != "#ffffff" {
+		t.Errorf("palette = %v ... %s", c.Palette[:2], c.Palette[255])
 	}
 }
 
@@ -93,11 +87,46 @@ func TestLocateFindsTheRexApp(t *testing.T) {
 	}
 }
 
-func TestArgsAreRexSetThemeArguments(t *testing.T) {
-	c := Colours{Background: "#000000", Foreground: "#ffffff", Cursor: "#ff0000", Scheme: "dark", Palette: []string{"0=#000000"}}
-	got, _ := json.Marshal(c)
-	want := `{"background":"#000000","foreground":"#ffffff","cursor":"#ff0000","scheme":"dark","palette":["0=#000000"]}`
-	if string(got) != want {
-		t.Fatalf("args = %s", got)
+func TestEncodeRoundTrips(t *testing.T) {
+	c, err := Find(fixture(t), "test-dusk")
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := Decode(c.Encode())
+	if err != nil || got != c {
+		t.Fatalf("Decode(Encode) = %v, %v", got.Palette[:2], err)
+	}
+	if !strings.HasPrefix(c.Encode(), "0d1618,c5d8d8,3bd3c3,172325,ff0080,") {
+		t.Fatalf("Encode = %.60s", c.Encode())
+	}
+}
+
+// The argument is written to a terminal, so anything but 259 colours is refused.
+func TestDecodeRefusesAnythingElse(t *testing.T) {
+	c, _ := Find(fixture(t), "test-dusk")
+	good := c.Encode()
+	for name, s := range map[string]string{
+		"short":  "0d1618,c5d8d8",
+		"escape": strings.Replace(good, "0d1618", "\x1b]0", 1),
+		"hash":   strings.Replace(good, "0d1618", "#0d161", 1),
+		"upper":  strings.Replace(good, "0d1618", "0D1618", 1),
+		"extra":  good + ",000000",
+	} {
+		if _, err := Decode(s); err == nil {
+			t.Errorf("%s: want error", name)
+		}
+	}
+}
+
+func TestCodesSetPaletteAndDefaults(t *testing.T) {
+	c, _ := Find(fixture(t), "test-dusk")
+	codes := c.Codes()
+	for _, want := range []string{"\x1b]4;0;#172325\x1b\\", "\x1b]4;255;#ffffff\x1b\\", "\x1b]10;#c5d8d8\x1b\\", "\x1b]11;#0d1618\x1b\\", "\x1b]12;#3bd3c3\x1b\\"} {
+		if !strings.Contains(codes, want) {
+			t.Errorf("codes lack %q", want)
+		}
+	}
+	if strings.Count(codes, "\x1b]4;") != 256 {
+		t.Errorf("codes set %d palette entries", strings.Count(codes, "\x1b]4;"))
 	}
 }
