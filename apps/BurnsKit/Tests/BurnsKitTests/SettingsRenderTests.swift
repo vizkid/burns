@@ -21,7 +21,7 @@ struct SettingsRenderTests {
         changed.removeLast()
         for (scheme, tag) in [(NSAppearance.Name.darkAqua, "dark"), (.aqua, "light")] {
             try save(AccountsPane(accounts: list, setUp: setUp, selected: first), scheme, 640, 480, dir, "settings-accounts-\(tag).png")
-            try save(EmojiGrid { _ in }, scheme, 320, 380, dir, "settings-emoji-\(tag).png")
+            try save(SymbolGrid(swatch: .blue) { _ in }, scheme, 320, 380, dir, "settings-icon-\(tag).png")
             try save(NavigationStack { AccountsForm(accounts: list, setUp: setUp) }, scheme, 390, 340, dir, "settings-phone-\(tag).png")
             try save(AddAccount(accounts: list), scheme, 420, 300, dir, "settings-add-\(tag).png")
             try save(NavigationStack { AccountReview(host: "host-1", central: changed, onHost: accounts, keepHost: {}, keepList: {}) },

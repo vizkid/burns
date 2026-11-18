@@ -9,7 +9,10 @@ public struct CentralAccount: Codable, Equatable, Sendable, Identifiable {
     public var extraHomes: [String]
     public var kind: String
     public var colour: String?
+    /// The icon's glyph in Rex. The name stays `emoji` so older hosts read it.
     public var emoji: String?
+    /// The icon's SF Symbol, drawn by the apps.
+    public var symbol: String?
     /// Every field the app does not edit, such as `launch`, kept as read. The app writes the whole
     /// file, so a field it dropped here would be deleted from the host.
     public var extra: [String: JSONValue]
@@ -17,13 +20,13 @@ public struct CentralAccount: Codable, Equatable, Sendable, Identifiable {
     public var id: AccountID { AccountID(provider: provider, name: name) }
 
     public init(provider: String, name: String, home: String, extraHomes: [String] = [], kind: String, colour: String? = nil, emoji: String? = nil,
-                extra: [String: JSONValue] = [:]) {
+                symbol: String? = nil, extra: [String: JSONValue] = [:]) {
         self.provider = provider; self.name = name; self.home = home; self.extraHomes = extraHomes
-        self.kind = kind; self.colour = colour; self.emoji = emoji; self.extra = extra
+        self.kind = kind; self.colour = colour; self.emoji = emoji; self.symbol = symbol; self.extra = extra
     }
 
     enum CodingKeys: String, CodingKey, CaseIterable {
-        case provider, name, home, kind, colour, emoji
+        case provider, name, home, kind, colour, emoji, symbol
         case extraHomes = "extra_homes"
     }
 
@@ -37,6 +40,7 @@ public struct CentralAccount: Codable, Equatable, Sendable, Identifiable {
         kind = try c.decode(String.self, forKey: .kind)
         colour = try c.decodeIfPresent(String.self, forKey: .colour)
         emoji = try c.decodeIfPresent(String.self, forKey: .emoji)
+        symbol = try c.decodeIfPresent(String.self, forKey: .symbol)
         let all = try decoder.container(keyedBy: FieldName.self)
         let known = Set(CodingKeys.allCases.map(\.rawValue))
         extra = try all.allKeys.filter { !known.contains($0.stringValue) }.reduce(into: [:]) { out, key in
@@ -53,6 +57,7 @@ public struct CentralAccount: Codable, Equatable, Sendable, Identifiable {
         try c.encode(kind, forKey: .kind)
         try c.encodeIfPresent(colour, forKey: .colour)
         try c.encodeIfPresent(emoji, forKey: .emoji)
+        try c.encodeIfPresent(symbol, forKey: .symbol)
         var rest = encoder.container(keyedBy: FieldName.self)
         for (name, value) in extra { try rest.encode(value, forKey: FieldName(name)) }
     }

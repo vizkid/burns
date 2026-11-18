@@ -63,6 +63,8 @@ func TestLoadRejectsBadFiles(t *testing.T) {
 		"home twice":    `{"accounts":[{"provider":"claude","name":"a","home":".c","kind":"subscription"},{"provider":"claude","name":"b","home":".d","extra_homes":[".c"],"kind":"subscription"}]}`,
 		"bad theme":     `{"accounts":[{"provider":"claude","name":"a","home":".c","kind":"subscription","theme":"Ink Meridian"}]}`,
 		"flag theme":    `{"accounts":[{"provider":"claude","name":"a","home":".c","kind":"subscription","theme":"-x"}]}`,
+		"bad symbol":    `{"accounts":[{"provider":"claude","name":"a","home":".c","kind":"subscription","symbol":"Diamond Fill"}]}`,
+		"dot symbol":    `{"accounts":[{"provider":"claude","name":"a","home":".c","kind":"subscription","symbol":"diamond..fill"}]}`,
 	} {
 		if _, err := load(t, body); err == nil {
 			t.Errorf("%s: want error", name)
@@ -102,6 +104,15 @@ func TestThemeIsARexThemeID(t *testing.T) {
 	}
 }
 
+// An icon is an SF Symbol name for the apps and a glyph for Rex (docs/SPEC.md,
+// "Account icons in the apps").
+func TestIconIsASymbolAndAGlyph(t *testing.T) {
+	c, err := Parse([]byte(`{"accounts":[{"provider":"claude","name":"a","home":".c","kind":"subscription","symbol":"circle.lefthalf.filled","emoji":"◐"}]}`), "/home/u")
+	if err != nil || c.Accounts[0].Symbol != "circle.lefthalf.filled" || c.Accounts[0].Emoji != "◐" {
+		t.Fatalf("icon = %+v, %v", c.Accounts, err)
+	}
+}
+
 // The documented example must stay loadable.
 func TestExampleLoads(t *testing.T) {
 	c, err := Load(filepath.Join("..", "..", "docs", "accounts.example.json"), "/home/u")
@@ -118,6 +129,8 @@ func TestLaunchOverrides(t *testing.T) {
 		{"flag", `"provider":"claude","launch":{"model":"--evil"}`, "launch settings"},
 		{"codex effort", `"provider":"codex","launch":{"effort":"high"}`, "no effort"},
 		{"credential", `"provider":"codex","launch":{"credential":{"account":"a.example","ref":"op://v/i/f","env":"KEY"}}`, ""},
+		{"project", `"provider":"codex","launch":{"credential":{"account":"a.example","ref":"op://v/i/f","env":"KEY","project":"alpha"}}`, ""},
+		{"flag project", `"provider":"codex","launch":{"credential":{"account":"a.example","ref":"op://v/i/f","env":"KEY","project":"-x"}}`, "credential"},
 		{"bad ref", `"provider":"codex","launch":{"credential":{"account":"a.example","ref":"plain","env":"KEY"}}`, "credential"},
 	}
 	for _, c := range cases {

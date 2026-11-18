@@ -39,6 +39,9 @@ var settingPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._:-]{0,63}$`)
 
 var envPattern = regexp.MustCompile(`^[A-Z_][A-Z0-9_]{0,63}$`)
 
+// symbolPattern is an SF Symbol name, such as circle.lefthalf.filled.
+var symbolPattern = regexp.MustCompile(`^[a-z0-9]+(\.[a-z0-9]+){0,7}$`)
+
 // themePattern is a Rex theme id, such as petrol-lagoon.
 var themePattern = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,63}$`)
 
@@ -55,7 +58,10 @@ type Account struct {
 	ExtraHomes []string `json:"extra_homes,omitempty"`
 	Kind       string   `json:"kind"`
 	Colour     string   `json:"colour,omitempty"`
-	Emoji      string   `json:"emoji,omitempty"`
+	// Emoji is the account's icon in Rex: one glyph, such as ◆.
+	Emoji string `json:"emoji,omitempty"`
+	// Symbol is the SF Symbol the apps draw for the account (docs/SPEC.md, "Account icons in the apps").
+	Symbol string `json:"symbol,omitempty"`
 	// Theme is a Rex theme id for the account's agent panes (docs/SPEC.md, "Pane themes").
 	Theme  string  `json:"theme,omitempty"`
 	Launch *Launch `json:"launch,omitempty"`
@@ -79,11 +85,13 @@ type Launch struct {
 }
 
 // Credential names a secret cop passes to the CLI at launch. It holds a
-// reference, never the value.
+// reference, never the value. Project is cop's project outside Rex; inside
+// Rex the session label is the project.
 type Credential struct {
 	Account string `json:"account"`
 	Ref     string `json:"ref"`
 	Env     string `json:"env"`
+	Project string `json:"project,omitempty"`
 }
 
 // Config is the accounts file. Order is the settings order used for ties.
@@ -147,7 +155,9 @@ func (c Config) validate() error {
 		case !swatches[a.Colour]:
 			problem = "colour must be purple, teal, blue, green, pink or grey"
 		case utf8.RuneCountInString(a.Emoji) > maxEmoji || strings.ContainsFunc(a.Emoji, unicode.IsControl):
-			problem = "emoji must be one emoji"
+			problem = "emoji must be one glyph"
+		case len(a.Symbol) > 64 || a.Symbol != "" && !symbolPattern.MatchString(a.Symbol):
+			problem = "symbol must be an SF Symbol name, such as diamond.fill"
 		case a.Theme != "" && !themePattern.MatchString(a.Theme):
 			problem = "theme must be a Rex theme id: lowercase letters, digits and hyphens"
 		case seen[a.Provider+"/"+a.Name]:
@@ -186,7 +196,8 @@ func CheckLaunch(a Account) string {
 		return "codex accounts take no effort or permission mode"
 	}
 	if c := l.Credential; c != nil &&
-		(!settingPattern.MatchString(c.Account) || !strings.HasPrefix(c.Ref, "op://") || !envPattern.MatchString(c.Env)) {
+		(!settingPattern.MatchString(c.Account) || !strings.HasPrefix(c.Ref, "op://") || !envPattern.MatchString(c.Env) ||
+			c.Project != "" && !settingPattern.MatchString(c.Project)) {
 		return "credential needs a cop account, an op:// reference and a variable name"
 	}
 	return ""

@@ -100,6 +100,35 @@ func TestCredentialGoesThroughCop(t *testing.T) {
 	}
 }
 
+// A shell outside Rex names cop's project. Inside Rex the session is the project.
+func TestCredentialProjectOnlyOutsideRex(t *testing.T) {
+	a := config.Account{Provider: "codex", Name: "cloud", Kind: config.Azure, Launch: &config.Launch{
+		Credential: &config.Credential{Account: "team.example", Ref: "op://v/i/f", Env: "API_KEY", Project: "alpha"}}}
+	outside := Build(Input{Account: a, Home: user + "/.codex-cloud", UserHome: user})
+	if !has(outside.Args, "--env", "API_KEY", "--project", "alpha", "--", "codex") || !has(outside.Daemon, "--project", "alpha", "--") {
+		t.Fatalf("outside Rex: %v / %v", outside.Args, outside.Daemon)
+	}
+	inside := Build(Input{Account: a, Home: user + "/.codex-cloud", UserHome: user, Block: "block:1", Session: "session:1"})
+	if has(inside.Args, "--project") || has(inside.Daemon, "--project") {
+		t.Fatalf("inside Rex: %v / %v", inside.Args, inside.Daemon)
+	}
+}
+
+// Agent arguments follow the account's settings and come before Claude's
+// channel flag, which would read a later argument as one more channel.
+func TestAgentArgumentsComeBeforeChannels(t *testing.T) {
+	a := config.Account{Provider: "claude", Name: "alpha", Launch: &config.Launch{PermissionMode: "auto"}}
+	p := Build(Input{Account: a, Home: user + "/.claude-alpha", UserHome: user, Channels: []string{"roar"}, Agent: []string{"-p", "hello there"}})
+	want := []string{"--permission-mode", "auto", "-p", "hello there", "--dangerously-load-development-channels=server:roar"}
+	if !reflect.DeepEqual(p.Args, want) {
+		t.Fatalf("args = %q", p.Args)
+	}
+	c := Build(Input{Account: config.Account{Provider: "codex", Name: "beta", Launch: &config.Launch{Model: "m1"}}, Home: user + "/.codex-beta", UserHome: user, Agent: []string{"exec", "hi"}})
+	if !reflect.DeepEqual(c.Args, []string{"-m", "m1", "exec", "hi"}) {
+		t.Fatalf("codex args = %q", c.Args)
+	}
+}
+
 func TestToolsMergeAndABadFileIsReported(t *testing.T) {
 	dir := t.TempDir()
 	os.WriteFile(filepath.Join(dir, "one.json"), []byte(`{"claude":{"channel_servers":["a"]}}`), 0o600)

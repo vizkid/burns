@@ -1,15 +1,18 @@
 import SwiftUI
 
-/// An account name and its providers: colour and emoji belong to the name, not the provider.
+/// An account name and its providers: colour and icon belong to the name, not the provider.
 public struct AccountGroup: Identifiable, Equatable, Sendable {
     public var name: String
     public var entries: [CentralAccount]
     public var swatch: Swatch
+    /// The icon's glyph, which Rex shows.
     public var emoji: String
+    /// The icon's SF Symbol. Nil for an account that has only an older emoji.
+    public var symbol: String?
     public var id: String { name }
 
     /// Names in list order. A name with no colour takes the next unused swatch, and one with no
-    /// emoji follows its swatch.
+    /// icon shows the catalogue's standard circle.
     public static func build(_ accounts: [CentralAccount]) -> [AccountGroup] {
         var names: [String] = []
         for a in accounts where !names.contains(a.name) { names.append(a.name) }
@@ -18,8 +21,11 @@ public struct AccountGroup: Identifiable, Equatable, Sendable {
             let entries = accounts.filter { $0.name == name }
             let chosen = entries.compactMap { $0.colour.flatMap(Swatch.init(rawValue:)) }.first
             let swatch = chosen ?? (free.isEmpty ? Swatch.allCases[names.firstIndex(of: name)! % Swatch.allCases.count] : free.removeFirst())
+            let owner = entries.first { $0.symbol != nil || $0.emoji != nil }
+            let standard = SymbolCatalogue.standard
             return AccountGroup(name: name, entries: entries, swatch: swatch,
-                                emoji: entries.compactMap(\.emoji).first ?? swatch.circle)
+                                emoji: owner?.emoji ?? SymbolCatalogue.all.first { $0.symbol == owner?.symbol }?.glyph ?? standard.glyph,
+                                symbol: owner == nil ? standard.symbol : owner?.symbol)
         }
     }
 
@@ -35,21 +41,6 @@ public struct AccountGroup: Identifiable, Equatable, Sendable {
         guard home.hasPrefix("~") else { return home }
         guard home.hasPrefix("~/"), home.count > 2 else { return nil }
         return String(home.dropFirst(2))
-    }
-}
-
-extension Swatch {
-    /// The emoji an account shows until one is chosen (Viz, 2026-10-31). Circles have no teal, so
-    /// teal takes orange: six accounts still get six emoji.
-    public var circle: String {
-        switch self {
-        case .purple: "🟣"
-        case .teal: "🟠"
-        case .blue: "🔵"
-        case .green: "🟢"
-        case .pink: "🔴"
-        case .grey: "⚪"
-        }
     }
 }
 
@@ -86,12 +77,12 @@ public struct AccountsForm: View {
         LabeledContent {
             Text(group.entries.map { $0.id.label.split(separator: " ")[0] }.joined(separator: ", "))
         } label: {
-            HStack(spacing: 8) { Text(group.emoji); Text(group.name) }
+            HStack(spacing: 8) { AccountIcon(group); Text(group.name) }
         }
     }
 }
 
-/// One name: its colour, emoji, and each provider's homes.
+/// One name: its colour, icon, and each provider's homes.
 public struct AccountPage: View {
     let name: String
     @Binding var accounts: [CentralAccount]
@@ -109,7 +100,7 @@ public struct AccountPage: View {
             if let group {
                 Section("Appearance") {
                     LabeledContent("Colour") { swatches(group) }
-                    LabeledContent("Emoji") { EmojiPicker(emoji: emoji(group)) }
+                    LabeledContent("Icon") { SymbolPicker(group: group) { item in update { SymbolCatalogue.apply(item, to: &$0) } } }
                 }
                 ForEach(group.entries) { entry in
                     Section(entry.id.label) {
@@ -149,13 +140,6 @@ public struct AccountPage: View {
         }
     }
 
-    /// Empty returns to the swatch's circle.
-    func emoji(_ group: AccountGroup) -> Binding<String> {
-        Binding(get: { group.emoji }, set: { new in
-            update { $0.emoji = new.isEmpty || new == group.swatch.circle ? nil : new }
-        })
-    }
-
     func update(_ change: (inout CentralAccount) -> Void) {
         for i in accounts.indices where accounts[i].name == name { change(&accounts[i]) }
     }
@@ -183,7 +167,7 @@ public struct AccountsPane: View {
         HStack(spacing: 0) {
             VStack(spacing: 0) {
                 List(groups, selection: $selected) { group in
-                    Label { Text(group.name) } icon: { Text(group.emoji) }.tag(group.name)
+                    Label { Text(group.name) } icon: { AccountIcon(group) }.tag(group.name)
                 }
                 .listStyle(.inset)
                 Divider()

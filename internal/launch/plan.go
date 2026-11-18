@@ -99,6 +99,8 @@ type Input struct {
 	Channels []string
 	Block    string
 	Session  string
+	// Agent is passed to the CLI after the account's settings.
+	Agent []string
 }
 
 // Plan is one launch: the program replaces this process.
@@ -127,7 +129,12 @@ func Build(in Input) Plan {
 	p.Provider = in.Account.Provider
 	p.Env["BURNS_ACCOUNT"] = in.Account.Name
 	if c := l.Credential; c != nil {
-		cop := []string{"run", "--account", c.Account, "--ref", c.Ref, "--env", c.Env, "--"}
+		cop := []string{"run", "--account", c.Account, "--ref", c.Ref, "--env", c.Env}
+		// Inside Rex cop takes the session as the project and refuses another.
+		if c.Project != "" && in.Session == "" {
+			cop = append(cop, "--project", c.Project)
+		}
+		cop = append(cop, "--")
 		p.Args = append(append(cop[:len(cop):len(cop)], p.Program), p.Args...)
 		if len(p.Daemon) > 0 {
 			p.Daemon = append(append([]string{"cop"}, cop...), p.Daemon...)
@@ -156,7 +163,7 @@ func claude(in Input, l config.Launch) Plan {
 	if in.Block != "" {
 		p.Env["OTEL_RESOURCE_ATTRIBUTES"] = "rex.block=" + in.Block + ",rex.session=" + in.Session
 	}
-	p.Args = pairs("--model", l.Model, "--effort", l.Effort, "--permission-mode", l.PermissionMode)
+	p.Args = append(pairs("--model", l.Model, "--effort", l.Effort, "--permission-mode", l.PermissionMode), in.Agent...)
 	if len(in.Channels) > 0 {
 		p.Channels = slices.Compact(slices.Sorted(slices.Values(in.Channels)))
 		// The flag takes several values, so it comes last and each is its own argument.
@@ -175,7 +182,7 @@ func codex(in Input, l config.Launch) Plan {
 	return Plan{
 		Program: "codex",
 		Env:     map[string]string{"CODEX_HOME": in.Home},
-		Args:    pairs("-m", l.Model),
+		Args:    append(pairs("-m", l.Model), in.Agent...),
 		Daemon:  []string{"codex", "app-server", "daemon", "start"},
 	}
 }

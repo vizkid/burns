@@ -35,12 +35,15 @@ const pipeGrace = 2 * time.Second
 var replace = syscall.Exec
 
 // launchAgent runs in the new Rex tab. A failure holds the tab open until a key
-// press: an exit would close the tab and lose the reason.
+// press: an exit would close the tab and lose the reason. A shell launcher
+// passes --no-pause, since its shell stays open.
 func launchAgent(args []string, in io.Reader, errOut io.Writer, getenv func(string) string) int {
 	if err := startAgent(args, errOut, getenv); err != nil {
 		fmt.Fprintln(errOut, "burns:", err)
-		fmt.Fprintln(errOut, "Press Return to close.")
-		io.ReadFull(in, make([]byte, 1))
+		if !noPause(args) {
+			fmt.Fprintln(errOut, "Press Return to close.")
+			io.ReadFull(in, make([]byte, 1))
+		}
 		return 1
 	}
 	return 0
@@ -56,6 +59,7 @@ func startAgent(args []string, errOut io.Writer, getenv func(string) string) err
 	permission := fl.String("permission-mode", "", "permission mode, replacing the account's")
 	start := fl.String("dir", "", "folder to start in, relative to this host's home")
 	colours := fl.String("colours", "", "the pane's colours, resolved by spawn on a host with the Rex app")
+	fl.Bool("no-pause", false, "exit at once on failure instead of waiting for Return")
 	if err := fl.Parse(args); err != nil {
 		return err
 	}
@@ -81,6 +85,9 @@ func startAgent(args []string, errOut io.Writer, getenv func(string) string) err
 	if err := override(&a, *model, *effort, *permission); err != nil {
 		return err
 	}
+	if cwd, err := os.Getwd(); err == nil {
+		fmt.Fprint(os.Stdout, title(a, cwd, user))
+	}
 	home := cfg.HomeDir(a)
 	if err := os.MkdirAll(home, 0o700); err != nil {
 		return err
@@ -94,7 +101,7 @@ func startAgent(args []string, errOut io.Writer, getenv func(string) string) err
 	}
 	plan := launch.Build(launch.Input{
 		Account: a, Home: home, UserHome: user, Channels: launch.Channels(tools, a.Provider),
-		Block: getenv("REX_BLOCK"), Session: getenv("REX_SESSION"),
+		Block: getenv("REX_BLOCK"), Session: getenv("REX_SESSION"), Agent: fl.Args(),
 	})
 	return startPlan(plan, errOut, getenv("REX_BLOCK"), getenv("REX_SESSION"))
 }
