@@ -13,21 +13,29 @@ import (
 // <account>` (docs/SPEC.md, "Shell launchers"). It is written to the terminal,
 // so control characters are dropped.
 func title(a config.Account, dir, userHome string) string {
-	folder := filepath.Base(dir)
-	if filepath.Clean(dir) == filepath.Clean(userHome) {
-		folder = "~"
-	}
-	text := folder + " · " + a.Provider + " " + a.Name
+	text := folderName(dir, userHome) + " · " + a.Provider + " " + a.Name
 	if a.Emoji != "" {
 		text = a.Emoji + " " + text
 	}
-	text = strings.Map(func(r rune) rune {
+	return "\x1b]0;" + clean(text) + "\x1b\\"
+}
+
+// folderName is the last part of dir, or `~` for the home folder.
+func folderName(dir, userHome string) string {
+	if filepath.Clean(dir) == filepath.Clean(userHome) {
+		return "~"
+	}
+	return filepath.Base(dir)
+}
+
+// clean drops control characters from text written to the terminal or to Rex.
+func clean(text string) string {
+	return strings.Map(func(r rune) rune {
 		if unicode.IsControl(r) {
 			return -1
 		}
 		return r
 	}, text)
-	return "\x1b]0;" + text + "\x1b\\"
 }
 
 // noPause reports --no-pause among Burns' own arguments, those before `--`. It

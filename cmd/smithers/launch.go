@@ -87,6 +87,11 @@ func startAgent(args []string, errOut io.Writer, getenv func(string) string) err
 	}
 	if cwd, err := os.Getwd(); err == nil {
 		fmt.Fprint(os.Stdout, title(a, cwd, user))
+		if run := rexRunner(); run != nil {
+			if line := nameTab(run, getenv("REX_SESSION"), getenv("REX_BLOCK"), tabText(a.Emoji, cwd, user)); line != "" {
+				logLaunch(line)
+			}
+		}
 	}
 	home := cfg.HomeDir(a)
 	if err := os.MkdirAll(home, 0o700); err != nil {
