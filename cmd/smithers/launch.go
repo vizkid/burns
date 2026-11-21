@@ -38,7 +38,7 @@ var replace = syscall.Exec
 // press: an exit would close the tab and lose the reason. A shell launcher
 // passes --no-pause, since its shell stays open.
 func launchAgent(args []string, in io.Reader, errOut io.Writer, getenv func(string) string) int {
-	if err := startAgent(args, errOut, getenv); err != nil {
+	if err := startAgent(args, in, errOut, getenv); err != nil {
 		fmt.Fprintln(errOut, "burns:", err)
 		if !noPause(args) {
 			fmt.Fprintln(errOut, "Press Return to close.")
@@ -49,7 +49,7 @@ func launchAgent(args []string, in io.Reader, errOut io.Writer, getenv func(stri
 	return 0
 }
 
-func startAgent(args []string, errOut io.Writer, getenv func(string) string) error {
+func startAgent(args []string, in io.Reader, errOut io.Writer, getenv func(string) string) error {
 	fl := flag.NewFlagSet("launch", flag.ContinueOnError)
 	fl.SetOutput(errOut)
 	provider := fl.String("provider", "", "claude or codex")
@@ -59,6 +59,7 @@ func startAgent(args []string, errOut io.Writer, getenv func(string) string) err
 	permission := fl.String("permission-mode", "", "permission mode, replacing the account's")
 	start := fl.String("dir", "", "folder to start in, relative to this host's home")
 	colours := fl.String("colours", "", "the pane's colours, resolved by spawn on a host with the Rex app")
+	tab := fl.String("tab", "", "name for an unnamed Rex tab, after the account's icon")
 	fl.Bool("no-pause", false, "exit at once on failure instead of waiting for Return")
 	if err := fl.Parse(args); err != nil {
 		return err
@@ -87,11 +88,7 @@ func startAgent(args []string, errOut io.Writer, getenv func(string) string) err
 	}
 	if cwd, err := os.Getwd(); err == nil {
 		fmt.Fprint(os.Stdout, title(a, cwd, user))
-		if run := rexRunner(); run != nil {
-			if line := nameTab(run, getenv("REX_SESSION"), getenv("REX_BLOCK"), tabText(a.Emoji, cwd, user)); line != "" {
-				logLaunch(line)
-			}
-		}
+		labelTab(a, cwd, user, *tab, in, errOut, getenv)
 	}
 	home := cfg.HomeDir(a)
 	if err := os.MkdirAll(home, 0o700); err != nil {
